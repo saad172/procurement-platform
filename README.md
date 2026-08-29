@@ -137,9 +137,9 @@ Sequenced so each step is verifiable before the next depends on it
 - [x] 8 — The resolve loop
 - [x] 9 — Enrichment fan-out and the Corporate family
 - [x] 10 — Assess and Recommend
-- [ ] 11 — Pages
+- [x] 11 — Pages
 - [ ] 12 — Chat
 - [ ] 13 — Discover
-- [ ] 14 — The Runs branch
+- [x] 14 — The Runs branch
 - [ ] 15 — Fixtures and replay
 - [ ] 16 — CI
