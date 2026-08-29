@@ -1,4 +1,5 @@
 import { assertPresetsAreLegal } from '@/domain/score';
+import { assertModelConfigIsLegal } from '@/model';
 import { loadEnv, type Env } from './env';
 
 /**
@@ -21,6 +22,11 @@ export function boot(): Env {
   // survived that silently; a constant beside the Criterion list it quantifies
   // over cannot.
   assertPresetsAreLegal();
+
+  // The model constant is a known id, every loop has a system prompt, and every
+  // effort is in the legal set. Boot VALIDATES and never calls — unlike
+  // src/upstream, whose fallback is our own code that CI never exercises.
+  assertModelConfigIsLegal();
 
   return env;
 }

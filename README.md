@@ -71,6 +71,7 @@ Two checks spend real Sayari credits and so are scripts rather than tests:
 
 ```bash
 pnpm smoke:upstream           # one live call to each of the five sources
+pnpm smoke:model              # one Tool Runner loop with every pinned setting
 pnpm check:founding-example   # re-measures the Bosch example the app is built around
 ```
 
@@ -126,8 +127,8 @@ Sequenced so each step is verifiable before the next depends on it
 - [x] 1 — Skeleton: Next.js + Drizzle + compose, boot validation, import boundaries
 - [x] 2 — Schema and seed
 - [x] 3 — `src/upstream/`
-- [ ] 4 — `score.ts` + `staleness.ts` and their unit tests
-- [ ] 5 — `src/model/`
+- [x] 4 — `score.ts` + `staleness.ts` and their unit tests
+- [x] 5 — `src/model/`
 - [ ] 6 — The tool registry
 - [ ] 7 — Worker, `run` and `job`
 - [ ] 8 — The resolve loop
