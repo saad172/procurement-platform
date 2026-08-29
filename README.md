@@ -135,7 +135,7 @@ Sequenced so each step is verifiable before the next depends on it
 - [x] 7 — Worker, `run` and `job`
 - [x] 8 — The resolve loop
 - [x] 9 — Enrichment fan-out and the Corporate family
-- [ ] 10 — Assess and Recommend
+- [x] 10 — Assess and Recommend (validators; loops next)
 - [ ] 11 — Pages
 - [ ] 12 — Chat
 - [ ] 13 — Discover
