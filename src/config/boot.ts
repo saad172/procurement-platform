@@ -1,5 +1,6 @@
 import { assertPresetsAreLegal } from '@/domain/score';
 import { assertModelConfigIsLegal } from '@/model';
+import { getRegistry } from '@/tools';
 import { loadEnv, type Env } from './env';
 
 /**
@@ -27,6 +28,11 @@ export function boot(): Env {
   // effort is in the legal set. Boot VALIDATES and never calls — unlike
   // src/upstream, whose fallback is our own code that CI never exercises.
   assertModelConfigIsLegal();
+
+  // finalizeRegistry() derives every per-surface and per-Round tool list, so
+  // "a loop was handed a tool it cannot reach" is unrepresentable rather than
+  // tested for. It throws here, naming every problem at once.
+  getRegistry();
 
   return env;
 }

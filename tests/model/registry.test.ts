@@ -196,3 +196,65 @@ describe('the tool digest', () => {
     expect(after).not.toBe(before);
   });
 });
+
+describe('the real catalog', () => {
+  it('boots — finalizeRegistry accepts it, which is the boot check itself', async () => {
+    const { getRegistry, resetRegistryForTesting } = await import('@/tools');
+    resetRegistryForTesting();
+    expect(() => getRegistry()).not.toThrow();
+  });
+
+  it('gives no caller the whole catalog', async () => {
+    const { getRegistry } = await import('@/tools');
+    const registry = getRegistry();
+    const total = registry.all.length;
+    for (const surface of ['chat', 'job', 'mcp'] as const) {
+      expect(registry.forSurface(surface).length).toBeLessThan(total);
+    }
+  });
+
+  it('exposes no write over MCP except submit_dossier', async () => {
+    // One path into a Match or an Assessment, owned by a Job with a Trace.
+    const { getRegistry } = await import('@/tools');
+    const writes = getRegistry()
+      .forSurface('mcp')
+      .filter((t) => t.effect === 'write');
+    expect(writes.map((t) => t.name)).toEqual(['submit_dossier']);
+  });
+
+  it('bars every slow tool from chat', async () => {
+    // trade and negativeNews are slow WITHOUT fanning out, and both are barred
+    // for that reason alone.
+    const { getRegistry } = await import('@/tools');
+    const slowOnChat = getRegistry()
+      .forSurface('chat')
+      .filter((t) => t.latency === 'slow');
+    expect(slowOnChat).toEqual([]);
+  });
+
+  it('confirm-gates every chat tool that spends', async () => {
+    const { getRegistry } = await import('@/tools');
+    const ungated = getRegistry()
+      .forSurface('chat')
+      .filter((t) => t.spends.length > 0 && !t.confirm);
+    expect(ungated.map((t) => t.name)).toEqual([]);
+  });
+
+  it('names every chat-reachable write enqueue_*', async () => {
+    // Chat proposes and never does: a write it can reach enqueues the same Job
+    // the page's own button would.
+    const { getRegistry } = await import('@/tools');
+    const writes = getRegistry()
+      .forSurface('chat')
+      .filter((t) => t.effect === 'write');
+    expect(writes.every((t) => t.name.startsWith('enqueue_'))).toBe(true);
+    expect(writes).toHaveLength(7);
+  });
+
+  it('has no tool that writes a match — the agents propose and code settles', async () => {
+    const { getRegistry } = await import('@/tools');
+    // submit_match_proposal and submit_match_verdict PROPOSE; there is no
+    // submit_match at all, on any surface.
+    expect(getRegistry().byName.has('submit_match')).toBe(false);
+  });
+});
