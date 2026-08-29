@@ -1,32 +1,45 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
-import { buildShortlist, scoreSupplier, type ShortlistRow, type WeightVector } from '@/domain/score';
-import type { SupplierScoringInput } from '@/domain/scoring/types';
+import {
+  buildShortlist,
+  dataConfidence,
+  scoreFromStoredValues,
+  type ShortlistRow,
+  type StoredCriterionValue,
+  type WeightVector,
+} from '@/domain/score';
+import { EXPECTED_ENRICHMENTS } from '@/domain/scoring/anchors';
+import { isDisqualifying } from '@/domain/scoring/risk-factors';
 import { unionRiskFactors } from '@/domain/family';
 import type { Facets } from '@/lib/view-state';
 
 /**
- * The Shortlist query (SPEC §13.6, §9.4).
+ * The queries every page runs for SSR (SPEC §13.6, §9.4).
  *
- * Assembles the scoring input from stored rows and hands it to the **same pure
- * `score.ts` the browser calls**, so a server-rendered ranking and a ranking
- * re-computed after a weight drag cannot disagree.
+ * **A page renders what a Citation points at.** So it reads the *stored*
+ * `criterion_value` rows and combines them with the weight vector from the URL,
+ * rather than recomputing each Criterion from live rows — a recomputation could
+ * show a figure that differs from the one a published sentence cites, which is
+ * exactly the drift `criterion_value` is append-only to prevent.
  *
- * Two rules from §13.6 are implemented here rather than in the component,
- * because a component could forget them:
+ * That also makes the live weight rail cheap: a drag re-ranks from rows already
+ * on the page, with no upstream call and no Job.
  *
- * - **A Shortlist is never filtered.** Filtering marks rows hidden; it does not
- *   remove them, and a Recommendation always runs against the unfiltered list.
- * - **A filtered row keeps its true rank**, so visible rows read 2, 5, 7 rather
- *   than renumbering. **The gap is the disclosure** — impossible to overlook,
- *   and sitting exactly where it matters.
+ * Two rules from §13.6 live here rather than in a component, because a
+ * component could forget them:
+ *
+ * - **A Shortlist is never filtered.** Filtering marks rows hidden; ranks are
+ *   computed over the unfiltered set, always, and a Recommendation runs against
+ *   that same unfiltered list.
+ * - **A filtered row keeps its true rank**, so visible rows read 2, 5, 7 with
+ *   the gaps left in. **The gap is the disclosure.**
  */
 
 export type ShortlistEntry = ShortlistRow & {
   /** False when a filter hides it. It keeps its rank either way. */
   visible: boolean;
-  rosterCountry: string | null;
+  country: string | null;
   matchStatus: string | null;
   entityId: string | null;
 };
@@ -39,23 +52,31 @@ export type ShortlistResult = {
   totalCount: number;
 };
 
-/** Everything one Supplier's Criteria are computed from, read from rows. */
-export async function loadScoringInputs(
+/** Everything a page needs about one Supplier, read from stored rows. */
+export type SupplierSnapshot = {
+  supplierId: string;
+  displayName: string;
+  country: string | null;
+  matchStatus: string | null;
+  matchAccepted: boolean;
+  entityId: string | null;
+  categoryIds: string[];
+  values: StoredCriterionValue[];
+  dataConfidenceBand: ReturnType<typeof dataConfidence>;
+  disqualifyingFactors: string[];
+};
+
+export async function loadSupplierSnapshots(
   db: Database,
   args: { programId: string; supplierIds?: string[] | undefined },
-): Promise<{ input: SupplierScoringInput; categoryIds: string[]; matchStatus: string | null }[]> {
-  const suppliers = await db
-    .select()
-    .from(t.supplier)
-    .where(
-      args.supplierIds?.length
-        ? and(eq(t.supplier.programId, args.programId), inArray(t.supplier.id, args.supplierIds))
-        : eq(t.supplier.programId, args.programId),
-    );
+): Promise<SupplierSnapshot[]> {
+  const suppliers = await db.select().from(t.supplier).where(eq(t.supplier.programId, args.programId));
+  const wanted = args.supplierIds ? new Set(args.supplierIds) : undefined;
 
-  const out: { input: SupplierScoringInput; categoryIds: string[]; matchStatus: string | null }[] = [];
-
+  const out: SupplierSnapshot[] = [];
   for (const supplier of suppliers) {
+    if (wanted && !wanted.has(supplier.id)) continue;
+
     const match = await db.query.match.findFirst({ where: eq(t.match.supplierId, supplier.id) });
     const profile = match?.entityId
       ? await db.query.entity.findFirst({ where: eq(t.entity.id, match.entityId) })
@@ -64,107 +85,95 @@ export async function loadScoringInputs(
       .select({ categoryId: t.supplierCategory.categoryId })
       .from(t.supplierCategory)
       .where(eq(t.supplierCategory.supplierId, supplier.id));
-
-    const values = await db
+    const rows = await db
       .select()
       .from(t.criterionValue)
       .where(and(eq(t.criterionValue.supplierId, supplier.id), eq(t.criterionValue.isCurrent, true)));
 
+    const factors = profile
+      ? unionRiskFactors([{ source: 'getEntity', risk: profile.risk }]).map((u) => u.factor)
+      : [];
+    const disqualifyingFactors = factors.filter(isDisqualifying).map((f) => f.name);
+    if (profile?.sanctioned) disqualifyingFactors.push('sanctioned');
+
+    const presentEnrichments = await db
+      .selectDistinct({ source: t.enrichment.source })
+      .from(t.enrichment)
+      .where(eq(t.enrichment.subjectKey, match?.entityId ?? supplier.id));
+
     out.push({
+      supplierId: supplier.id,
+      displayName: supplier.rosterName ?? profile?.label ?? supplier.id,
+      country: profile?.country ?? supplier.rosterCountry ?? null,
       matchStatus: match?.status ?? null,
+      matchAccepted: match?.status === 'accepted',
+      entityId: match?.entityId ?? null,
       categoryIds: categories.map((c) => c.categoryId),
-      input: {
+      values: rows.map((row) => ({
+        criterionKey: row.criterionKey,
+        categoryId: row.categoryId,
+        value: row.value,
+        unknownReason: row.unknownReason,
+        rawInputs: (row.rawInputs ?? {}) as Record<string, unknown>,
+        anchorLine: row.anchorLine,
+      })),
+      dataConfidenceBand: dataConfidence({
         supplierId: supplier.id,
-        displayName: supplier.rosterName ?? profile?.label ?? supplier.id,
-        match: {
-          status: (match?.status ?? 'needs_review') as SupplierScoringInput['match']['status'],
-          entityId: match?.entityId ?? undefined,
-        },
+        displayName: supplier.rosterName ?? supplier.id,
+        match: { status: (match?.status ?? 'needs_review') as never, entityId: match?.entityId ?? undefined },
         profile: profile
           ? {
               entityId: profile.id,
               legalName: profile.label,
-              country: profile.country ?? undefined,
-              lat: profile.lat ?? undefined,
-              lon: profile.lon ?? undefined,
               distinctSourceCount: profile.distinctSourceCount ?? undefined,
               sanctioned: profile.sanctioned,
               pep: profile.pep,
               closed: profile.closed,
-              riskFactors: unionRiskFactors([{ source: 'getEntity', risk: profile.risk }]).map((u) => u.factor),
-              psaCount: profile.psaCount ?? undefined,
-              relationshipCount: (profile.relationshipCount as Record<string, number> | null) ?? undefined,
+              riskFactors: factors,
               relationshipsTruncated: profile.relationshipsTruncated,
             }
           : undefined,
         owners: [],
         countryIndicators: [],
-        presentEnrichments: [],
-        // The stored values are authoritative for a page render: they are what
-        // a published sentence cites, and recomputing them here from scratch
-        // would risk the page showing a number no Citation points at.
-        ...restoreFromStoredValues(values),
-      },
+        presentEnrichments: presentEnrichments
+          .map((e) => e.source)
+          .filter((source): source is (typeof EXPECTED_ENRICHMENTS)[number] =>
+            (EXPECTED_ENRICHMENTS as readonly string[]).includes(source),
+          ),
+      }),
+      disqualifyingFactors,
     });
   }
-
   return out;
 }
 
-/**
- * Rebuilds the Criterion inputs from the **stored** `criterion_value` rows.
- *
- * A page must render what a Citation points at. Recomputing a Criterion from
- * live rows at render time could show a figure that differs from the one a
- * published sentence cites — which is the drift `criterion_value` is
- * append-only to prevent.
- */
-function restoreFromStoredValues(
-  values: (typeof t.criterionValue.$inferSelect)[],
-): Partial<SupplierScoringInput> {
-  const byKey = new Map(values.map((v) => [v.criterionKey, v]));
-  const raw = (key: string) => (byKey.get(key)?.rawInputs ?? {}) as Record<string, unknown>;
-
-  const proximity = raw('proximity');
-  const tariff = raw('tariff_exposure');
-  const media = raw('media_signal');
-
-  return {
-    nearestPlant:
-      typeof proximity.km === 'number'
-        ? {
-            code: String(proximity.nearestPlant ?? '?'),
-            city: String(proximity.nearestPlantCity ?? '?'),
-            km: proximity.km,
-          }
-        : undefined,
-    tariff:
-      typeof tariff.hsCode === 'string'
-        ? {
-            hsCode: tariff.hsCode,
-            mfnRatePct: typeof tariff.mfnRatePct === 'number' ? tariff.mfnRatePct : null,
-            mexicoRatePct: typeof tariff.mexicoRatePct === 'number' ? tariff.mexicoRatePct : null,
-          }
-        : undefined,
-    news:
-      typeof media.articleCount === 'number'
-        ? {
-            ranOnResolvedLegalName: true,
-            articles: Array.from({ length: media.articleCount }, () => ({
-              seriousFlags: 0,
-              moderateFlags: 0,
-            })),
-          }
-        : undefined,
-  };
+/** Scores one snapshot against a weight vector, for one Category or none. */
+export function scoreSnapshot(
+  snapshot: SupplierSnapshot,
+  weights: WeightVector | undefined,
+  categoryId: string | null,
+) {
+  return scoreFromStoredValues(
+    {
+      supplierId: snapshot.supplierId,
+      displayName: snapshot.displayName,
+      values: snapshot.values,
+      dataConfidence: snapshot.dataConfidenceBand,
+      disqualifyingFactors: snapshot.disqualifyingFactors,
+      matchAccepted: snapshot.matchAccepted,
+      hasCategory: categoryId ? snapshot.categoryIds.includes(categoryId) : snapshot.categoryIds.length > 0,
+      categoryId,
+    },
+    weights,
+  );
 }
 
 /** Does this Supplier survive the filter? Hidden, never removed. */
 function matchesFacets(
-  entry: { rosterCountry: string | null; matchStatus: string | null; score: number | null },
+  entry: { country: string | null; matchStatus: string | null; score: number | null },
   facets: Facets,
 ): boolean {
-  if (facets.country?.length && !facets.country.includes(entry.rosterCountry ?? '')) return false;
+  if (facets.country?.length && !facets.country.includes(entry.country ?? '')) return false;
   if (facets.matchStatus?.length && !facets.matchStatus.includes(entry.matchStatus ?? '')) return false;
   if (facets.scoreBand?.length) {
     const band = entry.score == null ? 'none' : entry.score >= 80 ? 'high' : entry.score >= 60 ? 'mid' : 'low';
@@ -187,30 +196,24 @@ export async function loadShortlist(
     .from(t.supplierCategory)
     .where(eq(t.supplierCategory.categoryId, args.categoryId));
 
-  const inputs = await loadScoringInputs(db, {
+  const snapshots = await loadSupplierSnapshots(db, {
     programId: args.programId,
     supplierIds: bidders.map((b) => b.supplierId),
   });
 
-  const scored = inputs.map(({ input, categoryIds }) =>
-    scoreSupplier(input, args.weights, { hasCategory: categoryIds.includes(args.categoryId) }),
-  );
+  const scored = snapshots.map((snapshot) => scoreSnapshot(snapshot, args.weights, args.categoryId));
 
   // Ranks are computed over the UNFILTERED set, always.
   const { ranked, excluded } = buildShortlist(scored);
-
-  const rosterById = new Map(
-    inputs.map(({ input, matchStatus }) => [input.supplierId, { matchStatus, entityId: input.match.entityId ?? null }]),
-  );
-  const countryById = new Map(inputs.map(({ input }) => [input.supplierId, input.profile?.country ?? null]));
+  const byId = new Map(snapshots.map((s) => [s.supplierId, s]));
 
   const decorate = (row: ShortlistRow): ShortlistEntry => {
-    const meta = rosterById.get(row.supplierId);
+    const snapshot = byId.get(row.supplierId);
     const entry = {
       ...row,
-      rosterCountry: countryById.get(row.supplierId) ?? null,
-      matchStatus: meta?.matchStatus ?? null,
-      entityId: meta?.entityId ?? null,
+      country: snapshot?.country ?? null,
+      matchStatus: snapshot?.matchStatus ?? null,
+      entityId: snapshot?.entityId ?? null,
       visible: true,
     };
     return { ...entry, visible: matchesFacets(entry, args.facets ?? {}) };

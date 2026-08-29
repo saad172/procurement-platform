@@ -259,6 +259,132 @@ export function scoreSupplier(
   };
 }
 
+/**
+ * One stored `criterion_value` row, as a page reads it.
+ *
+ * Deliberately the *stored* value rather than a recomputation: **a page must
+ * render what a Citation points at.** Recomputing a Criterion at render time
+ * could show a figure that differs from the one a published sentence cites,
+ * which is exactly the drift `criterion_value` is append-only to prevent.
+ */
+export type StoredCriterionValue = {
+  criterionKey: string;
+  categoryId: string | null;
+  value: number | null;
+  unknownReason: string | null;
+  rawInputs: Record<string, unknown>;
+  anchorLine: string;
+};
+
+/**
+ * Scores a Supplier from its **stored** Criterion values and a weight vector.
+ *
+ * This is what every page uses, and what makes the live weight rail cheap: a
+ * weight drag needs no upstream call, no Job, and no re-derivation — only the
+ * rows already on the page and the same renormalisation `scoreSupplier` uses.
+ *
+ * `scoreSupplier` computes the values in the first place, during a Job. This
+ * assembles them afterwards. Keeping them separate is what stops a page's
+ * arithmetic drifting away from a Job's.
+ */
+export function scoreFromStoredValues(
+  args: {
+    supplierId: string;
+    displayName: string;
+    values: readonly StoredCriterionValue[];
+    dataConfidence: DataConfidenceBand;
+    disqualifyingFactors: readonly string[];
+    matchAccepted: boolean;
+    hasCategory: boolean;
+    /** Null on a Supplier page showing values that are not Category-specific. */
+    categoryId?: string | null | undefined;
+  },
+  weights: WeightVector = DEFAULT_WEIGHTS,
+): SupplierScore {
+  const w = normaliseWeights(weights);
+
+  // Tariff exposure is stored per Category; the other five at `category = null`.
+  const byKey = new Map<string, StoredCriterionValue>();
+  for (const value of args.values) {
+    if (value.categoryId != null && args.categoryId != null && value.categoryId !== args.categoryId) continue;
+    const existing = byKey.get(value.criterionKey);
+    // Prefer the Category-specific row where both exist.
+    if (!existing || (value.categoryId != null && existing.categoryId == null)) {
+      byKey.set(value.criterionKey, value);
+    }
+  }
+
+  const outcomes = Object.fromEntries(
+    WEIGHTED_CRITERIA.map((key) => {
+      const stored = byKey.get(key);
+      if (!stored) {
+        return [
+          key,
+          {
+            status: 'unknown',
+            reason: 'this criterion has not been computed yet',
+            rawInputs: {},
+            anchorLine: '',
+          } satisfies CriterionOutcome,
+        ];
+      }
+      return [
+        key,
+        stored.value == null
+          ? ({
+              status: 'unknown',
+              reason: stored.unknownReason ?? 'unknown',
+              rawInputs: stored.rawInputs,
+              anchorLine: stored.anchorLine,
+            } satisfies CriterionOutcome)
+          : ({
+              status: 'value',
+              value: stored.value,
+              clamped: false,
+              rawInputs: stored.rawInputs,
+              anchorLine: stored.anchorLine,
+            } satisfies CriterionOutcome),
+      ];
+    }),
+  ) as Record<CriterionKey, CriterionOutcome>;
+
+  const computedKeys = WEIGHTED_CRITERIA.filter((key) => outcomes[key].status === 'value');
+  const totalWeight = computedKeys.reduce((sum, key) => sum + w[key], 0);
+
+  const criteria: ScoredCriterion[] = WEIGHTED_CRITERIA.map((key) => {
+    const outcome = outcomes[key];
+    const effectiveWeight =
+      outcome.status === 'value' && totalWeight > 0 ? (w[key] / totalWeight) * 100 : 0;
+    return {
+      key,
+      outcome,
+      effectiveWeight,
+      contribution: outcome.status === 'value' ? (outcome.value * effectiveWeight) / 100 : 0,
+    };
+  });
+
+  const scoreAbsentReason = !args.matchAccepted
+    ? ('no_match' as const)
+    : !args.hasCategory
+      ? ('no_category' as const)
+      : undefined;
+
+  return {
+    supplierId: args.supplierId,
+    displayName: args.displayName,
+    score: scoreAbsentReason || totalWeight === 0 ? null : criteria.reduce((sum, c) => sum + c.contribution, 0),
+    ...(scoreAbsentReason ? { scoreAbsentReason } : {}),
+    criteria: [...criteria].sort((a, b) => b.contribution - a.contribution),
+    coverage: { computed: computedKeys.length, total: WEIGHTED_CRITERIA.length },
+    dataConfidence: args.dataConfidence,
+    disqualifying: args.disqualifyingFactors.length > 0,
+    disqualifyingFactors: [...args.disqualifyingFactors],
+    renormalisedWeights: Object.fromEntries(
+      criteria.map((c) => [c.key, Number(c.effectiveWeight.toFixed(4))]),
+    ),
+  };
+}
+
 export type ShortlistRow = SupplierScore & { rank: number | null };
 
 /**
