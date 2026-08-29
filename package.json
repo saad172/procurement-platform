@@ -25,7 +25,8 @@
     "check": "pnpm typecheck && pnpm lint && pnpm test",
     "smoke:upstream": "tsx scripts/smoke-upstream.ts",
     "check:founding-example": "tsx scripts/check-founding-example.ts",
-    "smoke:model": "tsx scripts/smoke-model.ts"
+    "smoke:model": "tsx scripts/smoke-model.ts",
+    "smoke:resolve": "tsx scripts/smoke-resolve.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.122.0",

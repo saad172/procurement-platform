@@ -72,6 +72,7 @@ Two checks spend real Sayari credits and so are scripts rather than tests:
 ```bash
 pnpm smoke:upstream           # one live call to each of the five sources
 pnpm smoke:model              # one Tool Runner loop with every pinned setting
+pnpm smoke:resolve [name]     # the eight Discriminators and the auto-accept gate, live
 pnpm check:founding-example   # re-measures the Bosch example the app is built around
 ```
 
@@ -129,9 +130,9 @@ Sequenced so each step is verifiable before the next depends on it
 - [x] 3 — `src/upstream/`
 - [x] 4 — `score.ts` + `staleness.ts` and their unit tests
 - [x] 5 — `src/model/`
-- [ ] 6 — The tool registry
-- [ ] 7 — Worker, `run` and `job`
-- [ ] 8 — The resolve loop
+- [x] 6 — The tool registry
+- [x] 7 — Worker, `run` and `job`
+- [x] 8 — The resolve loop
 - [ ] 9 — Enrichment fan-out and the Corporate family
 - [ ] 10 — Assess and Recommend
 - [ ] 11 — Pages
