@@ -6,7 +6,7 @@ import { defineConfig } from 'drizzle-kit';
  * session, and the transaction pooler does not hold one (SPEC §4.1).
  */
 export default defineConfig({
-  schema: './src/db/schema.ts',
+  schema: './src/db/schema/index.ts',
   out: './src/db/migrations',
   dialect: 'postgresql',
   dbCredentials: {

@@ -19,7 +19,12 @@ services:
       POSTGRES_PASSWORD: procurement
       POSTGRES_DB: procurement
     ports:
-      - '5432:5432'
+      # Published on 5544 rather than 5432 so the project does not collide with
+      # a Postgres already running on the developer's machine — a collision
+      # that presents as `role "procurement" does not exist`, which reads like a
+      # credentials bug rather than a port one. Inside the compose network the
+      # services still talk to `postgres:5432`.
+      - '5544:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
