@@ -254,6 +254,32 @@ export const programRelations = relations(program, ({ many }) => ({
   weights: many(programCriterionWeight),
 }));
 
+/**
+ * Drizzle needs BOTH sides of a relation declared: a `many()` without its
+ * matching `one()` fails at query time with "not enough information to infer
+ * relation", not at build time. So every `many()` above has its inverse here.
+ */
+export const plantRelations = relations(plant, ({ one }) => ({
+  program: one(program, { fields: [plant.programId], references: [program.id] }),
+}));
+
+export const programCriterionWeightRelations = relations(programCriterionWeight, ({ one }) => ({
+  program: one(program, { fields: [programCriterionWeight.programId], references: [program.id] }),
+  criterion: one(criterion, {
+    fields: [programCriterionWeight.criterionKey],
+    references: [criterion.key],
+  }),
+}));
+
+export const categoryFlagRelations = relations(categoryFlag, ({ one }) => ({
+  category: one(category, { fields: [categoryFlag.categoryId], references: [category.id] }),
+  flag: one(tariffFlag, { fields: [categoryFlag.flagKey], references: [tariffFlag.key] }),
+}));
+
+export const countryFlagRelations = relations(countryFlag, ({ one }) => ({
+  flag: one(tariffFlag, { fields: [countryFlag.flagKey], references: [tariffFlag.key] }),
+}));
+
 export const categoryRelations = relations(category, ({ one, many }) => ({
   program: one(program, { fields: [category.programId], references: [program.id] }),
   hsLines: many(categoryHsLine),

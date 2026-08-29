@@ -1,19 +1,28 @@
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { getPooledDb } from '@/db/client';
+
 /**
- * The spine starts at the Program page (SPEC §13.1):
+ * The root redirects to the seeded Programme.
  *
- *   Program → Category → Supplier → Sayari entity → record
- *
- * Pages land in build-order step 11. This placeholder exists so the compose
- * topology is verifiable end to end from step 1 — `docker compose up` should
- * serve something before it serves the real thing.
+ * SPEC §4.3: the Programme and the 50-row roster both seed at boot, so **the
+ * reviewer's first action is Run, not an import**. A landing page asking which
+ * programme to open would be a step between a person and the only programme
+ * there is.
  */
-export default function HomePage() {
+export default async function HomePage() {
+  const program = await getPooledDb().query.program.findFirst();
+  if (program) redirect(`/program/${program.id}` as never);
+
   return (
-    <main style={{ padding: '3rem', maxWidth: '42rem' }}>
+    <main>
       <h1>Procurement Platform</h1>
-      <p>
-        Supplier-sourcing decision support on the Sayari entity graph. The spine —
-        Program → Category → Supplier → entity → record — lands in build-order step 11.
+      <p className="sub">
+        No sourcing programme is seeded yet. Run <code className="mono">pnpm db:seed</code> to load the
+        demo programme and its 50-row roster.
+      </p>
+      <p className="note">
+        <Link href={'/' as never}>Reload</Link> once the seed has run.
       </p>
     </main>
   );

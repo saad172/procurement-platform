@@ -265,3 +265,11 @@ export const traceTurnRelations = relations(traceTurn, ({ one, many }) => ({
   job: one(job, { fields: [traceTurn.jobId], references: [job.id] }),
   toolCalls: many(traceToolCall),
 }));
+
+export const jobRoundRelations = relations(jobRound, ({ one }) => ({
+  job: one(job, { fields: [jobRound.jobId], references: [job.id] }),
+}));
+
+export const traceToolCallRelations = relations(traceToolCall, ({ one }) => ({
+  turn: one(traceTurn, { fields: [traceToolCall.traceTurnId], references: [traceTurn.id] }),
+}));

@@ -57,7 +57,11 @@ services:
       DATABASE_URL: postgres://procurement:procurement@postgres:5432/procurement
       DIRECT_DATABASE_URL: postgres://procurement:procurement@postgres:5432/procurement
     ports:
-      - '3000:3000'
+      # Published on 3100 rather than 3000 for the same reason Postgres is on
+      # 5544: a developer machine often already has something on the default,
+      # and the collision presents as a 404 from someone else's app rather than
+      # as a port error.
+      - '3100:3100'
     depends_on:
       migrate:
         condition: service_completed_successfully

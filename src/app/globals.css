@@ -1,16 +1,124 @@
+/**
+ * One stylesheet. The app is dense, tabular and read rather than browsed, so
+ * the design brief is legibility over decoration: a reader should be able to
+ * follow a number from a Shortlist row to the sentence that cites it without
+ * the interface asking for attention.
+ */
+
 :root {
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  --ink: #16181d;
+  --ink-2: #4a5058;
+  --ink-3: #767d87;
+  --rule: #e3e6ea;
+  --rule-2: #f0f2f4;
+  --paper: #ffffff;
+  --paper-2: #f7f8fa;
+
+  --accent: #1f4fd8;
+  --good: #1a7f4b;
+  --warn: #a15c00;
+  --bad: #b3261e;
+  --amber: #8a6d1f;
+
+  --radius: 6px;
+  --gap: 1rem;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
-html,
-body {
+html, body {
   margin: 0;
   padding: 0;
   font-family: var(--font-sans);
+  color: var(--ink);
+  background: var(--paper-2);
+  font-size: 15px;
+  line-height: 1.5;
 }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.shell { max-width: 78rem; margin: 0 auto; padding: 1.25rem 1.5rem 4rem; }
+
+/* ── Breadcrumb: the only memory of where you came from ── */
+.breadcrumb { font-size: 0.85rem; color: var(--ink-3); margin-bottom: 0.75rem; }
+.breadcrumb a { color: var(--ink-3); }
+.breadcrumb span::after { content: ' / '; color: var(--rule); }
+.breadcrumb span:last-child::after { content: ''; }
+
+h1 { font-size: 1.5rem; margin: 0 0 0.25rem; font-weight: 620; letter-spacing: -0.01em; }
+h2 { font-size: 1.05rem; margin: 2rem 0 0.75rem; font-weight: 600; }
+h3 { font-size: 0.9rem; margin: 1.25rem 0 0.5rem; font-weight: 600; color: var(--ink-2); }
+.sub { color: var(--ink-2); margin: 0 0 1rem; }
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+}
+
+/* ── The Program strip: exactly two figures ── */
+.strip { display: flex; gap: 2rem; flex-wrap: wrap; align-items: baseline; }
+.strip .figure { font-size: 1.15rem; font-weight: 600; }
+.strip .label { font-size: 0.8rem; color: var(--ink-3); display: block; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th {
+  text-align: left; font-weight: 600; color: var(--ink-3); font-size: 0.78rem;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--rule);
+}
+td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--rule-2); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* A filtered row keeps its true rank and is dimmed, never renumbered. */
+tr.hidden-by-filter td { opacity: 0.32; }
+
+.badge {
+  display: inline-block; font-size: 0.72rem; font-weight: 600;
+  padding: 0.1rem 0.42rem; border-radius: 999px;
+  border: 1px solid var(--rule); color: var(--ink-2); background: var(--paper-2);
+  white-space: nowrap;
+}
+.badge.good { color: var(--good); border-color: #b6e0c8; background: #f1fbf5; }
+.badge.warn { color: var(--warn); border-color: #f0dcb4; background: #fdf8ee; }
+.badge.bad  { color: var(--bad);  border-color: #f2c4c1; background: #fdf3f2; }
+.badge.mute { color: var(--ink-3); }
+
+.note { font-size: 0.82rem; color: var(--ink-3); }
+.mono { font-family: var(--font-mono); font-size: 0.82rem; }
+
+/* ── A Criterion is never a bare number ── */
+.criterion-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.criterion-raw { font-size: 0.8rem; color: var(--ink-3); }
+.criterion-unknown { color: var(--ink-3); font-style: italic; }
+
+.grid { display: grid; gap: var(--gap); }
+.grid.two { grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); }
+.grid.four { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+
+/* ── The weight rail ── */
+.rail { display: grid; gap: 0.5rem; }
+.rail-row { display: grid; grid-template-columns: 10rem 1fr 3rem; gap: 0.6rem; align-items: center; }
+.rail-row label { font-size: 0.82rem; color: var(--ink-2); }
+.rail-row output { font-variant-numeric: tabular-nums; text-align: right; font-size: 0.85rem; }
+.rail input[type='range'] { width: 100%; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  font-size: 0.78rem; padding: 0.15rem 0.5rem; border-radius: 999px;
+  background: #fff7e6; border: 1px solid #f0dcb4; color: var(--warn);
+}
+
+.bar { height: 0.5rem; background: var(--rule-2); border-radius: 999px; overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); }
+
+.empty { color: var(--ink-3); padding: 1.5rem; text-align: center; }
+.scroll-x { overflow-x: auto; }

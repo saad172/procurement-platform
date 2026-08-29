@@ -409,6 +409,25 @@ export const citationRelations = relations(citation, ({ one }) => ({
   match: one(match, { fields: [citation.matchId], references: [match.id] }),
 }));
 
+export const roundRelations = relations(round, ({ one }) => ({
+  assessmentVersion: one(assessmentVersion, {
+    fields: [round.assessmentVersionId],
+    references: [assessmentVersion.id],
+  }),
+  recommendationVersion: one(recommendationVersion, {
+    fields: [round.recommendationVersionId],
+    references: [recommendationVersion.id],
+  }),
+}));
+
+export const recommendationPickRelations = relations(recommendationPick, ({ one }) => ({
+  version: one(recommendationVersion, {
+    fields: [recommendationPick.recommendationVersionId],
+    references: [recommendationVersion.id],
+  }),
+  supplier: one(supplier, { fields: [recommendationPick.supplierId], references: [supplier.id] }),
+}));
+
 export const leadRelations = relations(lead, ({ one }) => ({
   program: one(program, { fields: [lead.programId], references: [program.id] }),
   category: one(category, { fields: [lead.categoryId], references: [category.id] }),

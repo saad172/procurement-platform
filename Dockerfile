@@ -29,5 +29,5 @@ COPY --from=build /app/public ./public
 COPY package.json next.config.ts tsconfig.json drizzle.config.ts ./
 COPY src ./src
 
-EXPOSE 3000
+EXPOSE 3100
 CMD ["pnpm", "start"]

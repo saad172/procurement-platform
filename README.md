@@ -42,7 +42,7 @@ docker compose up
 ```
 
 That brings up four things: Postgres on a named volume, a one-shot `migrate`
-service, the Next.js `web` service on <http://localhost:3000>, and the `worker`.
+service, the Next.js `web` service on <http://localhost:3100>, and the `worker`.
 Web and worker both wait for `migrate` to complete successfully, so no process
 ever starts against a schema it does not understand.
 
