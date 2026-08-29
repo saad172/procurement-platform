@@ -129,11 +129,51 @@ export const getSupplierFamily = defineTool({
       return { ok: false, objections: ['this supplier has no accepted match, so it has no profile to hang a family off'] };
     }
     const members = await ctx.db
-      .select()
+      .select({
+        memberEntityId: t.familyMember.memberEntityId,
+        hopDepth: t.familyMember.hopDepth,
+        truncated: t.familyMember.truncated,
+        exploredCount: t.familyMember.exploredCount,
+        reachableCount: t.familyMember.reachableCount,
+        discoveredByJob: t.familyMember.discoveredByJob,
+        label: t.entity.label,
+        country: t.entity.country,
+        sanctioned: t.entity.sanctioned,
+        risk: t.entity.risk,
+      })
       .from(t.familyMember)
+      .innerJoin(t.entity, eq(t.entity.id, t.familyMember.memberEntityId))
       .where(eq(t.familyMember.rootEntityId, match.entityId));
 
-    return { ok: true, data: widget('supplier_family', { entityId: match.entityId, members }) };
+    /**
+     * A **projection**, not the stored rows.
+     *
+     * SPEC §15.2 calls a page read a *thin wrapper over the query each page
+     * already runs for SSR*, and a page renders a member's name, country and
+     * risk badge — never the raw traversal path. Returning the rows wholesale
+     * put ~870,000 tokens into one model turn and fired the assess Job's
+     * token ceiling. The cap did its job; the read was the bug.
+     */
+    return {
+      ok: true,
+      data: widget('supplier_family', {
+        entityId: match.entityId,
+        explored: members.length,
+        truncated: members.some((m) => m.truncated),
+        members: members.map((m) => ({
+          entityId: m.memberEntityId,
+          label: m.label,
+          country: m.country,
+          hopDepth: m.hopDepth,
+          sanctioned: m.sanctioned,
+          // Factor NAMES and levels, which is what a badge needs. The full risk
+          // object stays on the entity, one hop away.
+          riskFactors: Object.entries((m.risk ?? {}) as Record<string, { level?: string }>).map(
+            ([name, detail]) => ({ name, level: detail?.level ?? null }),
+          ),
+        })),
+      }),
+    };
   },
 });
 

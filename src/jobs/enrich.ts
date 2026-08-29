@@ -326,7 +326,17 @@ export async function enrichFamily(
     const entity = terminal as SayariEntity;
     if (entity.id === args.entityId) continue;
     if (!byId.has(entity.id)) {
-      byId.set(entity.id, { entity, path: path.path ?? null, depth: path.path?.length ?? 1 });
+      byId.set(entity.id, {
+        entity,
+        // The SHAPE of the path, not the entities along it. Each hop's entity
+        // is already upserted into `entity` and would be stored twice — and
+        // measured, one raw path was 605 KB, because a traversal payload
+        // carries a complete entity at every hop. What the UI renders is the
+        // route: which relationship types it ran through, and which
+        // `possibly_same_as` hops it took to get there.
+        path: summarisePath(path.path),
+        depth: path.path?.length ?? 1,
+      });
     }
   }
 
@@ -362,6 +372,31 @@ export async function enrichFamily(
   }
 
   return { enrichmentId, members, truncated };
+}
+
+/**
+ * Reduces a traversal path to its route: one entry per hop, carrying the
+ * relationship field and the entity id it reached.
+ *
+ * The entities themselves are upserted into `entity` by the caller, so storing
+ * them again here would duplicate megabytes per Supplier — and a read tool
+ * returning them wholesale is what fired the assess Job's 450,000-token ceiling.
+ */
+function summarisePath(path: unknown): { field: string | null; entityId: string | null }[] {
+  if (!Array.isArray(path)) return [];
+  return path.map((hop) => {
+    const step = (hop ?? {}) as { field?: unknown; entity?: unknown };
+    const entity = step.entity;
+    return {
+      field: typeof step.field === 'string' ? step.field : null,
+      entityId:
+        typeof entity === 'string'
+          ? entity
+          : entity && typeof entity === 'object' && 'id' in entity
+            ? String((entity as { id: unknown }).id)
+            : null,
+    };
+  });
 }
 
 // ── Owner edges ──────────────────────────────────────────────────────────────

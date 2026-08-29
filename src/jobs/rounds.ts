@@ -87,6 +87,14 @@ export async function runProposerEvaluatorLoop<TDraft>(
       // A refinement failure is the model mis-shaping its output. It retries
       // free and THE ROUND COUNTER DOES NOT ADVANCE — charging a Round for
       // punctuation would spend the budget in the wrong place.
+      //
+      // Logged as well as recorded: when every retry fails the Job produces no
+      // draft at all, and the `round` rows that would have explained why are
+      // never persisted, because persisting them is `publishVersion`'s job and
+      // there is nothing to publish.
+      console.error(
+        `[loop] round ${roundN}, free retry ${retry + 1}/${MAX_FREE_RETRIES_PER_ROUND}: ${proposal.message}`,
+      );
       rounds.push({
         n: roundN,
         role: 'proposer',

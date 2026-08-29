@@ -247,7 +247,13 @@ export async function assessSupplier(
         // An Assessment exists only when submit_assessment runs, so a refused
         // or empty turn makes no record at all — the empty-Assessment failure
         // is structurally impossible rather than guarded against.
-        return { kind: 'refinement_failure', message: 'the loop ended without calling submit_assessment' };
+        return {
+          kind: 'refinement_failure',
+          message:
+            `the loop ended without a usable submit_assessment payload ` +
+            `(tools called: ${result.toolUses.map((u) => u.name).join(', ') || 'none'}; ` +
+            `sentences: ${(submitted as { sentences?: unknown[] } | undefined)?.sentences?.length ?? 'none'})`,
+        };
       }
       return { kind: 'draft', draft: submitted, text: JSON.stringify(submitted) };
     },
