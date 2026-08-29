@@ -22,7 +22,9 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "pnpm typecheck && pnpm lint && pnpm test"
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "smoke:upstream": "tsx scripts/smoke-upstream.ts",
+    "check:founding-example": "tsx scripts/check-founding-example.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.122.0",

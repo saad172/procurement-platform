@@ -24,17 +24,26 @@ import tseslint from 'typescript-eslint';
  * lint rule — it quantifies over runtime values (per-surface and per-Round tool
  * lists), which a linter cannot see.
  */
-const UPSTREAM_ONLY_PACKAGES = ['@sayari/sdk'];
-const MODEL_ONLY_PACKAGES = ['@anthropic-ai/sdk'];
+const SAYARI = { group: ['@sayari/sdk', '@sayari/sdk/*'], message: 'Only src/upstream/** may import @sayari/sdk. Every call through src/upstream/call() is cached, metered and traced; a call around it is not. See SPEC §2.4.' };
+const ANTHROPIC = { group: ['@anthropic-ai/sdk', '@anthropic-ai/sdk/*'], message: 'Only src/model/** may import @anthropic-ai/sdk. Every call through src/model/runLoop() writes a trace_turn and a usage_event; a call around it is not counted. See SPEC §2.4.' };
+const SETTLE_MATCH = { group: ['**/domain/match/settle-match', '@/domain/match/settle-match'], message: 'The agents propose and our code settles. No tool on any surface writes match.status or match.entity_id. See SPEC §15.4.' };
 
-const boundary = (packages, allowedDir) => ({
-  name: `no-${packages.join('-')}-outside-${allowedDir}`,
-  patterns: packages.map((pkg) => ({
-    group: [pkg, `${pkg}/*`],
-    message: `Only ${allowedDir} may import ${pkg}. See SPEC §2.4 — the chokepoint exists so every call through it is cached, metered and traced.`,
-  })),
-});
+const NO_OUTBOUND_FETCH = [
+  'error',
+  {
+    name: 'fetch',
+    message:
+      'Outbound fetch belongs in src/upstream/call(), which caches the body and writes a usage_event. See SPEC §2.4.',
+  },
+];
 
+/**
+ * One complete block per directory, rather than several partial blocks that
+ * overlap. `no-restricted-imports` is a single rule: a later block setting it
+ * REPLACES an earlier one for any file matching both, so a partial block is a
+ * silently disabled boundary. Listing every restriction that applies to a
+ * directory in one place is what makes each block readable on its own.
+ */
 export default tseslint.config(
   {
     ignores: [
@@ -69,48 +78,32 @@ export default tseslint.config(
     },
   },
 
-  // ── Chokepoint 1: only src/upstream may reach an upstream service ─────────
+  // ── Everything that is neither chokepoint ─────────────────────────────────
   {
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/upstream/**'],
+    ignores: ['src/upstream/**', 'src/model/**', 'src/tools/**'],
     rules: {
-      'no-restricted-imports': ['error', boundary(UPSTREAM_ONLY_PACKAGES, 'src/upstream/**')],
-      'no-restricted-globals': [
-        'error',
-        {
-          name: 'fetch',
-          message:
-            'Outbound fetch belongs in src/upstream/call(), which caches the body and writes a usage_event. See SPEC §2.4.',
-        },
-      ],
+      'no-restricted-imports': ['error', { patterns: [SAYARI, ANTHROPIC] }],
+      'no-restricted-globals': NO_OUTBOUND_FETCH,
     },
   },
 
-  // ── Chokepoint 2: only src/model may construct an Anthropic client ────────
+  // ── Chokepoint 1: src/upstream may reach an upstream service ──────────────
+  // It may import the Sayari SDK and call fetch — that is its whole job. It may
+  // not construct an Anthropic client.
   {
-    files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/model/**'],
+    files: ['src/upstream/**/*.ts'],
     rules: {
-      'no-restricted-imports': ['error', boundary(MODEL_ONLY_PACKAGES, 'src/model/**')],
+      'no-restricted-imports': ['error', { patterns: [ANTHROPIC] }],
     },
   },
 
-  // Both boundaries apply to most of the tree, and the two config blocks above
-  // would otherwise overwrite each other's `no-restricted-imports`. This block
-  // restates them together for the files that are outside both directories.
+  // ── Chokepoint 2: src/model may construct an Anthropic client ─────────────
   {
-    files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/upstream/**', 'src/model/**'],
+    files: ['src/model/**/*.ts'],
     rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            ...boundary(UPSTREAM_ONLY_PACKAGES, 'src/upstream/**').patterns,
-            ...boundary(MODEL_ONLY_PACKAGES, 'src/model/**').patterns,
-          ],
-        },
-      ],
+      'no-restricted-imports': ['error', { patterns: [SAYARI] }],
+      'no-restricted-globals': NO_OUTBOUND_FETCH,
     },
   },
 
@@ -118,27 +111,21 @@ export default tseslint.config(
   {
     files: ['src/tools/**/*.ts'],
     rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            ...boundary(UPSTREAM_ONLY_PACKAGES, 'src/upstream/**').patterns,
-            ...boundary(MODEL_ONLY_PACKAGES, 'src/model/**').patterns,
-            {
-              group: ['**/domain/match/settle-match', '@/domain/match/settle-match'],
-              message:
-                'The agents propose and our code settles. No tool on any surface writes match.status or match.entity_id. See SPEC §15.4.',
-            },
-          ],
-        },
-      ],
+      'no-restricted-imports': ['error', { patterns: [SAYARI, ANTHROPIC, SETTLE_MATCH] }],
+      'no-restricted-globals': NO_OUTBOUND_FETCH,
     },
   },
 
-  // The worker, the seed and the migrator are processes whose log output IS
-  // their user interface, so `console` is the right call there.
+  // The worker, the seed, the migrator and the scripts are processes whose log
+  // output IS their user interface, so `console` is the right call there.
   {
-    files: ['tests/**/*.ts', 'src/db/seed.ts', 'src/db/migrate.ts', 'src/worker/**/*.ts'],
+    files: [
+      'tests/**/*.ts',
+      'scripts/**/*.ts',
+      'src/db/seed.ts',
+      'src/db/migrate.ts',
+      'src/worker/**/*.ts',
+    ],
     rules: {
       'no-console': 'off',
     },

@@ -1,22 +1,19 @@
 import { relations } from 'drizzle-orm';
-import {
-  boolean,
-  index,
-  integer,
-  jsonb,
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-} from 'drizzle-orm/pg-core';
-import { upstreamErrorKind, upstreamSource, upstreamVia, usageOutcome } from './enums';
+import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { upstreamSource, upstreamVia } from './enums';
 
 /**
  * The upstream layer (SPEC §3.2, §16).
  *
  * `upstream_response` is the cache that makes a re-run cost tokens rather than
  * credits, and the row a replayed test reads instead of the network.
- * `usage_event` is the single home of "what did this cost".
+ *
+ * `usage_event` — the single home of "what did this cost" — deliberately lives
+ * in `runs.ts` instead. It references `run`, `job` and `trace_turn`, all of
+ * which are defined there, and SPEC §5.1's claim that **every amount the app
+ * spends sits inside exactly one Run, with no orphan path** is only true if
+ * those are real foreign keys rather than loose uuid columns. Putting the table
+ * beside its parents is what lets them be.
  */
 
 /**
@@ -46,57 +43,6 @@ export const upstreamResponse = pgTable('upstream_response', {
   // Latest-wins on read: the lookup is (source, endpoint, params_hash) ordered
   // by fetched_at desc, so this index is the read path, not a constraint.
   index('upstream_response_key_idx').on(t.source, t.endpoint, t.paramsHash, t.fetchedAt),
-]);
-
-/**
- * One row per **outbound attempt** (SPEC §3.2, §16.2).
- *
- * Attempt, not call: `maxRetries: 0` is set on the Sayari SDK precisely so that
- * one outbound attempt is one counted row. An SDK-internal retry would have
- * made one `usage_event` cover three requests.
- *
- * Model rows live here too — usage has one home, not two. Deriving spend from
- * `trace_turn` would be blind to chat, which has no Trace (SPEC §3.7).
- */
-export const usageEvent = pgTable('usage_event', {
-  id: uuid('id').primaryKey().defaultRandom(),
-
-  /** Every amount the app spends belongs to exactly one Run (SPEC §5.1). */
-  runId: uuid('run_id').notNull(),
-  /** Null for a chat turn, which spends inside a Run but outside any Job. */
-  jobId: uuid('job_id'),
-
-  /** `sayari` | `gleif` | … for upstream rows; null for model rows. */
-  source: upstreamSource('source'),
-  endpoint: text('endpoint').notNull(),
-  /** Sayari's own endpoint-class bucket, for reconciling against `getUsage()`. */
-  bucket: text('bucket'),
-  via: upstreamVia('via'),
-
-  ms: integer('ms').notNull(),
-  outcome: usageOutcome('outcome').notNull(),
-  errorKind: upstreamErrorKind('error_kind'),
-  /** A cache hit costs no credit; the confirm gate reads this to say so. */
-  cacheHit: boolean('cache_hit').notNull().default(false),
-
-  // ── Model rows only ──
-  /**
-   * Keyed by model id though we only ever ask for one, because server-side
-   * refusal fallback can serve a turn from a model we did not choose
-   * (SPEC §17.5).
-   */
-  model: text('model'),
-  inputTokens: integer('input_tokens'),
-  outputTokens: integer('output_tokens'),
-  cacheCreationInputTokens: integer('cache_creation_input_tokens'),
-  cacheReadInputTokens: integer('cache_read_input_tokens'),
-  /** Ties a model row to the turn it paid for. Null for upstream rows. */
-  traceTurnId: uuid('trace_turn_id'),
-
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [
-  index('usage_event_run_idx').on(t.runId),
-  index('usage_event_job_idx').on(t.jobId),
 ]);
 
 export const upstreamResponseRelations = relations(upstreamResponse, () => ({}));

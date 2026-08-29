@@ -1,5 +1,4 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import * as schema from '@/db/schema';
 
@@ -33,11 +32,15 @@ export async function testDatabaseIsUp(): Promise<boolean> {
   }
 }
 
+/**
+ * Migrations are applied once by `tests/support/global-setup.ts`, not here —
+ * per-file migration raced on Drizzle's migrations table and produced a
+ * silently skipped suite rather than a red one.
+ */
 export async function getTestDb(): Promise<TestDb> {
   if (!db) {
     client = postgres(TEST_DATABASE_URL, { max: 4 });
     db = drizzle(client, { schema });
-    await migrate(db, { migrationsFolder: './src/db/migrations' });
   }
   return db;
 }

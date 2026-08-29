@@ -1,5 +1,6 @@
 import { relations } from 'drizzle-orm';
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -11,7 +12,17 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { program } from './authored';
-import { jobKind, jobState, jobSubjectType, runState, traceFidelity } from './enums';
+import {
+  jobKind,
+  jobState,
+  jobSubjectType,
+  runState,
+  traceFidelity,
+  upstreamErrorKind,
+  upstreamSource,
+  upstreamVia,
+  usageOutcome,
+} from './enums';
 import { upstreamResponse } from './upstream';
 
 /**
@@ -181,6 +192,63 @@ export const traceToolCall = pgTable('trace_tool_call', {
   ms: integer('ms').notNull(),
   ok: jsonb('ok'),
 }, (t) => [index('trace_tool_call_turn_idx').on(t.traceTurnId)]);
+
+/**
+ * One row per **outbound attempt** (SPEC §3.2, §16.2).
+ *
+ * Attempt, not call: `maxRetries: 0` is set on the Sayari SDK precisely so that
+ * one outbound attempt is one counted row. An SDK-internal retry would have
+ * made one `usage_event` cover three requests.
+ *
+ * Model rows live here too — usage has one home, not two. Deriving spend from
+ * `trace_turn` would be blind to chat, which has no Trace (SPEC §3.7).
+ */
+export const usageEvent = pgTable('usage_event', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  /**
+   * Every amount the app spends belongs to exactly one Run (SPEC §5.1). The
+   * foreign key is what makes that a guarantee rather than a convention.
+   */
+  runId: uuid('run_id')
+    .notNull()
+    .references(() => run.id, { onDelete: 'cascade' }),
+  /** Null for a chat turn, which spends inside a Run but outside any Job. */
+  jobId: uuid('job_id').references(() => job.id, { onDelete: 'cascade' }),
+
+  /** `sayari` | `gleif` | … for upstream rows; null for model rows. */
+  source: upstreamSource('source'),
+  endpoint: text('endpoint').notNull(),
+  /** Sayari's own endpoint-class bucket, for reconciling against `getUsage()`. */
+  bucket: text('bucket'),
+  via: upstreamVia('via'),
+
+  ms: integer('ms').notNull(),
+  outcome: usageOutcome('outcome').notNull(),
+  errorKind: upstreamErrorKind('error_kind'),
+  /** A cache hit costs no credit; the confirm gate reads this to say so. */
+  cacheHit: boolean('cache_hit').notNull().default(false),
+
+  // ── Model rows only ──
+  /**
+   * Keyed by model id though we only ever ask for one, because server-side
+   * refusal fallback can serve a turn from a model we did not choose
+   * (SPEC §17.5).
+   */
+  model: text('model'),
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  cacheCreationInputTokens: integer('cache_creation_input_tokens'),
+  cacheReadInputTokens: integer('cache_read_input_tokens'),
+  /** Ties a model row to the turn it paid for. Null for upstream rows. */
+  traceTurnId: uuid('trace_turn_id').references(() => traceTurn.id, { onDelete: 'set null' }),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('usage_event_run_idx').on(t.runId),
+  index('usage_event_job_idx').on(t.jobId),
+]);
+
 
 export const runRelations = relations(run, ({ one, many }) => ({
   program: one(program, { fields: [run.programId], references: [program.id] }),

@@ -18,6 +18,7 @@ Built for the Sayari FDE technical exercise, Scenarios 1 and 2 together.
 | Document | What it is |
 |---|---|
 | [`docs/SPEC.md`](docs/SPEC.md) | The build-ready specification. 22 sections; every decision carries the reason that stops it being re-litigated. |
+| [`docs/BUILD-NOTES.md`](docs/BUILD-NOTES.md) | Everything the build measured that differs from the spec, and whether the decision survives. **Quote this for numbers, not the spec.** |
 | [`CONTEXT.md`](CONTEXT.md) | The glossary, and it is normative. One meaning per word — *Supplier*, *Profile*, *Twin*, *Match*, *Criterion*, *Pick*, *Run*, *Job*. Read it before naming anything. |
 | [`.scratch/wayfinder/map.md`](.scratch/wayfinder/map.md) | The decision record: 26 planning tickets, each naming what was rejected and why. |
 | [`docs/seed/demo-program.md`](docs/seed/demo-program.md) | The approved demo data — one Sourcing Program, four Plants, eight Categories, a 50-row roster. |
@@ -63,8 +64,20 @@ pnpm worker     # in a second terminal
 ### Checks
 
 ```bash
-pnpm check      # typecheck + lint + tests
+pnpm check      # typecheck + lint + tests — no credentials, no network
 ```
+
+Two checks spend real Sayari credits and so are scripts rather than tests:
+
+```bash
+pnpm smoke:upstream           # one live call to each of the five sources
+pnpm check:founding-example   # re-measures the Bosch example the app is built around
+```
+
+The suite is keyless by construction (`docs/SPEC.md` §19.1): it runs off cached
+response bodies, and a cache miss throws naming the key it missed rather than
+falling through to a live call. The honest cost is that **live upstream
+behaviour never reaches CI** — which is what those two scripts are for.
 
 ---
 
@@ -111,8 +124,8 @@ Sequenced so each step is verifiable before the next depends on it
 ([`docs/SPEC.md` §21](docs/SPEC.md)).
 
 - [x] 1 — Skeleton: Next.js + Drizzle + compose, boot validation, import boundaries
-- [ ] 2 — Schema and seed
-- [ ] 3 — `src/upstream/`
+- [x] 2 — Schema and seed
+- [x] 3 — `src/upstream/`
 - [ ] 4 — `score.ts` + `staleness.ts` and their unit tests
 - [ ] 5 — `src/model/`
 - [ ] 6 — The tool registry

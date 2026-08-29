@@ -139,27 +139,6 @@ CREATE TABLE "upstream_response" (
 	"fetched_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "usage_event" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"run_id" uuid NOT NULL,
-	"job_id" uuid,
-	"source" "upstream_source",
-	"endpoint" text NOT NULL,
-	"bucket" text,
-	"via" "upstream_via",
-	"ms" integer NOT NULL,
-	"outcome" "usage_outcome" NOT NULL,
-	"error_kind" "upstream_error_kind",
-	"cache_hit" boolean DEFAULT false NOT NULL,
-	"model" text,
-	"input_tokens" integer,
-	"output_tokens" integer,
-	"cache_creation_input_tokens" integer,
-	"cache_read_input_tokens" integer,
-	"trace_turn_id" uuid,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE "entity" (
 	"id" text PRIMARY KEY NOT NULL,
 	"label" text NOT NULL,
@@ -546,6 +525,27 @@ CREATE TABLE "trace_turn" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "usage_event" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"run_id" uuid NOT NULL,
+	"job_id" uuid,
+	"source" "upstream_source",
+	"endpoint" text NOT NULL,
+	"bucket" text,
+	"via" "upstream_via",
+	"ms" integer NOT NULL,
+	"outcome" "usage_outcome" NOT NULL,
+	"error_kind" "upstream_error_kind",
+	"cache_hit" boolean DEFAULT false NOT NULL,
+	"model" text,
+	"input_tokens" integer,
+	"output_tokens" integer,
+	"cache_creation_input_tokens" integer,
+	"cache_read_input_tokens" integer,
+	"trace_turn_id" uuid,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "thread" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"program_id" uuid NOT NULL,
@@ -633,6 +633,9 @@ ALTER TABLE "run" ADD CONSTRAINT "run_program_id_program_id_fk" FOREIGN KEY ("pr
 ALTER TABLE "trace_tool_call" ADD CONSTRAINT "trace_tool_call_trace_turn_id_trace_turn_id_fk" FOREIGN KEY ("trace_turn_id") REFERENCES "public"."trace_turn"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "trace_tool_call" ADD CONSTRAINT "trace_tool_call_upstream_response_id_upstream_response_id_fk" FOREIGN KEY ("upstream_response_id") REFERENCES "public"."upstream_response"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "trace_turn" ADD CONSTRAINT "trace_turn_job_id_job_id_fk" FOREIGN KEY ("job_id") REFERENCES "public"."job"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "usage_event" ADD CONSTRAINT "usage_event_run_id_run_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."run"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "usage_event" ADD CONSTRAINT "usage_event_job_id_job_id_fk" FOREIGN KEY ("job_id") REFERENCES "public"."job"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "usage_event" ADD CONSTRAINT "usage_event_trace_turn_id_trace_turn_id_fk" FOREIGN KEY ("trace_turn_id") REFERENCES "public"."trace_turn"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread" ADD CONSTRAINT "thread_program_id_program_id_fk" FOREIGN KEY ("program_id") REFERENCES "public"."program"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_message" ADD CONSTRAINT "thread_message_thread_id_thread_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."thread"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "category_program_code_key" ON "category" USING btree ("program_id","code");--> statement-breakpoint
@@ -643,8 +646,6 @@ CREATE INDEX "supplier_program_idx" ON "supplier" USING btree ("program_id");-->
 CREATE UNIQUE INDEX "supplier_program_roster_index_key" ON "supplier" USING btree ("program_id","roster_index");--> statement-breakpoint
 CREATE INDEX "supplier_category_category_idx" ON "supplier_category" USING btree ("category_id");--> statement-breakpoint
 CREATE INDEX "upstream_response_key_idx" ON "upstream_response" USING btree ("source","endpoint","params_hash","fetched_at");--> statement-breakpoint
-CREATE INDEX "usage_event_run_idx" ON "usage_event" USING btree ("run_id");--> statement-breakpoint
-CREATE INDEX "usage_event_job_idx" ON "usage_event" USING btree ("job_id");--> statement-breakpoint
 CREATE INDEX "entity_country_idx" ON "entity" USING btree ("country");--> statement-breakpoint
 CREATE INDEX "entity_lei_idx" ON "entity" USING btree ("lei");--> statement-breakpoint
 CREATE UNIQUE INDEX "entity_relationship_edge_key" ON "entity_relationship" USING btree ("from_entity_id","to_entity_id","relationship_type","source_record_id");--> statement-breakpoint
@@ -684,5 +685,7 @@ CREATE UNIQUE INDEX "job_round_job_n_key" ON "job_round" USING btree ("job_id","
 CREATE INDEX "run_program_idx" ON "run" USING btree ("program_id","created_at");--> statement-breakpoint
 CREATE INDEX "trace_tool_call_turn_idx" ON "trace_tool_call" USING btree ("trace_turn_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "trace_turn_job_n_key" ON "trace_turn" USING btree ("job_id","n");--> statement-breakpoint
+CREATE INDEX "usage_event_run_idx" ON "usage_event" USING btree ("run_id");--> statement-breakpoint
+CREATE INDEX "usage_event_job_idx" ON "usage_event" USING btree ("job_id");--> statement-breakpoint
 CREATE INDEX "thread_program_idx" ON "thread" USING btree ("program_id","created_at");--> statement-breakpoint
 CREATE INDEX "thread_message_thread_idx" ON "thread_message" USING btree ("thread_id","created_at");
