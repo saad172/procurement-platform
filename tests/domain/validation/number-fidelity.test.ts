@@ -104,6 +104,21 @@ describe('identifiers match as STRINGS, never as numbers', () => {
     expect(failures[0]!.kind).toBe('identifier');
   });
 
+  it('does NOT read an ordinary hyphenated word as an entity id', () => {
+    // Measured: "state-owned-enterprise" is exactly 22 characters of letters
+    // and hyphens, and a bare {22} length check rejected it as an unresolvable
+    // entity id — a validator objecting to a word. Real Sayari ids mix cases
+    // with digits, so all three classes are required.
+    expect(checkNumberFidelity('A state-owned-enterprise finding sits on the family.', candidates)).toEqual([]);
+    expect(checkNumberFidelity('It is a forced-labour-reporting entity here.', candidates)).toEqual([]);
+  });
+
+  it('still reads a real Sayari entity id as an identifier', () => {
+    const withEntity = candidatesFrom({}, [{ entityId: 'LAtrDml3ulKGjNIIFGSNAg' }]);
+    expect(checkNumberFidelity('The profile is LAtrDml3ulKGjNIIFGSNAg.', withEntity)).toEqual([]);
+    expect(checkNumberFidelity('The profile is bryNuZ2GwwXGB74Rm75-Zw.', withEntity)).toHaveLength(1);
+  });
+
   it('accepts an LEI that appears on a cited row', () => {
     expect(checkNumberFidelity('Its LEI is W38RGI023J3WT1HWRP32.', candidates)).toEqual([]);
   });

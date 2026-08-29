@@ -74,6 +74,7 @@ pnpm smoke:upstream           # one live call to each of the five sources
 pnpm smoke:model              # one Tool Runner loop with every pinned setting
 pnpm smoke:resolve [name]     # the eight Discriminators and the auto-accept gate, live
 pnpm smoke:enrich [name] [id] # the six enrichment sources and the Corporate family
+pnpm smoke:assess [name]      # the full proposer/evaluator loop, published
 pnpm check:founding-example   # re-measures the Bosch example the app is built around
 ```
 
@@ -135,7 +136,7 @@ Sequenced so each step is verifiable before the next depends on it
 - [x] 7 — Worker, `run` and `job`
 - [x] 8 — The resolve loop
 - [x] 9 — Enrichment fan-out and the Corporate family
-- [x] 10 — Assess and Recommend (validators; loops next)
+- [x] 10 — Assess and Recommend
 - [ ] 11 — Pages
 - [ ] 12 — Chat
 - [ ] 13 — Discover

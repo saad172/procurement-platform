@@ -48,12 +48,22 @@ const DATE_PATTERN = /\b(\d{4}-\d{2}-\d{2})\b/g;
 
 /**
  * An identifier, matched as a string: an HS code (`8544.30`, `8507.60.00.10`),
- * a 20-character LEI, or a Sayari entity id.
+ * a 20-character LEI, or a 22-character Sayari entity id.
  *
- * These are recognised *before* numbers, so `8544.30` is never decomposed into
- * the numbers 8544 and 30.
+ * Recognised *before* numbers, so `8544.30` is never decomposed into the
+ * numbers 8544 and 30.
+ *
+ * **The entity-id shape needs more than a length.** A bare
+ * `[A-Za-z0-9_-]{22}` matches ordinary hyphenated English of exactly that
+ * length — measured, it rejected the phrase *"state-owned-enterprise"* as an
+ * unresolvable entity id, which is a validator objecting to a word. Real Sayari
+ * ids are base64url-ish and mix cases with digits (`LAtrDml3ulKGjNIIFGSNAg`,
+ * `bryNuZ2GwwXGB74Rm75-Zw`), so all three character classes are required.
  */
-const IDENTIFIER_PATTERN = /\b(?:\d{4}\.\d{2}(?:\.\d{2}){0,2}|[A-Z0-9]{20}|[A-Za-z0-9_-]{22})\b/g;
+const HS_CODE = String.raw`\d{4}\.\d{2}(?:\.\d{2}){0,2}`;
+const LEI = String.raw`[A-Z0-9]{20}`;
+const ENTITY_ID = String.raw`(?=[A-Za-z0-9_-]{22}\b)(?=[^\s]*[a-z])(?=[^\s]*[A-Z])(?=[^\s]*\d)[A-Za-z0-9_-]{22}`;
+const IDENTIFIER_PATTERN = new RegExp(String.raw`\b(?:${HS_CODE}|${LEI}|${ENTITY_ID})\b`, 'g');
 
 /** A number, with optional thousands separators, decimals and a trailing %. */
 const NUMBER_PATTERN = /(?<![\w.\-])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(%)?/g;
