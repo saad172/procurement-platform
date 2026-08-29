@@ -300,7 +300,7 @@ export const sayariNegativeNews = defineTool({
   spends: ['sayari'],
   latency: 'slow',
   handler: async (input, ctx) => {
-    const r = await ctx.upstream.sayari.negativeNews({ q: input.resolvedLegalName });
+    const r = await ctx.upstream.sayari.negativeNews({ name: input.resolvedLegalName });
     return { ok: true, data: sourceResult('Sayari negative news', r.cacheHit, r.data.data ?? []) };
   },
 });
@@ -320,8 +320,8 @@ export const sayariTradeSearch = defineTool({
   latency: 'slow',
   handler: async (input, ctx) => {
     const r = await ctx.upstream.sayari.tradeSearchSuppliers({
-      hs_codes: input.hsCodes,
-      arrival_country: input.arrivalCountries,
+      hsCodes: input.hsCodes,
+      arrivalCountries: input.arrivalCountries,
       limit: input.limit ?? 100,
     });
     return { ok: true, data: sourceResult('Sayari trade', r.cacheHit, r.data.data ?? []) };

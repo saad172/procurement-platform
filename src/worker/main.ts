@@ -2,6 +2,8 @@
 import 'dotenv/config';
 import { boot } from '@/config/boot';
 import { closeDirectDb, getDirectDb } from '@/db/client';
+import { createUpstream } from '@/upstream';
+import { enrichSupplier } from '@/jobs/enrich-supplier';
 import { runWorker } from './poll';
 
 /**
@@ -43,9 +45,36 @@ async function main(): Promise<void> {
   await runWorker(db, {
     concurrency: env.WORKER_CONCURRENCY,
     pollIntervalMs: env.WORKER_POLL_INTERVAL_MS,
-    // Handlers arrive with their build-order steps: resolve (8), enrich and
-    // traverse (9), assess and recommend (10), discover (13).
-    handlers: {},
+    handlers: {
+      /**
+       * Deterministic: no model runs, so this Job needs no fixture and calls
+       * the upstream wrapper directly rather than going through the tool
+       * registry, which is a model-facing catalog.
+       */
+      enrich: async (job, database) => {
+        const supplier = await database.query.supplier.findFirst({
+          where: (row, { eq: equals }) => equals(row.id, job.subjectId),
+        });
+        if (!supplier) return { state: 'failed', error: `no supplier ${job.subjectId}` };
+        const upstream = createUpstream({
+          db: database,
+          runId: job.runId,
+          jobId: job.id,
+          credentials: {
+            sayariClientId: env.SAYARI_CLIENT_ID,
+            sayariClientSecret: env.SAYARI_CLIENT_SECRET,
+            nominatimUserAgent: env.NOMINATIM_USER_AGENT,
+          },
+        });
+        await enrichSupplier(
+          { db: database, upstream, jobId: job.id },
+          { supplierId: supplier.id, programId: supplier.programId },
+        );
+        return { state: 'done' };
+      },
+      // The rest arrive with their build-order steps: resolve (8, wiring next),
+      // traverse (9), assess and recommend (10), discover (13).
+    },
     shouldStop: () => shuttingDown,
   });
 

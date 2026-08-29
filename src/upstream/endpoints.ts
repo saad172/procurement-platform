@@ -266,7 +266,7 @@ export const sayariNegativeNews = defineEndpoint({
     );
   },
   projection: negativeNewsSchema,
-} as EndpointDef<{ q: string } & Record<string, unknown>, z.infer<typeof negativeNewsSchema>>);
+} as EndpointDef<{ name: string } & Record<string, unknown>, z.infer<typeof negativeNewsSchema>>);
 
 /** Discover's mechanism: who ships this HS line into these territories. */
 export const sayariTradeSearchSuppliers = defineEndpoint({
@@ -278,14 +278,28 @@ export const sayariTradeSearchSuppliers = defineEndpoint({
   normalizeParams: (p) => flat(p),
   dispatch: async (params, deps) => {
     const client = getSayariClient(deps.credentials);
+    // `filter` carries the HS lines and arrival countries; `q` is free text.
+    // Naming them here rather than at every call site is the endpoint table's
+    // whole purpose — a caller says what it wants, not how the API spells it.
+    const request = {
+      limit: params.limit,
+      ...(params.q ? { q: params.q } : {}),
+      filter: {
+        ...(params.hsCodes ? { hs_code: params.hsCodes } : {}),
+        ...(params.arrivalCountries ? { arrival_country: params.arrivalCountries } : {}),
+      },
+    };
     return viaSdkWithRawFallback(
-      () => client.trade.searchSuppliers(params as never, requestOptions(deps)),
-      () => ({ path: '/v1/trade/search/suppliers', method: 'POST' as const, body: params }),
+      () => client.trade.searchSuppliers(request as never, requestOptions(deps)),
+      () => ({ path: '/v1/trade/search/suppliers', method: 'POST' as const, body: request }),
       deps,
     );
   },
   projection: tradeSearchSchema,
-} as EndpointDef<Record<string, unknown>, z.infer<typeof tradeSearchSchema>>);
+} as EndpointDef<
+  { hsCodes?: string[]; arrivalCountries?: string[]; q?: string; limit?: number },
+  z.infer<typeof tradeSearchSchema>
+>);
 
 /** Account-wide, rolling-year, seven counters, no dollars (SPEC §18.1). */
 export const sayariUsage = defineEndpoint({

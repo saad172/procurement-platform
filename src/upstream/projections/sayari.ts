@@ -226,23 +226,35 @@ const traversalSchemaInner = z
  * `negativeNews` takes a **bare name**, so disambiguation is ours — the input
  * is always the resolved legal name (SPEC §7.1).
  */
-const negativeNewsSchemaInner = z
+const negativeNewsArticle = z
   .object({
-    data: z
-      .array(
-        z
-          .object({
-            title: z.string().nullish(),
-            source: z.string().nullish(),
-            url: z.string().nullish(),
-            published: z.string().nullish(),
-            risk_flags: z.union([z.array(z.string()), z.record(z.string(), z.unknown())]).nullish(),
-          })
-          .loose(),
-      )
-      .nullish(),
+    title: z.string().nullish(),
+    source: z.string().nullish(),
+    url: z.string().nullish(),
+    snippet: z.string().nullish(),
+    published: z.string().nullish(),
+    /**
+     * Sayari's own flags, e.g. "Human Rights", "Labor Dispute", "Law
+     * Enforcement or Regulatory Action". These are what the Media signal
+     * Criterion weights — a raw article count would let nine unflagged mentions
+     * of a common trade name outweigh one flagged report.
+     */
+    risk_flags: z.union([z.array(z.string()), z.record(z.string(), z.unknown())]).nullish(),
+    search_term: z.unknown().nullish(),
   })
   .loose();
+
+/**
+ * **Measured: the endpoint returns a BARE ARRAY**, not `{ data: [...] }` as
+ * every other Sayari endpoint does. Both shapes are accepted and normalised, so
+ * callers see one thing.
+ */
+const negativeNewsSchemaInner = z
+  .union([
+    z.array(negativeNewsArticle),
+    z.object({ data: z.array(negativeNewsArticle).nullish() }).loose(),
+  ])
+  .transform((value) => (Array.isArray(value) ? { data: value } : value));
 
 /** Trade counterparties — Discover's mechanism (SPEC §11). */
 const tradeSearchSchemaInner = z
