@@ -60,8 +60,30 @@ export type RunLoopParams = {
   toolDigest?: { names: string[]; hash: string } | undefined;
 };
 
+/** One `tool_use` block the model emitted, whether or not the runner ran it. */
+export type EmittedToolUse = { name: string; input: unknown };
+
 export type RunLoopOutcome =
-  | { status: 'done'; finalMessage: unknown; turns: number; toolCalls: number; tokens: number }
+  | {
+      status: 'done';
+      finalMessage: unknown;
+      /**
+       * Every `tool_use` block the model emitted across the loop.
+       *
+       * The agents **propose** and our code settles, so the load-bearing read
+       * of a `submit_*` payload is taken from HERE rather than from the tool's
+       * own `run()`. A terminal tool — one the model calls last, with nothing
+       * left to say afterwards — may or may not be executed by the runner
+       * depending on how the loop terminates, and that is a detail of the SDK
+       * rather than of this design. Reading the proposal out of the message
+       * makes the write path independent of it, and it is a truer statement of
+       * the architecture besides.
+       */
+      toolUses: EmittedToolUse[];
+      turns: number;
+      toolCalls: number;
+      tokens: number;
+    }
   /** A cap fired: a number you set. Amber, and re-runnable. */
   | { status: 'terminated'; reason: string; turns: number; toolCalls: number; tokens: number }
   /** The run budget was reached at a Round boundary. The ONLY resumable stop. */

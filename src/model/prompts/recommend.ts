@@ -51,7 +51,17 @@ criterion values or the shortlist.
 WHAT YOU MUST DISCLOSE
 Any shortlisted supplier whose Assessment ended with unresolved objections must
 be named in an open question. Inheriting an unresolved disagreement silently is
-the failure this rule exists to stop.`;
+the failure this rule exists to stop.
+
+HOW YOU FINISH — THIS IS THE ONLY WAY TO RECORD ANYTHING
+Read what you need, then call submit_recommendation with your picks and every
+sentence. Prose in your reply is not recorded anywhere: a recommendation exists
+only when submit_recommendation runs, so a perfectly written answer that does
+not call it has produced nothing at all.
+
+Call it exactly once, when you have everything. If the code checks reject the
+submission you will be told what failed, in those words, and you will get
+another attempt.`;
 
 export const evaluatorSystem = `You review a draft recommendation against the evidence it was written from.
 
@@ -68,7 +78,12 @@ THE RUBRIC — six items, each pass, fail or can't-tell, one line each
   omission          a material fact in the brief the draft ignores
 
 Objections that survive ${MAX_ROUNDS} rounds are published as dissent. A run must
-complete.`;
+complete.
+
+HOW TO ANSWER
+Give one line per rubric item, each marked pass, fail or can't-tell. Where an
+item fails, say what specifically is wrong so the lead can fix it. If every item
+passes, say so plainly — the words "every item passes" are read literally.`;
 
 export type RecommendInput = {
   programName: string;

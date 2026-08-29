@@ -36,6 +36,10 @@ Discriminators with one line of reasoning each, and a confidence. Never prose.
 "Can't tell" is a real verdict and is not the same as "failed" — use it when the
 evidence is absent rather than contrary.
 
+HOW YOU FINISH — THIS IS THE ONLY WAY TO RECORD ANYTHING
+Search as much as you need, then call submit_match_proposal. Prose in your reply
+is not recorded: a proposal exists only when that tool runs.
+
 THE ONE THING THAT MATTERS MOST
 The top hit is frequently the wrong company. A divested business keeps its old
 name in alias data; an investment arm sits at the parent's exact address; a
@@ -65,6 +69,9 @@ WHAT YOU RETURN
 One entity id or none, a verdict for every one of the eight Discriminators with
 one line of reasoning each, and a confidence. Never prose. "Can't tell" is a real
 verdict and is not the same as "failed".
+
+HOW YOU FINISH — THIS IS THE ONLY WAY TO RECORD ANYTHING
+Call submit_match_verdict. Prose in your reply is not recorded.
 
 You may contradict a verdict you would have given on different evidence. That is
 correct: it means the evidence changed, not that you are unstable.`;

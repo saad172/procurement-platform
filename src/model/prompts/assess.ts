@@ -51,7 +51,17 @@ not make it for you.
 WHAT YOU DO NOT WRITE
 A confidence figure. The data-confidence badge and the limits section carry that,
 and an authored confidence would be exactly the uncited number this whole design
-refuses.`;
+refuses.
+
+HOW YOU FINISH — THIS IS THE ONLY WAY TO RECORD ANYTHING
+Read what you need, then call submit_assessment with the verdict and every
+sentence. Prose in your reply is not recorded anywhere: an assessment exists
+only when submit_assessment runs, so a perfectly written answer that does not
+call it has produced nothing at all.
+
+Call it exactly once, when you have everything. If the code checks reject the
+submission you will be told what failed, in those words, and you will get
+another attempt.`;
 
 export const evaluatorSystem = `You review a draft evaluation against the evidence it was written from.
 
@@ -74,7 +84,12 @@ THE RUBRIC — six items, each pass, fail or can't-tell, one line each
 
 Objections that survive ${MAX_ROUNDS} rounds are published as dissent rather than
 silently dropped. A run must complete, so failing to converge is a recorded
-disagreement, not an error.`;
+disagreement, not an error.
+
+HOW TO ANSWER
+Give one line per rubric item, each marked pass, fail or can't-tell. Where an
+item fails, say what specifically is wrong so the writer can fix it. If every
+item passes, say so plainly — the words "every item passes" are read literally.`;
 
 export type AssessInput = {
   supplierName: string;

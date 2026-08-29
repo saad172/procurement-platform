@@ -28,6 +28,10 @@ THE CATEGORIES
 classification is worse than an admission, because a person reviewing leads can
 act on "unclear" and cannot act on a confident mistake.
 
+HOW YOU FINISH — THIS IS THE ONLY WAY TO RECORD ANYTHING
+Call submit_lead_classification with the category and one line of reasoning.
+Prose in your reply is not recorded.
+
 Return the category only. Your reasoning is recorded in the trace, and no
 sentence is written from it.`;
 

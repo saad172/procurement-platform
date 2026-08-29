@@ -1,4 +1,5 @@
 import type { BetaMessage } from '@anthropic-ai/sdk/resources/beta';
+import { eq, sql } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { MODEL_PRICE_USD_PER_MTOK } from '@/config/constants';
 import { getAnthropicClient } from './client';
@@ -93,6 +94,7 @@ export async function runLoop(
   let toolCalls = 0;
   let tokens = 0;
   let lastMessage: BetaMessage | undefined;
+  const toolUses: { name: string; input: unknown }[] = [];
 
   try {
     for await (const message of runner) {
@@ -101,12 +103,15 @@ export async function runLoop(
       lastMessage = turn;
 
       // ── Write, before checking anything ──────────────────────────────────
+      for (const block of turn.content) {
+        if (block.type === 'tool_use') toolUses.push({ name: block.name, input: block.input });
+      }
       const turnToolCalls = toolCallsIn(turn);
       const turnTokens = tokensOf(turn);
       toolCalls += turnToolCalls;
       tokens += turnTokens;
 
-      const traceTurnId = await writeTurn(ctx, params, turn, turns);
+      const traceTurnId = await writeTurn(ctx, params, turn);
       await writeUsage(ctx, turn, traceTurnId);
 
       // ── A whole-chain refusal fails the Job ──────────────────────────────
@@ -173,10 +178,13 @@ export async function runLoop(
       // here means the abort raced the iterator, so report what we counted.
       return { status: 'terminated', reason: 'aborted at a ceiling', turns, toolCalls, tokens };
     }
+    // Named loudly: a failure here is something only we can fix, and a silent
+    // one reads to the caller as the model mis-shaping its output.
+    console.error(`[model] runLoop(${params.loop}) failed:`, error);
     return { status: 'failed', error: error instanceof Error ? error.message : String(error) };
   }
 
-  return { status: 'done', finalMessage: lastMessage, turns, toolCalls, tokens };
+  return { status: 'done', finalMessage: lastMessage, toolUses, turns, toolCalls, tokens };
 }
 
 /**
@@ -190,19 +198,35 @@ async function writeTurn(
   ctx: ModelContext,
   params: RunLoopParams,
   message: BetaMessage,
-  n: number,
 ): Promise<string | undefined> {
   if (!ctx.jobId) return undefined; // chat has no Trace; the transcript is the record
+
+  /**
+   * `n` is **continuous across every call within one Job**, not per call.
+   *
+   * A Job runs `runLoop` several times — once per Round, plus a free retry when
+   * the model mis-shapes its output — and a per-call counter restarts at 1 each
+   * time, which collides with the `(job_id, n)` unique index. The collision
+   * then surfaces as a *failed* loop, which the caller reads as a refinement
+   * failure, which retries and collides again. One trace row is a turn of the
+   * JOB, not of the call.
+   */
+  const [{ next }] = (await ctx.db
+    .select({ next: sql<number>`coalesce(max(${t.traceTurn.n}), 0) + 1` })
+    .from(t.traceTurn)
+    .where(eq(t.traceTurn.jobId, ctx.jobId))) as [{ next: number }];
+
   const [row] = await ctx.db
     .insert(t.traceTurn)
     .values({
       jobId: ctx.jobId,
-      n,
+      n: next,
       request: {
         loop: params.loop,
         model: LOOP_SETTINGS[params.loop].model,
         effort: LOOP_SETTINGS[params.loop].effort,
         roundN: params.roundN ?? null,
+        system: params.system,
       },
       response: message as never,
       stopReason: message.stop_reason ?? null,
