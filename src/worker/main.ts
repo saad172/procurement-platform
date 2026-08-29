@@ -1,7 +1,7 @@
 // Next.js loads `.env` itself; a plain Node entrypoint has to ask.
 import 'dotenv/config';
 import { closeDirectDb } from '@/db/client';
-import { loadEnv } from '@/config/env';
+import { boot } from '@/config/boot';
 
 /**
  * The worker process (SPEC §2.2).
@@ -29,7 +29,7 @@ async function shutdown(signal: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const env = loadEnv();
+  const env = boot();
 
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
