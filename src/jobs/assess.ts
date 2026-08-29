@@ -344,20 +344,55 @@ function textOf(result: Awaited<ReturnType<typeof runLoop>>): string {
     .trim();
 }
 
+/** The six rubric items, which are also what the parse anchors on. */
+export const RUBRIC_ITEMS = [
+  'support',
+  'strength',
+  'number fidelity',
+  'caveats',
+  'eligibility',
+  'omission',
+] as const;
+
 /**
- * Reads the evaluator's prose into objections.
+ * Reads the evaluator's rubric into objections.
  *
- * Deliberately lenient about the shape and strict about the meaning: a rubric
- * item marked `fail` is an objection, and an evaluator that says everything
- * passes produces none. The rubric text itself is stored verbatim on the Round,
- * so nothing is lost to this parse.
+ * **Anchored on the six item names, not on the word "fail".** The first version
+ * searched every line for `/fail/` and objected on any hit — which fires on
+ * *"caveats: pass — no mandatory line is missing, so this does not fail"*. A
+ * validator that objects to a passing verdict costs a Round for nothing, and
+ * three of those is a version published with objections nobody raised.
+ *
+ * So a line counts only when it names one of the six items **and** marks it
+ * failed. The rubric text is stored verbatim on the Round either way, so
+ * nothing is lost to this parse — it decides whether a Round is spent, not what
+ * is recorded.
+ *
+ * `output_config.format` would make this structural rather than parsed, and is
+ * deliberately not used: SPEC §17.8 keeps the *tool* as the only write path, so
+ * a schema-constrained final message would be a second way to produce a record.
+ * The rubric is a Round annotation rather than a record, but the rule is worth
+ * more than the convenience.
  */
 export function parseObjections(text: string): string[] {
-  const lines = text.split('\n').map((line) => line.trim());
-  const failures = lines.filter((line) => /\bfail(ed|s)?\b/i.test(line) && !/\bno\s+fail/i.test(line));
-  if (failures.length > 0) return failures;
-  if (/every item passes|all six pass|no objections/i.test(text)) return [];
-  return [];
+  const objections: string[] = [];
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (line.length === 0) continue;
+
+    // Strip markdown emphasis and list markers so `**support** — fail` matches.
+    const plain = line.replace(/[*_`]/g, '').replace(/^[-•\d.)\s]+/, '');
+    const item = RUBRIC_ITEMS.find((name) => new RegExp(`^${name}\\b`, 'i').test(plain));
+    if (!item) continue;
+
+    // The verdict is what follows the item name, up to the first sentence end —
+    // so a later "does not fail" in the explanation cannot flip a pass.
+    const verdict = plain.slice(item.length).replace(/^[\s:—–-]+/, '').split(/[.;]/)[0] ?? '';
+    if (/^\s*fail(ed|s)?\b/i.test(verdict)) objections.push(plain);
+  }
+
+  return objections;
 }
 
 export { citationKey };
