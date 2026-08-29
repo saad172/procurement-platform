@@ -4,6 +4,7 @@ import { eq, or } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
 import * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
+import { ChatDock } from '@/components/chat-dock';
 import { parseRiskObject, effectiveLevel, isCountryDerived, isTwinFactor, variantOf } from '@/domain/scoring/risk-factors';
 
 /**
@@ -184,6 +185,7 @@ export default async function EntityPage({
       <p className="note" style={{ marginTop: '1rem' }}>
         <Link href={`/program/${programId}` as never}>← back to the programme</Link>
       </p>
+      <ChatDock programId={programId} />
     </main>
   );
 }

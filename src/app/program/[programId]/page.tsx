@@ -4,6 +4,7 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
 import * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
+import { ChatDock } from '@/components/chat-dock';
 import { parseViewState } from '@/lib/view-state';
 import { CountryBreakdown, MatchOutcomes, SharedOwnership, SupplierMap } from './charts';
 import { SupplierTable } from './supplier-table';
@@ -178,6 +179,7 @@ export default async function ProgramPage({
         assessedIds={assessedIds}
         facets={view.facets}
       />
+      <ChatDock programId={programId} />
     </main>
   );
 }

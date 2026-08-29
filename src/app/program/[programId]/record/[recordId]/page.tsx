@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
 import * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
+import { ChatDock } from '@/components/chat-dock';
 
 /**
  * The record page (SPEC §13.1) — **level five, the bottom of the spine**.
@@ -76,6 +77,7 @@ export default async function RecordPage({
       <p className="note" style={{ marginTop: '1rem' }}>
         <Link href={`/program/${programId}` as never}>← back to the programme</Link>
       </p>
+      <ChatDock programId={programId} />
     </main>
   );
 }

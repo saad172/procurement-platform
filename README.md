@@ -138,7 +138,7 @@ Sequenced so each step is verifiable before the next depends on it
 - [x] 9 — Enrichment fan-out and the Corporate family
 - [x] 10 — Assess and Recommend
 - [x] 11 — Pages
-- [ ] 12 — Chat
+- [x] 12 — Chat
 - [ ] 13 — Discover
 - [x] 14 — The Runs branch
 - [ ] 15 — Fixtures and replay

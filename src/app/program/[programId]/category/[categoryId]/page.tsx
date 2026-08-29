@@ -4,6 +4,7 @@ import { desc, eq } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
 import * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
+import { ChatDock } from '@/components/chat-dock';
 import { WeightRail } from '@/components/weight-rail';
 import { loadShortlist } from '@/db/queries/shortlist';
 import { parseViewState } from '@/lib/view-state';
@@ -239,6 +240,7 @@ export default async function CategoryPage({
           </p>
         )}
       </div>
+      <ChatDock programId={programId} />
     </main>
   );
 }

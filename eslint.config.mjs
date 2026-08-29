@@ -107,6 +107,25 @@ export default tseslint.config(
     },
   },
 
+  /**
+   * Client components may `fetch` their own origin.
+   *
+   * The upstream boundary guards ONE thing: spending an upstream credit without
+   * caching it. A file marked `'use client'` runs in the browser, which holds no
+   * Sayari credentials and could not reach Sayari if it tried — so a same-origin
+   * `fetch('/api/chat')` is categorically outside what the rule protects.
+   *
+   * The import restrictions still apply here, because a client component
+   * importing the Sayari SDK would be a different and much worse mistake.
+   */
+  {
+    files: ['src/components/**/*.tsx'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [SAYARI, ANTHROPIC] }],
+      'no-restricted-globals': 'off',
+    },
+  },
+
   // ── Chokepoint 3: no tool may reach Match settlement ──────────────────────
   {
     files: ['src/tools/**/*.ts'],
