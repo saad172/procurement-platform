@@ -134,6 +134,42 @@ describe('small numbers inside prose are language, not claims', () => {
   });
 });
 
+describe('numbers inside a cited PROSE field are stored numbers too', () => {
+  // The case that forced this: every criterion_value carries an anchorLine that
+  // the app itself writes — "starts at 100; high −40, elevated −20" — and which
+  // the UI renders beside every value. A sentence explaining a score by quoting
+  // its own scale is quoting the evidence it cites. Rejecting that taught the
+  // model to describe a scale without naming it: worse prose, no more honest.
+  const withAnchor = candidatesFrom({}, [
+    { value: 92, anchorLine: 'starts at 100; high −40, elevated −20, relevant −8, floored at 0' },
+  ]);
+
+  it('accepts a sentence that quotes its own anchor line', () => {
+    expect(
+      checkNumberFidelity(
+        'Compliance risk scored 92 on a scale that starts at 100 and deducts 40 for high and 20 for elevated.',
+        withAnchor,
+      ),
+    ).toEqual([]);
+  });
+
+  it('accepts a figure inside a cited address', () => {
+    const withAddress = candidatesFrom({}, [{ addressLine: 'W Building, 8-15 Konan 1-chome, Tokyo 108-0075' }]);
+    expect(checkNumberFidelity('It is registered at Tokyo 108-0075.', withAddress)).toEqual([]);
+  });
+
+  it('does NOT decompose an identifier into loose digits', () => {
+    // An LEI and an HS code contain digits but are not a source of numbers.
+    // Restricting extraction to strings containing whitespace is what keeps
+    // "roughly 800 km" failing, which is the case the whole check exists for.
+    const withIdentifiers = candidatesFrom({}, [
+      { lei: 'W38RGI023J3WT1HWRP32', hsCode: '8544.30', distance: 824 },
+    ]);
+    expect(checkNumberFidelity('It is roughly 800 km away.', withIdentifiers)).toHaveLength(1);
+    expect(checkNumberFidelity('It scores 38.4.', withIdentifiers)).toHaveLength(1);
+  });
+});
+
 describe('candidate scoping', () => {
   it('draws candidates from the frozen inputs as well as the cited rows', () => {
     expect(checkNumberFidelity('The compliance weight is 28.', candidates)).toEqual([]);

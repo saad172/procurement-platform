@@ -180,6 +180,29 @@ export function candidatesFrom(
       const asNumber = Number(value);
       if (value.trim() !== '' && Number.isFinite(asNumber)) numbers.push({ value: asNumber, source });
       if (/^\d{4}-\d{2}-\d{2}/.test(value)) dates.push({ iso: value, source });
+
+      /**
+       * **Numbers inside a PROSE field are stored numbers too.**
+       *
+       * The case that forced this: every `criterion_value` carries an
+       * `anchorLine` — *"starts at 100; high −40, elevated −20, relevant −8"* —
+       * which the app itself writes and which the UI renders beside every
+       * value. A sentence explaining a score by quoting its own scale is
+       * quoting the evidence it cites, and rejecting that taught the model to
+       * describe a scale without naming it, which is worse prose and no more
+       * honest. A cited address is the same story: "108-0075" is in the row.
+       *
+       * Restricted to strings containing whitespace, so an identifier is never
+       * decomposed: an LEI or an HS code contributes no loose digits. That
+       * keeps "roughly 800 km" failing against a stored 824, which is the case
+       * the whole check exists for.
+       */
+      if (/\s/.test(value)) {
+        for (const match of value.matchAll(/(?<![\w.])(\d+)(?:\.(\d+))?/g)) {
+          const inner = Number(`${match[1]}${match[2] ? `.${match[2]}` : ''}`);
+          if (Number.isFinite(inner)) numbers.push({ value: inner, source: `${source} (in text)` });
+        }
+      }
       return;
     }
     if (value instanceof Date) {
