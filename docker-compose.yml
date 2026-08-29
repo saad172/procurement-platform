@@ -1,0 +1,74 @@
+# Three services and a one-shot, off one Dockerfile (SPEC §2.2, §4).
+#
+#   postgres  the store, on a named volume so a `down` does not lose a run
+#   migrate   one-shot; web and worker wait for it to complete successfully, so
+#             no process ever starts against a schema it does not understand
+#   web       Next.js — pages, the chat route handler, cheap inline reads
+#   worker    the long-lived poller. NO inbound port: the graded local run has
+#             no inbound surface at all (SPEC §2.3)
+#
+# `docker compose up` is one of the two fully live environments.
+
+name: procurement-platform
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: procurement
+      POSTGRES_PASSWORD: procurement
+      POSTGRES_DB: procurement
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U procurement -d procurement']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build:
+      context: .
+      target: runtime
+    command: ['pnpm', 'db:migrate']
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://procurement:procurement@postgres:5432/procurement
+      DIRECT_DATABASE_URL: postgres://procurement:procurement@postgres:5432/procurement
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  web:
+    build:
+      context: .
+      target: runtime
+    command: ['pnpm', 'start']
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://procurement:procurement@postgres:5432/procurement
+      DIRECT_DATABASE_URL: postgres://procurement:procurement@postgres:5432/procurement
+    ports:
+      - '3000:3000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      target: runtime
+    command: ['pnpm', 'worker']
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://procurement:procurement@postgres:5432/procurement
+      DIRECT_DATABASE_URL: postgres://procurement:procurement@postgres:5432/procurement
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-data:

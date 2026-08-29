@@ -1,0 +1,24 @@
+# A second database on the same compose project, migrated by the same one-shot
+# `migrate` service (SPEC §19.1). The replay suite runs against it, seeded with
+# exported `upstream_response` rows and no credentials at all — a cache miss
+# throws naming source, endpoint, hash and params rather than falling through to
+# a live call.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml up postgres-test
+
+name: procurement-platform
+
+services:
+  postgres-test:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: procurement
+      POSTGRES_PASSWORD: procurement
+      POSTGRES_DB: procurement_test
+    ports:
+      - '5433:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U procurement -d procurement_test']
+      interval: 2s
+      timeout: 3s
+      retries: 30
