@@ -1,10 +1,14 @@
 // Next.js loads `.env` itself; a plain Node entrypoint has to ask.
 import 'dotenv/config';
 import { boot } from '@/config/boot';
-import { closeDirectDb, getDirectDb } from '@/db/client';
+import { closeDirectDb, getDirectDb, type Database } from '@/db/client';
+import { PREPASS_CANDIDATES } from '@/config/constants';
 import { createUpstream } from '@/upstream';
 import { discoverLeads } from '@/jobs/discover';
 import { enrichSupplier } from '@/jobs/enrich-supplier';
+import { prepassCandidateIds, resolveSupplier } from '@/jobs/resolve';
+import { assessSupplier } from '@/jobs/assess';
+import { recommendCategory } from '@/jobs/recommend';
 import { runWorker } from './poll';
 
 /**
@@ -42,6 +46,38 @@ async function main(): Promise<void> {
   console.log(
     `Worker up — concurrency ${env.WORKER_CONCURRENCY}, polling every ${env.WORKER_POLL_INTERVAL_MS}ms.`,
   );
+
+  /**
+   * Built once, and named once, because five handlers assembling the same three
+   * contexts by hand is five chances to pass the wrong `jobId` — and a wrong
+   * `jobId` puts a Job's spend on a different Job's row, which nothing else
+   * would catch.
+   */
+  const upstreamCredentials = {
+    sayariClientId: env.SAYARI_CLIENT_ID,
+    sayariClientSecret: env.SAYARI_CLIENT_SECRET,
+    nominatimUserAgent: env.NOMINATIM_USER_AGENT,
+  };
+
+  const toolContext = (
+    database: Database,
+    upstream: ReturnType<typeof createUpstream>,
+    job: { id: string; runId: string },
+  ) => ({
+    db: database,
+    upstream,
+    meter: { addModelTokens: () => {} },
+    runId: job.runId,
+    jobId: job.id,
+    surface: 'job' as const,
+  });
+
+  const modelContext = (database: Database, job: { id: string; runId: string }) => ({
+    db: database,
+    runId: job.runId,
+    jobId: job.id,
+    credentials: { apiKey: env.ANTHROPIC_API_KEY },
+  });
 
   await runWorker(db, {
     concurrency: env.WORKER_CONCURRENCY,
@@ -120,8 +156,118 @@ async function main(): Promise<void> {
         return { state: 'done' };
       },
 
-      // The rest arrive with their build-order steps: resolve (8), traverse (9),
-      // assess and recommend (10).
+      /**
+       * Rung R1 — the batch pre-pass — runs here rather than inside
+       * `resolveSupplier`, because it is **one call carrying every row** and a
+       * function that resolves one Supplier is the wrong place to own a batch.
+       *
+       * Its result is passed in as `prepassEntityIds`, which is also what lets
+       * the ladder's rungs stay honest about what each one costs.
+       */
+      resolve: async (job, database) => {
+        const supplier = await database.query.supplier.findFirst({
+          where: (row, { eq: equals }) => equals(row.id, job.subjectId),
+        });
+        if (!supplier) return { state: 'failed', error: `no supplier ${job.subjectId}` };
+        if (!supplier.rosterName) {
+          return { state: 'failed', error: `supplier ${job.subjectId} has no roster name` };
+        }
+
+        const upstream = createUpstream({
+          db: database,
+          runId: job.runId,
+          jobId: job.id,
+          credentials: upstreamCredentials,
+        });
+
+        const prepass = await upstream.sayari.resolve({
+          body: {
+            name: [supplier.rosterName],
+            ...(supplier.rosterAddress ? { address: [supplier.rosterAddress] } : {}),
+            ...(supplier.rosterCountry ? { country: [supplier.rosterCountry] } : {}),
+          },
+        });
+
+        const outcome = await resolveSupplier(
+          { db: database, upstream },
+          {
+            supplierId: supplier.id,
+            roster: {
+              name: supplier.rosterName,
+              address: supplier.rosterAddress,
+              country: supplier.rosterCountry,
+              hasCategory: true,
+            },
+            prepassEntityIds: prepassCandidateIds(prepass.data)
+              .slice(0, PREPASS_CANDIDATES)
+              .map((candidate) => candidate.entityId),
+            jobId: job.id,
+          },
+        );
+
+        /**
+         * **Needs Review is not a failure.** The Job did exactly what it exists
+         * to do — it declined to guess — so it finishes `done` and the Supplier
+         * waits for a person. Marking it `failed` would put a red row in the
+         * Run for the one outcome the ladder is proudest of.
+         */
+        console.log(`  resolve ${supplier.rosterName}: ${outcome.status} (settled by ${outcome.settledBy})`);
+        return { state: 'done' };
+      },
+
+      assess: async (job, database) => {
+        const supplier = await database.query.supplier.findFirst({
+          where: (row, { eq: equals }) => equals(row.id, job.subjectId),
+        });
+        if (!supplier) return { state: 'failed', error: `no supplier ${job.subjectId}` };
+
+        const upstream = createUpstream({
+          db: database,
+          runId: job.runId,
+          jobId: job.id,
+          credentials: upstreamCredentials,
+        });
+        const outcome = await assessSupplier(
+          {
+            db: database,
+            toolCtx: toolContext(database, upstream, job),
+            modelCtx: modelContext(database, job),
+            jobId: job.id,
+          },
+          { supplierId: supplier.id, programId: supplier.programId },
+        );
+        console.log(
+          `  assess ${supplier.rosterName}: v${outcome.n} ${outcome.evaluatorOutcome} in ${outcome.roundsUsed} round(s)`,
+        );
+        return { state: 'done' };
+      },
+
+      recommend: async (job, database) => {
+        const category = await database.query.category.findFirst({
+          where: (row, { eq: equals }) => equals(row.id, job.subjectId),
+        });
+        if (!category) return { state: 'failed', error: `no category ${job.subjectId}` };
+
+        const upstream = createUpstream({
+          db: database,
+          runId: job.runId,
+          jobId: job.id,
+          credentials: upstreamCredentials,
+        });
+        const outcome = await recommendCategory(
+          {
+            db: database,
+            toolCtx: toolContext(database, upstream, job),
+            modelCtx: modelContext(database, job),
+            jobId: job.id,
+          },
+          { programId: category.programId, categoryId: category.id },
+        );
+        console.log(
+          `  recommend ${category.code}: v${outcome.n} ${outcome.evaluatorOutcome} in ${outcome.roundsUsed} round(s)`,
+        );
+        return { state: 'done' };
+      },
     },
     shouldStop: () => shuttingDown,
   });

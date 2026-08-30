@@ -39,6 +39,17 @@ export const DISCOVER_CLASSIFY_TOP_N = 25;
 /** One call per accepted Profile; truncation is recorded (SPEC §8.2). */
 export const FAMILY_TRAVERSAL_LIMIT = 50;
 
+/**
+ * How many pre-pass candidates rung R1 carries into the ladder.
+ *
+ * The pre-pass returns a ranked list, and every candidate past the cut costs a
+ * `getEntity` call plus a full set of Discriminator verdicts. Five is where the
+ * measured examples stop changing their answer — the Bosch decoy is settled by
+ * rank 2 against rank 1 — so a wider list buys candidates the ladder has
+ * already decided against.
+ */
+export const PREPASS_CANDIDATES = 5;
+
 /** A person-triggered expansion beyond the automatic one hop (SPEC §8.5). */
 export const DEEP_TRAVERSAL_MAX_HOPS = 3;
 export const DEEP_TRAVERSAL_MAX_NODES = 200;
