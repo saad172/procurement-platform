@@ -34,6 +34,21 @@ export type FrozenInputs = {
   scores: Record<string, number | null>;
   shortlistOrder: string[];
   supplierVerdicts: Record<string, { verdict: string | null; evaluatorOutcome: string }>;
+  /**
+   * The roster row each Supplier was imported as.
+   *
+   * **An Assessment's identity section is about the roster row**, so the roster
+   * row is one of its inputs by definition — and it was missing. A sentence
+   * opening *"Roster row 12, «Yazaki», registered at …"* was rejected in every
+   * Round because `12` appeared nowhere the number check could see, and the
+   * roster index is a figure the app itself assigned.
+   *
+   * It belongs in the frozen inputs rather than merely in a cited row for the
+   * same reason the weights do: a re-import that renumbered the roster would
+   * change what the Assessment was written about, and the staleness hash should
+   * notice.
+   */
+  rosterRows: Record<string, { index: number | null; name: string | null; address: string | null; country: string | null }>;
 };
 
 /** A citable row, for the *new evidence* residual. */

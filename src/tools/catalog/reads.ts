@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod/v4';
 import * as t from '@/db/schema';
 import { isDatabaseId, notAnIdObjection } from '../ids';
@@ -52,7 +52,8 @@ export const getProgram = defineTool({
       .select({ id: t.supplier.id, rosterName: t.supplier.rosterName })
       .from(t.supplier)
       .leftJoin(t.supplierCategory, eq(t.supplierCategory.supplierId, t.supplier.id))
-      .where(and(eq(t.supplier.programId, input.programId), isNull(t.supplierCategory.categoryId)));
+      .where(and(eq(t.supplier.programId, input.programId), isNull(t.supplierCategory.categoryId)))
+      .orderBy(asc(t.supplier.rosterIndex));
 
     return { ok: true, data: widget('program_summary', { ...program, uncategorised }) };
   },
@@ -108,7 +109,8 @@ export const getSupplier = defineTool({
     const criterionValues = await ctx.db
       .select()
       .from(t.criterionValue)
-      .where(and(eq(t.criterionValue.supplierId, supplier.id), eq(t.criterionValue.isCurrent, true)));
+      .where(and(eq(t.criterionValue.supplierId, supplier.id), eq(t.criterionValue.isCurrent, true)))
+      .orderBy(asc(t.criterionValue.criterionKey));
 
     return { ok: true, data: widget('supplier_card', { supplier, match, criterionValues }) };
   },
@@ -153,7 +155,21 @@ export const getSupplierFamily = defineTool({
       })
       .from(t.familyMember)
       .innerJoin(t.entity, eq(t.entity.id, t.familyMember.memberEntityId))
-      .where(eq(t.familyMember.rootEntityId, match.entityId));
+      .where(eq(t.familyMember.rootEntityId, match.entityId))
+      /**
+       * **A query that feeds a prompt needs a total order.**
+       *
+       * Without this the fifty family members came back in whatever order
+       * Postgres found them — stable within one database, different in another,
+       * and the family list is truncated at fifty so a different order is a
+       * different *set*. It surfaced as an assess replay missing on turn 3, and
+       * the diff showed two entirely different Chinese subsidiaries at the top.
+       *
+       * By hop depth first, because that is the order a person reads a family
+       * in: the immediate subsidiaries, then what sits behind them. `entityId`
+       * breaks the tie, since it is the only field guaranteed unique.
+       */
+      .orderBy(asc(t.familyMember.hopDepth), asc(t.familyMember.memberEntityId));
 
     /**
      * A **projection**, not the stored rows.
@@ -245,7 +261,8 @@ export const getShortlist = defineTool({
     const suppliers = await ctx.db
       .select()
       .from(t.supplierCategory)
-      .where(eq(t.supplierCategory.categoryId, input.categoryId));
+      .where(eq(t.supplierCategory.categoryId, input.categoryId))
+      .orderBy(asc(t.supplierCategory.supplierId));
     return {
       ok: true,
       data: widget('shortlist_table', {
@@ -281,7 +298,8 @@ export const compareSuppliers = defineTool({
         values: await ctx.db
           .select()
           .from(t.criterionValue)
-          .where(and(eq(t.criterionValue.supplierId, id), eq(t.criterionValue.isCurrent, true))),
+          .where(and(eq(t.criterionValue.supplierId, id), eq(t.criterionValue.isCurrent, true)))
+          .orderBy(asc(t.criterionValue.criterionKey)),
       })),
     );
     return { ok: true, data: widget('criterion_compare', rows) };
@@ -319,7 +337,8 @@ export const listNeedsReview = defineTool({
       .select({ supplier: t.supplier, match: t.match })
       .from(t.supplier)
       .innerJoin(t.match, eq(t.match.supplierId, t.supplier.id))
-      .where(and(eq(t.supplier.programId, input.programId), eq(t.match.status, 'needs_review')));
+      .where(and(eq(t.supplier.programId, input.programId), eq(t.match.status, 'needs_review')))
+      .orderBy(asc(t.supplier.rosterIndex));
     return { ok: true, data: widget('needs_review_list', rows) };
   },
 });
@@ -368,7 +387,11 @@ export const getUsage = defineTool({
   spends: [],
   latency: 'fast',
   handler: async (input, ctx) => {
-    const runs = await ctx.db.select().from(t.run).where(eq(t.run.programId, input.programId));
+    const runs = await ctx.db
+      .select()
+      .from(t.run)
+      .where(eq(t.run.programId, input.programId))
+      .orderBy(desc(t.run.createdAt));
     return {
       ok: true,
       data: widget('usage_meter', {
@@ -419,7 +442,8 @@ export const getRecommendationBrief = defineTool({
     const bidders = await ctx.db
       .select({ supplierId: t.supplierCategory.supplierId })
       .from(t.supplierCategory)
-      .where(eq(t.supplierCategory.categoryId, input.categoryId));
+      .where(eq(t.supplierCategory.categoryId, input.categoryId))
+      .orderBy(asc(t.supplierCategory.supplierId));
     const rows = await Promise.all(bidders.map((b) => briefFor(ctx, b.supplierId)));
     return { ok: true, data: { categoryId: input.categoryId, suppliers: rows } };
   },
@@ -431,7 +455,8 @@ async function briefFor(ctx: ToolContext, supplierId: string) {
   const values = await ctx.db
     .select()
     .from(t.criterionValue)
-    .where(and(eq(t.criterionValue.supplierId, supplierId), eq(t.criterionValue.isCurrent, true)));
+    .where(and(eq(t.criterionValue.supplierId, supplierId), eq(t.criterionValue.isCurrent, true)))
+    .orderBy(asc(t.criterionValue.criterionKey));
   const latestAssessment = await ctx.db.query.assessment.findFirst({
     where: and(eq(t.assessment.supplierId, supplierId), eq(t.assessment.kind, 'standard')),
     with: { versions: { orderBy: [desc(t.assessmentVersion.n)], limit: 1 } },

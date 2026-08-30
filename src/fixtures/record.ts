@@ -68,13 +68,20 @@ export async function recordFixture(
   }
 
   const turns: FixtureTurn[] = turnRows.map((row) => {
-    const request = row.request as { loop?: string; roundN?: number | null; wireHash?: string | null };
+    const request = row.request as {
+      loop?: string;
+      roundN?: number | null;
+      wireHash?: string | null;
+      bodyHash?: string | null;
+    };
     return {
       n: row.n,
       wireHash: request.wireHash ?? null,
+      bodyHash: request.bodyHash ?? null,
       loop: request.loop ?? 'unknown',
       roundN: request.roundN ?? null,
-      response: row.response,
+      // Stored verbatim as text; parsed here so the fixture holds JSON.
+      response: JSON.parse(row.response) as unknown,
     };
   });
 

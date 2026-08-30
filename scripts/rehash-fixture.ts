@@ -2,7 +2,7 @@
 import 'dotenv/config';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { wireHash } from '@/model/wire';
+import { rawBodyHash, wireHash } from '@/model/wire';
 import { serializeFixture } from '@/fixtures/record';
 import { loadFixture, FIXTURE_DIR } from '@/fixtures/load';
 
@@ -44,17 +44,24 @@ async function main(): Promise<void> {
 
   const fixture = await loadFixture(name);
 
-  // filename (the hash as it was) → hash as it is now.
+  /**
+   * Keyed by the body's **raw** hash, which never changes — not by the wire
+   * hash, which is the very thing being redefined.
+   *
+   * Matching on the wire hash worked exactly once: after the first rehash a
+   * fixture held new hashes while the dumps still carried old ones, and the
+   * second rehash found nothing.
+   */
   const remap = new Map<string, string>();
   for (const file of await readdir(dumpDir)) {
     if (!file.endsWith('.json')) continue;
-    const was = file.slice(0, -'.json'.length);
-    remap.set(was, wireHash(await readFile(join(dumpDir, file), 'utf8')));
+    const body = await readFile(join(dumpDir, file), 'utf8');
+    remap.set(rawBodyHash(body), wireHash(body));
   }
 
   const unmapped: number[] = [];
   const turns = fixture.turns.map((turn) => {
-    const next = turn.wireHash ? remap.get(turn.wireHash) : undefined;
+    const next = turn.bodyHash ? remap.get(turn.bodyHash) : undefined;
     if (!next) {
       unmapped.push(turn.n);
       return turn;
@@ -65,7 +72,7 @@ async function main(): Promise<void> {
   if (unmapped.length > 0) {
     console.error(
       `No dumped body for turn(s) ${unmapped.join(', ')} of "${name}". ` +
-        'Those turns ran with dumping off, so the fixture has to be re-recorded from a fresh run.',
+        'Those turns carry no bodyHash, or no dump matches it — so the fixture has to be re-recorded from a fresh run.',
     );
     process.exitCode = 1;
     return;

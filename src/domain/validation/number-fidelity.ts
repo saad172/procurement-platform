@@ -65,8 +65,27 @@ const LEI = String.raw`[A-Z0-9]{20}`;
 const ENTITY_ID = String.raw`(?=[A-Za-z0-9_-]{22}\b)(?=[^\s]*[a-z])(?=[^\s]*[A-Z])(?=[^\s]*\d)[A-Za-z0-9_-]{22}`;
 const IDENTIFIER_PATTERN = new RegExp(String.raw`\b(?:${HS_CODE}|${LEI}|${ENTITY_ID})\b`, 'g');
 
-/** A number, with optional thousands separators, decimals and a trailing %. */
-const NUMBER_PATTERN = /(?<![\w.\-])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(%)?/g;
+/**
+ * A number, with optional thousands separators, decimals and a trailing %.
+ *
+ * **Both sides are guarded.** The lookbehind was there from the start and the
+ * lookahead was not, so a hyphenated token was read from the left and then
+ * abandoned: in the Japanese postcode `108-8333`, `108` matched as a free
+ * number (nothing precedes it) while `8333` was correctly skipped (a hyphen
+ * does). The checker then demanded that *108* appear in the frozen inputs, and
+ * an otherwise correct Assessment was rejected in all three Rounds.
+ *
+ * `(?!-\d)` treats a digit-run followed by `-<digit>` as part of a larger
+ * token and skips it entirely — neither a number to verify nor an identifier to
+ * resolve. That is the right answer for a postcode or a street number
+ * (`1-8-15`): **a postcode is not a figure**, and this check exists to catch
+ * invented figures.
+ *
+ * ASCII hyphen only, deliberately. The anchor lines this app writes use an en
+ * dash for ranges (`0–8,000 km`) and a true minus for deductions (`high −40`),
+ * so a genuine range is still read as the two numbers it contains.
+ */
+const NUMBER_PATTERN = /(?<![\w.\-])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?!-\d)\s*(%)?/g;
 
 /** How many decimal places the sentence itself wrote. */
 function decimalsOf(fraction: string | undefined): number {
@@ -208,8 +227,22 @@ export function candidatesFrom(
        * the whole check exists for.
        */
       if (/\s/.test(value)) {
-        for (const match of value.matchAll(/(?<![\w.])(\d+)(?:\.(\d+))?/g)) {
-          const inner = Number(`${match[1]}${match[2] ? `.${match[2]}` : ''}`);
+        /**
+         * **The same pattern the sentence side uses**, and it has to be.
+         *
+         * It was `/(?<![\w.])(\d+)(?:\.(\d+))?/g` — no thousands separators.
+         * So a stored anchor reading `0–8,000 km` contributed the candidates
+         * `0`, `8` and `000`, and a sentence quoting that anchor as **8,000**
+         * was rejected for inventing a figure the app itself had written.
+         *
+         * Two extractors that disagree about what a number is will always
+         * disagree at the edges, and every disagreement reads as the model
+         * making something up.
+         */
+        for (const match of value.matchAll(new RegExp(NUMBER_PATTERN.source, 'g'))) {
+          // `match[1]` may carry thousands separators now that the pattern is
+          // shared; they are notation, not value.
+          const inner = Number(`${match[1]!.replace(/,/g, '')}${match[2] ? `.${match[2]}` : ''}`);
           if (Number.isFinite(inner)) numbers.push({ value: inner, source: `${source} (in text)` });
         }
       }

@@ -201,3 +201,49 @@ describe('candidate scoping', () => {
     expect(checkNumberFidelity('2,275 members were reachable.', c)).toEqual([]);
   });
 });
+
+/**
+ * A hyphenated token is not a figure.
+ *
+ * The Japanese postcode `108-8333` was read from the left as the number 108,
+ * which appears in no frozen input — and an otherwise correct Assessment was
+ * rejected in all three Rounds because of it.
+ */
+describe('hyphenated tokens', () => {
+  const noEvidence = { frozenInputs: {}, citedRows: [] };
+
+  it('does not read a postcode as a number', () => {
+    const failures = checkNumberFidelity(
+      'The postcode 108-8333 on the matched entity is the same postcode as the roster row.',
+      candidatesFrom(noEvidence.frozenInputs, noEvidence.citedRows),
+    );
+    expect(failures).toEqual([]);
+  });
+
+  it('does not read a Japanese street number as three numbers', () => {
+    const failures = checkNumberFidelity(
+      'It is registered at 1-8-15, Konan, Minato-ku.',
+      candidatesFrom(noEvidence.frozenInputs, noEvidence.citedRows),
+    );
+    expect(failures).toEqual([]);
+  });
+
+  it('still catches an invented figure beside one', () => {
+    // The guard must not become a way to smuggle numbers past the check.
+    const failures = checkNumberFidelity(
+      'The postcode 108-8333 sits in a city of 37 million people.',
+      candidatesFrom(noEvidence.frozenInputs, noEvidence.citedRows),
+    );
+    expect(failures.map((f) => f.token)).toContain('37');
+  });
+
+  it('still reads an en-dash range as the numbers it contains', () => {
+    // The app writes its own anchor lines with en dashes, and a sentence
+    // quoting one is quoting evidence.
+    const failures = checkNumberFidelity(
+      'Proximity runs 0–8000 km.',
+      candidatesFrom({ anchor: 'runs 0 to 8000 km' }, []),
+    );
+    expect(failures).toEqual([]);
+  });
+});

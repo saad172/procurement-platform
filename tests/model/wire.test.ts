@@ -1,71 +1,58 @@
 import { describe, expect, it } from 'vitest';
-import { normaliseRowIds, wireHash } from '@/model/wire';
+import { normaliseRowIds, rawBodyHash, wireHash } from '@/model/wire';
 
 const A = 'a4ea162a-1cbb-54e3-a646-36e332386843';
 const B = '718d64ae-10d8-4372-8d5a-d6872d8cf3e2';
-const C = '00bec201-a07d-4b11-9d34-8d1c7c9c4d21';
 
 /**
- * A prompt contains database row ids because a Citation points at a row. Those
- * ids differ in every database, so the hash is taken over a projection with
- * them numbered by first appearance.
+ * A prompt contains database row ids because a Citation points at a row, and
+ * row instants because a Match records when it was settled. Neither can be
+ * reproduced by a replay — the ids differ per database and a replay is
+ * time-shifted by construction — so the hash is taken over a projection with
+ * both collapsed.
  *
- * These tests pin **what that projection still notices**, because a hash that
+ * These tests pin **what the projection still notices**, because a hash that
  * had quietly become insensitive to real change would be worse than no hash: it
  * would look like a guarantee.
  */
 describe('normaliseRowIds', () => {
-  it('numbers ids by first appearance', () => {
-    expect(normaliseRowIds(`${A} then ${B} then ${A}`)).toBe('«id:0» then «id:1» then «id:0»');
+  it('collapses every uuid to one placeholder', () => {
+    expect(normaliseRowIds(`${A} then ${B} then ${A}`)).toBe('«id» then «id» then «id»');
+  });
+
+  it('collapses every instant to one placeholder', () => {
+    expect(normaliseRowIds('at 2026-08-30T20:28:45.709Z and 2026-08-31T09:44:02.007Z')).toBe(
+      'at «ts» and «ts»',
+    );
   });
 
   it('makes two databases agree on the same request', () => {
     // The same prompt, with rows minted twice. This is the whole point.
-    expect(wireHash(`{"cite":"${A}","match":"${B}"}`)).toBe(
-      wireHash(`{"cite":"${C}","match":"${A}"}`),
+    expect(wireHash(`{"cite":"${A}","match":"${B}"}`)).toBe(wireHash(`{"cite":"${B}","match":"${A}"}`));
+  });
+
+  it('does not care whether two instants coincide', () => {
+    // A recorded run wrote a row and fetched it a second apart; a replay's
+    // pipeline may do both inside one millisecond.
+    expect(wireHash('{"fetchedAt":"2026-08-30T20:28:45.709Z","firstSeenAt":"2026-08-30T20:28:46.001Z"}')).toBe(
+      wireHash('{"fetchedAt":"2026-08-30T20:49:40.840Z","firstSeenAt":"2026-08-30T20:49:40.840Z"}'),
     );
-  });
-
-  it('still notices a different NUMBER of rows', () => {
-    expect(wireHash(`{"cite":["${A}"]}`)).not.toBe(wireHash(`{"cite":["${A}","${B}"]}`));
-  });
-
-  it('still notices a changed pattern of repetition', () => {
-    // Citing one row twice is a different claim from citing two rows once each,
-    // and the projection has to keep that difference.
-    expect(wireHash(`{"a":"${A}","b":"${A}"}`)).not.toBe(wireHash(`{"a":"${A}","b":"${B}"}`));
-  });
-
-  it('leaves a Sayari entity id alone, because it is content', () => {
-    // 22-char base64url, not a uuid. A changed entity id means the model was
-    // shown a different company — exactly the drift a replay must catch.
-    const text = 'entity CX3012yTGIhgMxcZG6hgnA';
-    expect(normaliseRowIds(text)).toBe(text);
-    expect(wireHash('{"e":"CX3012yTGIhgMxcZG6hgnA"}')).not.toBe(
-      wireHash('{"e":"LAtrDml3ulKGjNIIFGSNAg"}'),
-    );
-  });
-
-  it('leaves an LEI and a number alone', () => {
-    const text = 'LEI 35380087YNQB9R822X46 rate 5 hs 8544.30';
-    expect(normaliseRowIds(text)).toBe(text);
-  });
-
-  it('is case-insensitive about the same id', () => {
-    expect(normaliseRowIds(`${A} ${A.toUpperCase()}`)).toBe('«id:0» «id:0»');
   });
 });
 
-describe('normaliseRowIds — instants', () => {
-  it('normalises a row instant, which a replay can never reproduce', () => {
-    expect(wireHash('{"settledAt":"2026-08-30T14:02:11.481Z"}')).toBe(
-      wireHash('{"settledAt":"2026-08-31T09:44:02.007Z"}'),
-    );
+/**
+ * The other half: everything that is not a database-minted value is still
+ * hashed as it stands. These are the changes a replay exists to catch.
+ */
+describe('what the projection still catches', () => {
+  it('a Sayari entity id, because it names a different company', () => {
+    const text = 'entity CX3012yTGIhgMxcZG6hgnA';
+    expect(normaliseRowIds(text)).toBe(text);
+    expect(wireHash('{"e":"CX3012yTGIhgMxcZG6hgnA"}')).not.toBe(wireHash('{"e":"LAtrDml3ulKGjNIIFGSNAg"}'));
   });
 
-  it('leaves a plain date alone, because a date is content here', () => {
-    // A registration date, a latest shipment, a WGI vintage — a change in one
-    // is exactly the drift a replay must catch.
+  it('a plain date, because a date is content here', () => {
+    // A registration date, a latest shipment, a WGI vintage.
     const text = 'registered 1886-11-15, last shipped 2026-06-16';
     expect(normaliseRowIds(text)).toBe(text);
     expect(wireHash('{"registrationDate":"1886-11-15"}')).not.toBe(
@@ -73,9 +60,34 @@ describe('normaliseRowIds — instants', () => {
     );
   });
 
-  it('keeps ids and instants in separate numbering', () => {
-    const out = normaliseRowIds(`${A} at 2026-08-30T14:02:11.481Z`);
-    expect(out).toContain('«id:');
-    expect(out).toContain('«ts:');
+  it('an LEI, an HS code and a number', () => {
+    const text = 'LEI 35380087YNQB9R822X46 rate 5 hs 8544.30';
+    expect(normaliseRowIds(text)).toBe(text);
+    expect(wireHash('{"rate":5}')).not.toBe(wireHash('{"rate":6}'));
+  });
+
+  it('a changed prompt', () => {
+    expect(wireHash('{"system":"Answer briefly."}')).not.toBe(
+      wireHash('{"system":"Answer briefly. In French."}'),
+    );
+  });
+});
+
+/**
+ * `rawBodyHash` makes no judgement at all, which is exactly why
+ * `fixtures:rehash` keys on it: the wire hash is *designed* to change as the
+ * notion of "the same request" is refined, and a recovery mechanism keyed on
+ * the thing it recovers from breaks on its second use.
+ */
+describe('rawBodyHash', () => {
+  it('distinguishes bodies the wire hash deliberately equates', () => {
+    const one = `{"id":"${A}"}`;
+    const two = `{"id":"${B}"}`;
+    expect(wireHash(one)).toBe(wireHash(two));
+    expect(rawBodyHash(one)).not.toBe(rawBodyHash(two));
+  });
+
+  it('is stable for identical bytes', () => {
+    expect(rawBodyHash('{"a":1}')).toBe(rawBodyHash('{"a":1}'));
   });
 });

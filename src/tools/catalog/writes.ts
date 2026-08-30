@@ -89,19 +89,54 @@ const citedSentence = z.object({
     'open_questions',
   ]),
   text: z.string(),
+  /**
+   * **Exactly one target group per citation, and each field says where its id
+   * comes from.**
+   *
+   * These fields carried no descriptions at all, and a recommendation put a
+   * *supplier* id in `recordId` — the only slot it does not belong in. The
+   * foreign key refused it three Rounds later, having spent the whole budget on
+   * a mistake nothing had ever told the model how to avoid.
+   *
+   * A schema that names the source of each id is the cheapest possible fix, and
+   * the right one: an id's meaning is not guessable from its shape, since every
+   * one of these is a uuid.
+   */
   citations: z
     .array(
       z.object({
-        entityId: z.string().optional(),
-        recordId: z.string().optional(),
-        enrichmentId: z.string().optional(),
-        criterionValueId: z.string().optional(),
-        matchId: z.string().optional(),
-        shortlist: z.object({ programId: z.string(), categoryId: z.string() }).optional(),
+        entityId: z
+          .string()
+          .optional()
+          .describe('A Sayari entity id, as returned by sayari_get_entity or get_supplier. Not a uuid.'),
+        recordId: z
+          .string()
+          .optional()
+          .describe(
+            'A Sayari SOURCE RECORD id, which exists locally only after sayari_get_record has fetched it. Never a supplier, entity or criterion id.',
+          ),
+        enrichmentId: z
+          .string()
+          .optional()
+          .describe('The `id` of a row in the enrichments list returned by get_supplier.'),
+        criterionValueId: z
+          .string()
+          .optional()
+          .describe('The `id` from get_assessment_brief\'s criterionValueIds, or from get_supplier\'s criterionValues.'),
+        matchId: z
+          .string()
+          .optional()
+          .describe("The `matchId` from get_assessment_brief, or the match's `id` from get_supplier."),
+        shortlist: z
+          .object({ programId: z.string(), categoryId: z.string() })
+          .optional()
+          .describe('Both halves, for a claim about the shortlist itself rather than about one supplier.'),
       }),
     )
     .min(1)
-    .describe('At least one. A sentence without a citation cannot be inserted.'),
+    .describe(
+      'At least one, each naming exactly one target. A sentence without a citation cannot be inserted, and an id in the wrong field is refused by the database.',
+    ),
   pickSupplierId: z.string().optional().describe('Only in the conditions section'),
 });
 

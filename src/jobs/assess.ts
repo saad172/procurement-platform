@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { JOB_CAPS } from '@/config/constants';
@@ -45,17 +45,39 @@ export async function buildFrozenInputs(
   const weights = await db
     .select()
     .from(t.programCriterionWeight)
-    .where(eq(t.programCriterionWeight.programId, args.programId));
+    .where(eq(t.programCriterionWeight.programId, args.programId))
+    /**
+     * **Ordered, because these become the keys of a JSON object in a prompt.**
+     *
+     * `weights` and `criterionValues` are built by iterating these rows, and a
+     * JavaScript object preserves insertion order — so an unordered query makes
+     * a prompt whose *key order* differs between two databases holding
+     * identical data. It is invisible to a person reading the JSON and fatal to
+     * a replay.
+     */
+    .orderBy(asc(t.programCriterionWeight.criterionKey));
 
   const criterionValues: Record<string, number | null> = {};
   const scores: Record<string, number | null> = {};
   const supplierVerdicts: FrozenInputs['supplierVerdicts'] = {};
+  const rosterRows: FrozenInputs['rosterRows'] = {};
 
   for (const supplierId of args.supplierIds) {
+    const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.id, supplierId) });
+    if (supplier) {
+      rosterRows[supplierId] = {
+        index: supplier.rosterIndex,
+        name: supplier.rosterName,
+        address: supplier.rosterAddress,
+        country: supplier.rosterCountry,
+      };
+    }
+
     const values = await db
       .select()
       .from(t.criterionValue)
-      .where(and(eq(t.criterionValue.supplierId, supplierId), eq(t.criterionValue.isCurrent, true)));
+      .where(and(eq(t.criterionValue.supplierId, supplierId), eq(t.criterionValue.isCurrent, true)))
+      .orderBy(asc(t.criterionValue.criterionKey));
     for (const value of values) {
       criterionValues[`${supplierId}:${value.criterionKey}`] = value.value;
     }
@@ -79,6 +101,7 @@ export async function buildFrozenInputs(
     scores,
     shortlistOrder: args.supplierIds,
     supplierVerdicts,
+    rosterRows,
   };
 }
 
@@ -104,7 +127,8 @@ export async function buildEvidence(
     const categories = await db
       .select({ categoryId: t.supplierCategory.categoryId })
       .from(t.supplierCategory)
-      .where(eq(t.supplierCategory.supplierId, supplierId));
+      .where(eq(t.supplierCategory.supplierId, supplierId))
+      .orderBy(asc(t.supplierCategory.categoryId));
     const values = await db
       .select()
       .from(t.criterionValue)

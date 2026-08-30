@@ -12,26 +12,36 @@ import { resetDerived } from '../support/reset';
 import { buildAssessableSupplier, openJob } from '../support/pipeline';
 
 /**
- * `assess/published-with-objections` (SPEC §19.2) — the sole home of:
+ * `assess/passes-at-round-1` — a whole Assessment, replayed end to end.
  *
- * 1. **`MAX_ROUNDS = 3`** actually bounding the loop;
- * 2. **Dissent assembled from survivors, never authored** — the objections the
- *    evaluator raised and the proposer did not answer, carried onto the
- *    published Assessment rather than written by anyone.
+ * ## Why it is not `published-with-objections`
  *
- * The second is the one that needs a real recording. "The model wrote a caveat
- * about its own weaknesses" is a claim about prose; "an objection survived
- * three Rounds and became a stored row" is a claim about structure, and only a
- * replay of an argument that actually happened can make it.
+ * SPEC §19.2 names that case, and this recording is not it. **Fixing the number
+ * check's false positives removed the disagreement the name described**: the
+ * three-Round arguments that produced dissent were the evaluator objecting to a
+ * postcode, a quoted anchor line, a roster index and a statute number — every
+ * one of them wrong (findings 59, 60, 67). With those fixed, the evaluator
+ * agrees at Round 1.
  *
- * Its inputs are built by running resolve and enrich — see
- * `buildAssessableSupplier` for why that is preferred to snapshotting them.
+ * That is the right outcome for the app and it leaves a fixture named for
+ * something it no longer shows, so it is renamed for what it does show.
+ * `published-with-objections` still needs a **genuine** disagreement, arranged
+ * in the inputs rather than manufactured by a broken check — see BUILD-NOTES
+ * finding 69.
+ *
+ * ## What this one proves
+ *
+ * The whole loop, replayed: a proposer that reads rows and submits, our eight
+ * code checks passing over the submitted payload, a stateless evaluator that
+ * agrees, and a transactional publish in which **every sentence resolves to at
+ * least one Citation**. Its inputs are built by running resolve and enrich —
+ * see `buildAssessableSupplier` for why that beats snapshotting them.
  */
 
-const FIXTURE = 'assess/published-with-objections';
+const FIXTURE = 'assess/passes-at-round-1';
 
-describe('assess/published-with-objections replays', () => {
-  it('publishes with objections, and every sentence carries a citation', async () => {
+describe('assess/passes-at-round-1 replays', () => {
+  it('publishes, and every sentence carries a citation', async () => {
     if (!(await testDatabaseIsUp())) return;
     const db = await getTestDb();
     const fixture = await loadFixture(FIXTURE);
@@ -65,7 +75,8 @@ describe('assess/published-with-objections replays', () => {
       { supplierId, programId },
     );
 
-    expect(outcome.evaluatorOutcome).toBe('published_with_objections');
+    // `passed` means the evaluator agreed; the loop still records the Round.
+    expect(outcome.evaluatorOutcome).toBe('passed');
 
     // A Round is the unit the ceiling counts, and it is not raisable from the UI.
     expect(outcome.roundsUsed).toBeLessThanOrEqual(MAX_ROUNDS);
@@ -73,7 +84,7 @@ describe('assess/published-with-objections replays', () => {
     const version = await db.query.assessmentVersion.findFirst({
       where: eq(t.assessmentVersion.id, outcome.versionId),
     });
-    expect(version?.evaluatorOutcome).toBe('published_with_objections');
+    expect(version?.evaluatorOutcome).toBe('passed');
 
     /**
      * **Every sentence resolves to at least one Citation.**

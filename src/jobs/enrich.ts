@@ -1,6 +1,7 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
+import { derivedId } from '@/db/derived-id';
 import { FAMILY_TRAVERSAL_LIMIT } from '@/config/constants';
 import { COUNTRY_INDICATORS } from '@/domain/scoring/anchors';
 import { unionRiskFactors, type FamilyMemberRisk } from '@/domain/family';
@@ -43,9 +44,24 @@ async function recordEnrichment(
     result: UpstreamResult<unknown>;
   },
 ): Promise<string> {
+  // Append-only: a re-fetch writes a new row for the same subject, so the
+  // generation is what separates them. Counted, not timestamped, so two runs an
+  // hour apart agree.
+  const [{ generation }] = (await ctx.db
+    .select({ generation: sql<number>`count(*)::int` })
+    .from(t.enrichment)
+    .where(
+      and(
+        eq(t.enrichment.source, args.source),
+        eq(t.enrichment.subjectKind, args.subjectKind),
+        eq(t.enrichment.subjectKey, args.subjectKey),
+      ),
+    )) as [{ generation: number }];
+
   const [row] = await ctx.db
     .insert(t.enrichment)
     .values({
+      id: derivedId('enrichment', `${args.source}:${args.subjectKind}:${args.subjectKey}`, generation),
       source: args.source,
       subjectKind: args.subjectKind,
       subjectKey: args.subjectKey,
@@ -491,9 +507,20 @@ export async function writeCriterionValue(
     ),
   });
 
+  const [{ generation }] = (await db
+    .select({ generation: sql<number>`count(*)::int` })
+    .from(t.criterionValue)
+    .where(
+      and(
+        eq(t.criterionValue.supplierId, args.supplierId),
+        eq(t.criterionValue.criterionKey, args.criterionKey),
+      ),
+    )) as [{ generation: number }];
+
   const [row] = await db
     .insert(t.criterionValue)
     .values({
+      id: derivedId('criterion_value', `${args.supplierId}:${args.criterionKey}`, generation),
       supplierId: args.supplierId,
       programId: args.programId,
       categoryId: args.categoryId,

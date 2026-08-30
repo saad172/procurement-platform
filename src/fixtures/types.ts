@@ -23,6 +23,13 @@ export type FixtureTurn = {
    * can be served only by position is a turn that cannot detect drift.
    */
   wireHash: string | null;
+  /**
+   * The raw sha256 of the same body, which never changes.
+   *
+   * It is what `fixtures:rehash` matches a dumped body against, so a refinement
+   * of the wire hash costs a re-hash rather than a re-run.
+   */
+  bodyHash?: string | null;
   loop: string;
   roundN: number | null;
   /** The whole `BetaMessage`, exactly as the API returned it. */

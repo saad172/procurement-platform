@@ -154,7 +154,24 @@ export const traceTurn = pgTable('trace_turn', {
     .references(() => job.id, { onDelete: 'cascade' }),
   n: integer('n').notNull(),
   request: jsonb('request').notNull(),
-  response: jsonb('response').notNull(),
+  /**
+   * **Text, not `jsonb`** — the whole `BetaMessage` verbatim (SPEC §3.7, §19.1).
+   *
+   * `jsonb` normalises object key order (shortest key first, then bytewise), so
+   * a message stored as `jsonb` comes back with `{text, section, citations}`
+   * where the model wrote `{section, text, citations}`. That is not verbatim,
+   * and the spec's word for this column is *verbatim*.
+   *
+   * It mattered in exactly the place the spec anticipated. A replayed draft is
+   * stringified into the evaluator's prompt, so the reordered keys produced a
+   * *different prompt* from the recording's — the replay missed on the
+   * evaluator's turn, five turns after the last thing that had changed.
+   *
+   * Nothing queries inside this column; the Trace reads it whole and replay
+   * hands it back whole. `jsonb` was buying an indexing ability nobody uses,
+   * and charging for it in fidelity.
+   */
+  response: text('response').notNull(),
   stopReason: text('stop_reason'),
   /** Populated only on a refusal, so a whole-chain refusal is legible. */
   stopDetails: jsonb('stop_details'),

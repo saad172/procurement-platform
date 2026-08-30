@@ -10,6 +10,7 @@ const frozen = (overrides: Partial<FrozenInputs> = {}): FrozenInputs => ({
   scores: { a: 84.2 },
   shortlistOrder: ['a', 'b'],
   supplierVerdicts: { a: { verdict: 'recommend', evaluatorOutcome: 'passed' } },
+  rosterRows: { a: { index: 1, name: 'A', address: null, country: 'USA' } },
   ...overrides,
 });
 

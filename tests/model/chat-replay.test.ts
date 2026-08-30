@@ -60,7 +60,7 @@ describe('chat/one-turn replays', () => {
       },
       {
         programId: program.id,
-        message: 'Show me Yazaki, then re-assess it.',
+        message: 'Show me Yazaki, then refresh its enrichment data.',
         pageRef: `/program/${program.id}`,
       },
       (event, data) => events.push({ event, data }),

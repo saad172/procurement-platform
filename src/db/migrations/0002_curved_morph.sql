@@ -1,0 +1,1 @@
+ALTER TABLE "trace_turn" ALTER COLUMN "response" SET DATA TYPE text;

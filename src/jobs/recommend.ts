@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { JOB_CAPS } from '@/config/constants';
@@ -58,7 +58,9 @@ export async function recommendCategory(
   const bidders = await db
     .select({ supplierId: t.supplierCategory.supplierId })
     .from(t.supplierCategory)
-    .where(eq(t.supplierCategory.categoryId, args.categoryId));
+    .where(eq(t.supplierCategory.categoryId, args.categoryId))
+    // Ordered, because the shortlist order reaches the prompt.
+    .orderBy(asc(t.supplierCategory.supplierId));
   const supplierIds = bidders.map((b) => b.supplierId);
 
   const frozenInputs = await buildFrozenInputs(db, { programId: args.programId, supplierIds });

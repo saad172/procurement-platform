@@ -34,12 +34,24 @@ const FIXTURE_NAME = 'chat/one-turn';
  * A question chosen to exercise what this fixture is the sole home of: a widget
  * frozen onto a message, and a **confirm proposal that creates no `job` row**.
  *
- * It has to name something an `enqueue_*` tool actually does, or the gate never
- * engages and the fixture proves only that reads work. The first attempt asked
- * to "re-run the identity match", which no tool offers — the model did three
- * honest reads and proposed nothing, and the recording was useless.
+ * It has to name something an `enqueue_*` tool actually does **from the state
+ * the fixture is recorded in**, or the gate never engages and the fixture
+ * proves only that reads work.
+ *
+ * Two attempts failed that way, and neither was the model's fault:
+ *
+ * - *"re-run the identity match"* — there is no `enqueue_resolve` tool at all,
+ *   so it did three honest reads and proposed nothing.
+ * - *"re-assess it"* — recorded against a reset database, where the Supplier
+ *   has no Match and no Assessment, so a re-assessment is not a thing that can
+ *   be re-run. It read four rows and correctly declined.
+ *
+ * Enrichment is the one that works from seed state: `enqueue_enrichment`
+ * re-fetches the six sources for any Supplier, so the gate engages whatever
+ * else is in the database — which is exactly what an *independent* fixture
+ * needs.
  */
-const DEFAULT_MESSAGE = 'Show me Yazaki, then re-assess it.';
+const DEFAULT_MESSAGE = 'Show me Yazaki, then refresh its enrichment data.';
 
 async function main(): Promise<void> {
   const env = loadEnv();

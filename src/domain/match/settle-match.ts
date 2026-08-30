@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
+import { derivedId } from '@/db/derived-id';
 import type { DiscriminatorResult } from './discriminators';
 
 /**
@@ -76,6 +77,8 @@ export async function settleMatch(db: Database, settlement: Settlement): Promise
       : (await tx
           .insert(t.match)
           .values({
+            // One Match per Supplier, upserted — so the Supplier IS the key.
+            id: derivedId('match', settlement.supplierId, 0),
             supplierId: settlement.supplierId,
             status: settlement.status,
             entityId: settlement.entityId,

@@ -50,14 +50,35 @@ import { canonicalJson } from '@/lib/canonical-json';
  */
 const DUMP_DIR = process.env.MODEL_REQUEST_DUMP_DIR;
 
-function dump(hash: string, bodyText: string): void {
+function dump(bodyText: string): void {
   if (!DUMP_DIR) return;
   try {
     mkdirSync(DUMP_DIR, { recursive: true });
-    writeFileSync(join(DUMP_DIR, `${hash}.json`), bodyText);
+    // Named by the **raw** hash, not the wire hash, so a dump keeps its
+    // identity when the wire hash changes — see `rawBodyHash`.
+    writeFileSync(join(DUMP_DIR, `${rawBodyHash(bodyText)}.json`), bodyText);
   } catch {
     // A debugging aid that can break a run is worse than no debugging aid.
   }
+}
+
+/**
+ * The **stable** identity of a request body: sha256 of the bytes, normalised by
+ * nothing.
+ *
+ * The wire hash exists to answer *"is this the same request?"* across
+ * databases, so it changes whenever that judgement is refined — and it was
+ * refined three times. Each refinement renamed every dump and broke
+ * `fixtures:rehash`, which matched a fixture's stored hash against a dump's
+ * filename: after one rehash the stored hashes were new and the filenames were
+ * old, so the second rehash found nothing.
+ *
+ * A raw hash never changes, because it makes no judgement. Storing it beside
+ * the wire hash gives the two a permanent link, and rehashing stays possible
+ * however many times the wire hash is redefined.
+ */
+export function rawBodyHash(bodyText: string): string {
+  return createHash('sha256').update(bodyText).digest('hex');
 }
 
 /**
@@ -78,22 +99,42 @@ function dump(hash: string, bodyText: string): void {
  * So the hash is taken over a **database-independent projection** of the
  * request: each distinct uuid becomes `«id:N»`, numbered by first appearance.
  *
- * ## What that keeps, and what it gives up
+ * ## Collapsed to a constant, not numbered
  *
- * It stays sensitive to **how many** ids appear, **where** they appear, and
- * **the pattern of repetition** between them — so a prompt that cites three
- * rows where it cited two, or cites the same row twice where it cited two
- * different ones, still changes the hash.
+ * The first three versions numbered ids by first appearance, to stay sensitive
+ * to *how many* appeared and to *the pattern of repetition* between them. That
+ * sensitivity turned out to be unusable, and it produced **three false
+ * mismatches**, each costing a full pipeline re-run:
  *
- * It is deliberately blind to **which** row an id names. Two requests that
- * differ only by pointing at a different row of the same kind, in the same
- * position, hash identically. That is a real loss, and it is the price of a
- * fixture that replays anywhere; the alternative is no assess or recommend
- * fixture at all, since every one of their prompts is full of ids.
+ * 1. instants and ids sharing one counter, so an extra instant shifted every id;
+ * 2. `fetchedAt` and `firstSeenAt` coinciding in one run and not the other;
+ * 3. the same `matchId` numbered `«id:1»` in a recording and `«id:11»` in its
+ *    replay, because the count of distinct ids *earlier in the body* differed.
  *
- * Only uuids are normalised. Sayari entity ids, LEIs, HS codes and every number
- * are hashed as they stand — those are *content*, and a change in them is
- * exactly the drift a replay must catch.
+ * The third is the one that settles it. Positional numbering is a claim about
+ * every id that came before, so it turns any difference in id multiplicity
+ * anywhere into a mismatch everywhere after it — and id multiplicity in a
+ * prompt is an artifact of which rows a database happened to mint, which is the
+ * exact thing this projection exists to ignore.
+ *
+ * So every uuid becomes `«id»`, exactly like an instant.
+ *
+ * ## What that gives up, stated plainly
+ *
+ * Sensitivity to **which** row an id names, to **how many** distinct rows
+ * appear, and to **whether the same row is cited twice**. A request that cited
+ * two rows where it cited one now hashes the same.
+ *
+ * That is a genuine loss of fidelity, and it is bounded by what the fixture
+ * still holds: the **response is stored verbatim**, so what the model actually
+ * cited is on record and the assertions read it from the published rows. What
+ * the hash still catches is everything that is not a row id — a changed
+ * prompt, a changed tool schema, a changed tool result, a changed message
+ * order.
+ *
+ * Only uuids and instants are normalised. Sayari entity ids, LEIs, HS codes and
+ * every number are hashed as they stand — those are *content*, and a change in
+ * them is exactly the drift a replay must catch.
  */
 const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
@@ -118,22 +159,9 @@ const INSTANT_ANYWHERE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]
  * being blind to the values themselves.
  */
 export function normaliseRowIds(text: string): string {
-  const seen = new Map<string, string>();
-  const placeholder = (kind: string, raw: string): string => {
-    const key = `${kind}:${raw.toLowerCase()}`;
-    let existing = seen.get(key);
-    if (!existing) {
-      existing = `«${kind}:${seen.size}»`;
-      seen.set(key, existing);
-    }
-    return existing;
-  };
-
   // Instants first: a uuid can never contain one, but an instant is replaced
   // wholesale and must not have had its digits renumbered underneath it.
-  return text
-    .replace(INSTANT_ANYWHERE, (instant) => placeholder('ts', instant))
-    .replace(UUID_ANYWHERE, (id) => placeholder('id', id));
+  return text.replace(INSTANT_ANYWHERE, '«ts»').replace(UUID_ANYWHERE, '«id»');
 }
 
 /** Hashes an outbound request body, tolerating a body that is not JSON. */
@@ -144,9 +172,8 @@ export function wireHash(bodyText: string): string {
   } catch {
     canonical = bodyText;
   }
-  const hash = createHash('sha256').update(normaliseRowIds(canonical)).digest('hex');
-  dump(hash, bodyText);
-  return hash;
+  dump(bodyText);
+  return createHash('sha256').update(normaliseRowIds(canonical)).digest('hex');
 }
 
 /**
@@ -157,9 +184,9 @@ export function wireHash(bodyText: string): string {
  * in a long-lived worker.
  */
 const MAX_PENDING = 256;
-const pending = new Map<string, string>();
+const pending = new Map<string, { wire: string; raw: string }>();
 
-export function rememberWireHash(messageId: string, hash: string): void {
+export function rememberWireHash(messageId: string, hash: { wire: string; raw: string }): void {
   if (pending.size >= MAX_PENDING) {
     // Oldest first — insertion order is iteration order for a Map.
     const oldest = pending.keys().next();
@@ -168,7 +195,7 @@ export function rememberWireHash(messageId: string, hash: string): void {
   pending.set(messageId, hash);
 }
 
-export function takeWireHash(messageId: string): string | undefined {
+export function takeWireHash(messageId: string): { wire: string; raw: string } | undefined {
   const hash = pending.get(messageId);
   pending.delete(messageId);
   return hash;

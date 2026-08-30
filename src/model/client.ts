@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SDK_REQUEST_OPTIONS } from './settings';
 import type { ModelCredentials } from './types';
-import { rememberWireHash, wireHash } from './wire';
+import { rawBodyHash, rememberWireHash, wireHash } from './wire';
 
 /**
  * The one place an `Anthropic` client is constructed (SPEC §17.2).
@@ -45,9 +45,10 @@ function capturing(inner: typeof fetch): typeof fetch {
     if (!response.headers.get('content-type')?.includes('application/json')) return response;
 
     try {
-      const hash = wireHash(body);
       const seen = (await response.clone().json()) as { id?: unknown };
-      if (typeof seen.id === 'string') rememberWireHash(seen.id, hash);
+      if (typeof seen.id === 'string') {
+        rememberWireHash(seen.id, { wire: wireHash(body), raw: rawBodyHash(body) });
+      }
     } catch {
       // A body that is not the shape we expected: nothing to file, nothing to fix.
     }

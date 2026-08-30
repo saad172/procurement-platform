@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { computeFamilyExposure, unionRiskFactors } from '@/domain/family';
@@ -296,6 +296,29 @@ async function writeAllCriteria(
       { hasCategory: true },
     );
     const criterion = perCategory.criteria.find((c) => c.key === 'tariff_exposure')!;
+
+    /**
+     * The Category's tariff **flags**, stored beside the rate.
+     *
+     * The flags exist to say *a rate is not the whole story* — Section 232 on
+     * autos and parts, a Section 301 action, an AD/CVD order that might land.
+     * They were reachable to a reader and to no check: an Assessment that wrote
+     * *"the 5% MFN rate is an as-of figure; Section 232 and Section 301 sit
+     * outside it"* was rejected in every Round, because `232` and `301` matched
+     * nothing the number check could see.
+     *
+     * The caveat was correct and the flags are the app's own authored text.
+     * This is the same shape as the anchor lines (finding 22): **a sentence
+     * quoting evidence must be able to cite the row that holds it**, and the
+     * only row this belongs on is the one whose rate the caveat qualifies.
+     */
+    const flags = await db
+      .select({ key: t.tariffFlag.key, label: t.tariffFlag.label, whyNotARate: t.tariffFlag.whyNotARate })
+      .from(t.categoryFlag)
+      .innerJoin(t.tariffFlag, eq(t.tariffFlag.key, t.categoryFlag.flagKey))
+      .where(eq(t.categoryFlag.categoryId, categoryId))
+      .orderBy(asc(t.tariffFlag.key));
+
     await writeCriterionValue(db, {
       supplierId: args.supplier.id,
       programId: args.programId,
@@ -303,7 +326,7 @@ async function writeAllCriteria(
       criterionKey: 'tariff_exposure',
       value: criterion.outcome.status === 'value' ? criterion.outcome.value : null,
       unknownReason: criterion.outcome.status === 'unknown' ? criterion.outcome.reason : null,
-      rawInputs: criterion.outcome.rawInputs,
+      rawInputs: { ...criterion.outcome.rawInputs, flags },
       anchorLine: criterion.outcome.anchorLine,
       jobId: args.jobId,
     });

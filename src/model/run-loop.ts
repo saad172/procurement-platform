@@ -289,10 +289,18 @@ async function writeTurn(
          * fetch under this message's id (see `wire.ts`). It is what a replay
          * matches on, and it is the only part of this object that describes
          * turns 2..n rather than just the first.
+         *
+         * `bodyHash` is the same body's **raw** sha256 — the one identity that
+         * survives a change to how the wire hash is computed, so a fixture can
+         * be rehashed from dumped bodies instead of re-run. See `rawBodyHash`.
          */
-        wireHash: takeWireHash(message.id) ?? null,
+        ...(() => {
+          const hashes = takeWireHash(message.id);
+          return { wireHash: hashes?.wire ?? null, bodyHash: hashes?.raw ?? null };
+        })(),
       },
-      response: message as never,
+      // Stringified here, because the column is text — see the schema for why.
+      response: JSON.stringify(message),
       stopReason: message.stop_reason ?? null,
       stopDetails: (message.stop_details ?? null) as never,
       toolNames: (params.toolDigest?.names ?? null) as never,
