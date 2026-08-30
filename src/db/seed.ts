@@ -6,6 +6,7 @@ import { closeDirectDb, getDirectDb, type Database } from './client';
 import * as t from './schema';
 import { CATEGORIES, CRITERIA, PLANTS, PROGRAM, TARIFF_FLAGS } from './seed-data/program';
 import { ROSTER } from './seed-data/roster';
+import { SEED_CREATED_AT, seedId } from './seed-data/ids';
 
 /**
  * The seed (SPEC §3.1, §4.3, §20).
@@ -22,6 +23,12 @@ import { ROSTER } from './seed-data/roster';
  *
  * It deliberately does not delete. A run that has happened is a derived row
  * hanging off these, and re-seeding must not discard it.
+ *
+ * **Ids are derived from those same natural keys** (`seed-data/ids.ts`), not
+ * minted at random. Two databases seeded from this file therefore agree on the
+ * ids as well as the columns — which is what makes a replay fixture portable
+ * between them, and what stops a re-seed from silently renumbering a row that
+ * a derived row already points at.
  */
 
 async function seedProgram(db: Database): Promise<string> {
@@ -33,6 +40,8 @@ async function seedProgram(db: Database): Promise<string> {
   const [row] = await db
     .insert(t.program)
     .values({
+      id: seedId('program', PROGRAM.name),
+      createdAt: SEED_CREATED_AT,
       name: PROGRAM.name,
       importingCountry: PROGRAM.importingCountry,
       vehicleClass: PROGRAM.vehicleClass,
@@ -47,6 +56,8 @@ async function seedPlants(db: Database, programId: string): Promise<number> {
     .insert(t.plant)
     .values(
       PLANTS.map((p) => ({
+        id: seedId('plant', p.code),
+        createdAt: SEED_CREATED_AT,
         programId,
         code: p.code,
         role: p.role,
@@ -66,7 +77,16 @@ async function seedPlants(db: Database, programId: string): Promise<number> {
 async function seedCategories(db: Database, programId: string): Promise<Map<string, string>> {
   await db
     .insert(t.category)
-    .values(CATEGORIES.map((c) => ({ programId, code: c.code, name: c.name, note: c.note })))
+    .values(
+      CATEGORIES.map((c) => ({
+        id: seedId('category', c.code),
+        createdAt: SEED_CREATED_AT,
+        programId,
+        code: c.code,
+        name: c.name,
+        note: c.note,
+      })),
+    )
     .onConflictDoNothing({ target: [t.category.programId, t.category.code] });
 
   const rows = await db.query.category.findMany({ where: eq(t.category.programId, programId) });
@@ -79,6 +99,8 @@ async function seedCategories(db: Database, programId: string): Promise<Map<stri
       .insert(t.categoryHsLine)
       .values(
         c.hsLines.map((line) => ({
+          id: seedId('category_hs_line', `${c.code}:${line.hsCode}`),
+          createdAt: SEED_CREATED_AT,
           categoryId,
           hsCode: line.hsCode,
           label: line.label,
@@ -98,6 +120,8 @@ async function seedCriteria(db: Database, programId: string): Promise<void> {
     .insert(t.criterion)
     .values(
       CRITERIA.map((c, i) => ({
+        id: seedId('criterion', c.key),
+        createdAt: SEED_CREATED_AT,
         key: c.key,
         label: c.label,
         blurb: c.blurb,
@@ -131,6 +155,8 @@ async function seedFlags(
     .insert(t.tariffFlag)
     .values(
       TARIFF_FLAGS.map((f, i) => ({
+        id: seedId('tariff_flag', f.key),
+        createdAt: SEED_CREATED_AT,
         key: f.key,
         label: f.label,
         whyNotARate: f.whyNotARate,
@@ -175,6 +201,8 @@ async function seedSuppliers(
     .insert(t.supplier)
     .values(
       ROSTER.map((row) => ({
+        id: seedId('supplier', String(row.index)),
+        createdAt: SEED_CREATED_AT,
         programId,
         origin: 'imported' as const,
         rosterIndex: row.index,

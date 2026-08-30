@@ -28,6 +28,13 @@ const clients = new Map<string, Anthropic>();
  * than no bookkeeping — so the response is cloned to read it, and any error in
  * reading is swallowed. The consequence of a miss is one fixture turn that
  * cannot be replayed, which the fixture recorder reports.
+ *
+ * **Streaming turns are skipped, deliberately.** A streamed response is an SSE
+ * body, and reading the message id out of it means draining a clone to the
+ * `message_start` event — buffering a whole turn to file a number that no
+ * `trace_turn` will use, since the only loop that streams is chat and chat
+ * writes no Trace. Recording a streamed turn is `src/fixtures/record-fetch.ts`,
+ * which is honest about buffering because that is the whole of what it does.
  */
 function capturing(inner: typeof fetch): typeof fetch {
   return async (input, init) => {
@@ -35,13 +42,14 @@ function capturing(inner: typeof fetch): typeof fetch {
 
     const body = init?.body;
     if (typeof body !== 'string') return response;
+    if (!response.headers.get('content-type')?.includes('application/json')) return response;
 
     try {
       const hash = wireHash(body);
       const seen = (await response.clone().json()) as { id?: unknown };
       if (typeof seen.id === 'string') rememberWireHash(seen.id, hash);
     } catch {
-      // A non-JSON or already-consumed response: nothing to file, nothing to fix.
+      // A body that is not the shape we expected: nothing to file, nothing to fix.
     }
     return response;
   };

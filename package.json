@@ -31,7 +31,8 @@
     "smoke:assess": "tsx scripts/smoke-assess.ts",
     "smoke:discover": "tsx scripts/smoke-discover.ts",
     "check:prefilter": "tsx scripts/check-prefilter.ts",
-    "fixtures:record": "tsx scripts/record-fixture.ts"
+    "fixtures:record": "tsx scripts/record-fixture.ts",
+    "fixtures:record-chat": "tsx scripts/record-chat-fixture.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.122.0",

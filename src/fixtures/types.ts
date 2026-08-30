@@ -27,6 +27,16 @@ export type FixtureTurn = {
   roundN: number | null;
   /** The whole `BetaMessage`, exactly as the API returned it. */
   response: unknown;
+  /**
+   * The raw SSE body, verbatim, for a **streamed** turn — where `response` is
+   * null and this is what the API actually said.
+   *
+   * Stored as text rather than as a reassembled message, for the same reason
+   * `response` is stored whole: a replay that had to *rebuild* an event stream
+   * from a final message would be synthesising the thing under test. The events
+   * a client sees are the events that were recorded.
+   */
+  sse?: string;
 };
 
 /** One cached upstream body, keyed the way `call()` looks it up. */

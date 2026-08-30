@@ -86,6 +86,18 @@ export type JobKind = keyof typeof JOB_CAPS;
  * more finely would only discard spend already made, because a Round is the
  * smallest resumable unit.
  */
+/**
+ * Chat's own tool-call ceiling, which is deliberately **not** a `JOB_CAPS`
+ * entry.
+ *
+ * Chat is not a Job: it has no Round boundary, no resume checkpoint and no
+ * Trace, so the per-Job machinery does not describe it. This is a runaway
+ * backstop, not the bound that matters — the confirm gate is, and it is the
+ * stronger one, because it stops a write before it happens rather than counting
+ * reads after the fact.
+ */
+export const CHAT_TOOL_CALL_CAP = 20;
+
 export const RUN_BUDGET_USD_PER_SUPPLIER = 3.0;
 
 /** The Dossier's own dollar budget, enforced by Managed Agents (SPEC §18.3). */

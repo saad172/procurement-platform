@@ -119,6 +119,20 @@ export function replayFetch(fixture: Fixture): typeof fetch {
     }
     served.push(turn.n);
 
+    /**
+     * A streamed turn is handed back as the **same SSE text that was
+     * recorded**, not as a message the replay reassembles into events. The
+     * client's own stream parsing is then part of what runs, which is the
+     * point: a replay that rebuilt the event sequence would be testing the
+     * rebuild.
+     */
+    if (turn.sse != null) {
+      return new Response(turn.sse, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+      });
+    }
+
     return new Response(JSON.stringify(turn.response), {
       status: 200,
       headers: { 'content-type': 'application/json' },
