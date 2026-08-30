@@ -7,7 +7,14 @@ import type { LoopName } from './settings';
  * The inputs and outputs of `runLoop()` (SPEC §17.2).
  */
 
-export type ModelCredentials = { apiKey: string };
+export type ModelCredentials = {
+  apiKey: string;
+  /**
+   * The replay seam (SPEC §19.1). Present only in tests, where it serves
+   * recorded turns and the key is a placeholder.
+   */
+  fetch?: typeof fetch | undefined;
+};
 
 /**
  * Built by the adapter, like `UpstreamContext`. Handlers never import their

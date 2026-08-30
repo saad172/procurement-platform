@@ -3,6 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { MODEL_PRICE_USD_PER_MTOK } from '@/config/constants';
 import { getAnthropicClient } from './client';
+import { takeWireHash } from './wire';
 import {
   BASE_BETAS,
   CONTEXT_EDITING_BETA,
@@ -227,6 +228,13 @@ async function writeTurn(
         effort: LOOP_SETTINGS[params.loop].effort,
         roundN: params.roundN ?? null,
         system: params.system,
+        /**
+         * The fingerprint of the body actually sent, filed by the capturing
+         * fetch under this message's id (see `wire.ts`). It is what a replay
+         * matches on, and it is the only part of this object that describes
+         * turns 2..n rather than just the first.
+         */
+        wireHash: takeWireHash(message.id) ?? null,
       },
       response: message as never,
       stopReason: message.stop_reason ?? null,

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { canonicalJson } from '@/lib/canonical-json';
 
 /**
  * The cache key (SPEC §16.2).
@@ -13,23 +14,7 @@ import { createHash } from 'node:crypto';
  * cached body would answer a question the new request did not ask.
  */
 
-/** Recursively sorts object keys so two equal params hash identically. */
-function canonicalise(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalise);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .filter(([, v]) => v !== undefined)
-        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-        .map(([k, v]) => [k, canonicalise(v)]),
-    );
-  }
-  return value;
-}
-
-export function canonicalJson(value: unknown): string {
-  return JSON.stringify(canonicalise(value));
-}
+export { canonicalJson };
 
 export function hashParams(endpoint: string, params: Record<string, unknown>): string {
   return createHash('sha256').update(canonicalJson({ endpoint, params })).digest('hex');
@@ -42,5 +27,5 @@ export function hashBody(body: unknown): string {
 
 /** Canonical params as stored, so a cache miss can print what it looked for. */
 export function canonicalParams(params: Record<string, unknown>): Record<string, unknown> {
-  return canonicalise(params) as Record<string, unknown>;
+  return JSON.parse(canonicalJson(params)) as Record<string, unknown>;
 }
