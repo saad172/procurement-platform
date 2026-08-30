@@ -257,26 +257,72 @@ const negativeNewsSchemaInner = z
   .transform((value) => (Array.isArray(value) ? { data: value } : value));
 
 /** Trade counterparties — Discover's mechanism (SPEC §11). */
-const tradeSearchSchemaInner = z
+/**
+ * `trade.searchSuppliers` — **each `data` row is a full entity**, not a
+ * `{ entity, shipments }` wrapper.
+ *
+ * The trade-specific figures hang off `metadata`, and the entity fields
+ * (`risk`, `psa_count`, `addresses`) sit at the top level exactly as
+ * `entitySchemaInner` describes them. Extending that schema rather than
+ * restating it is what keeps a lead and a roster row the same shape.
+ *
+ * This was measured after a projection written for the wrapper shape "passed"
+ * on every row and produced nothing: every field in it was `nullish()`, so a
+ * shape mismatch reads as a page of `undefined` rather than as an error — the
+ * same failure mode key-casing has (see `key-case.ts`), one level up. The
+ * three fields below are therefore **required**, so the next shape change is a
+ * loud projection error instead of a silently empty result set.
+ */
+const tradeMetadataSchema = z
   .object({
-    data: z
+    shipments: z.number(),
+    /** Absent on some rows: a displayed column, never a filter. */
+    latest_shipment_date: z.string().nullish(),
+    /** `key` is the six-digit line, `doc_count` its shipment count. */
+    hs_codes: z
       .array(
         z
           .object({
-            entity: z.union([z.string(), entitySchemaInner.loose()]).nullish(),
-            shipments: z.number().nullish(),
-            /** Absent on 13 of 25 sampled rows: a displayed column, never a filter. */
-            latest_shipment_date: z.string().nullish(),
-            hs_codes: z.array(z.unknown()).nullish(),
-            arrival_countries: z.array(z.string()).nullish(),
+            key: z.string().nullish(),
+            value: z.string().nullish(),
+            doc_count: z.number().nullish(),
           })
           .loose(),
       )
       .nullish(),
-    size: z.object({ count: z.number().nullish() }).partial().nullish(),
-    next: z.string().nullish(),
   })
   .loose();
+
+const tradeSearchSchemaInner = z
+  .object({
+    data: z
+      .array(
+        entitySchemaInner.extend({
+          metadata: tradeMetadataSchema,
+          /**
+           * Sayari's own forwarder flag. SPEC §11.1 measured 9 freight
+           * forwarders in the top 25 by shipments; this is the field that
+           * names them, and it is why the job can classify without guessing
+           * from the label.
+           */
+          logistics_entity: z.boolean().nullish(),
+        }),
+      )
+      .nullish(),
+    size: z.object({ count: z.number().nullish(), qualifier: z.string().nullish() }).partial().loose().nullish(),
+    /** A boolean here, like `traversal`. Measured, not assumed. */
+    next: z.union([z.boolean(), z.string()]).nullish(),
+    limit: z.number().nullish(),
+    offset: z.number().nullish(),
+  })
+  .loose();
+
+export type SayariTradeRow = z.infer<typeof tradeSearchSchemaInner>['data'] extends
+  | (infer R)[]
+  | null
+  | undefined
+  ? R
+  : never;
 
 
 // ── Exported projections ─────────────────────────────────────────────────────

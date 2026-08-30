@@ -9,6 +9,7 @@ import { WeightRail } from '@/components/weight-rail';
 import { loadShortlist } from '@/db/queries/shortlist';
 import { parseViewState } from '@/lib/view-state';
 import { DEFAULT_WEIGHTS } from '@/domain/score';
+import { LeadsTable } from './leads';
 
 /**
  * The Category page (SPEC §13.3, §13.6) — level two of the spine.
@@ -64,6 +65,12 @@ export default async function CategoryPage({
   });
 
   const scoredLine = category.hsLines.find((l) => l.isDefault);
+
+  const leads = await db
+    .select({ lead: t.lead, entity: t.entity })
+    .from(t.lead)
+    .innerJoin(t.entity, eq(t.entity.id, t.lead.entityId))
+    .where(eq(t.lead.categoryId, categoryId));
 
   return (
     <main>
@@ -220,6 +227,14 @@ export default async function CategoryPage({
           </div>
         </>
       ) : null}
+
+      <LeadsTable
+        programId={programId}
+        categoryId={categoryId}
+        categoryCode={category.code}
+        leads={leads}
+        showDismissed={query.dismissed === '1'}
+      />
 
       <h2>Recommendation</h2>
       <div className="card">

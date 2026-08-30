@@ -28,7 +28,9 @@
     "smoke:model": "tsx scripts/smoke-model.ts",
     "smoke:resolve": "tsx scripts/smoke-resolve.ts",
     "smoke:enrich": "tsx scripts/smoke-enrich.ts",
-    "smoke:assess": "tsx scripts/smoke-assess.ts"
+    "smoke:assess": "tsx scripts/smoke-assess.ts",
+    "smoke:discover": "tsx scripts/smoke-discover.ts",
+    "check:prefilter": "tsx scripts/check-prefilter.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.122.0",

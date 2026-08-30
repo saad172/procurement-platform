@@ -278,15 +278,22 @@ export const sayariTradeSearchSuppliers = defineEndpoint({
   normalizeParams: (p) => flat(p),
   dispatch: async (params, deps) => {
     const client = getSayariClient(deps.credentials);
-    // `filter` carries the HS lines and arrival countries; `q` is free text.
-    // Naming them here rather than at every call site is the endpoint table's
-    // whole purpose — a caller says what it wants, not how the API spells it.
+    /**
+     * `filter` carries the HS lines and arrival countries; `q` is free text.
+     *
+     * The keys are **camelCase** — `hsCode`, `arrivalCountry`. Sent as
+     * snake_case they are silently ignored rather than rejected, and the call
+     * returns `size.count: 0` with an empty `data` array, which looks exactly
+     * like "no company ships this line here". Naming them once, here, is the
+     * endpoint table's whole purpose: a caller says what it wants, not how the
+     * API spells it.
+     */
     const request = {
       limit: params.limit,
       ...(params.q ? { q: params.q } : {}),
       filter: {
-        ...(params.hsCodes ? { hs_code: params.hsCodes } : {}),
-        ...(params.arrivalCountries ? { arrival_country: params.arrivalCountries } : {}),
+        ...(params.hsCodes ? { hsCode: params.hsCodes } : {}),
+        ...(params.arrivalCountries ? { arrivalCountry: params.arrivalCountries } : {}),
       },
     };
     return viaSdkWithRawFallback(

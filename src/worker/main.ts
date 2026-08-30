@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { boot } from '@/config/boot';
 import { closeDirectDb, getDirectDb } from '@/db/client';
 import { createUpstream } from '@/upstream';
+import { discoverLeads } from '@/jobs/discover';
 import { enrichSupplier } from '@/jobs/enrich-supplier';
 import { runWorker } from './poll';
 
@@ -72,8 +73,55 @@ async function main(): Promise<void> {
         );
         return { state: 'done' };
       },
-      // The rest arrive with their build-order steps: resolve (8, wiring next),
-      // traverse (9), assess and recommend (10), discover (13).
+      /**
+       * Discover: one trade call plus up to 25 classifications, and the
+       * classifier costs no additional Sayari calls because a trade result is
+       * already a full entity.
+       */
+      discover: async (job, database) => {
+        const category = await database.query.category.findFirst({
+          where: (row, { eq: equals }) => equals(row.id, job.subjectId),
+        });
+        if (!category) return { state: 'failed', error: `no category ${job.subjectId}` };
+
+        const upstream = createUpstream({
+          db: database,
+          runId: job.runId,
+          jobId: job.id,
+          credentials: {
+            sayariClientId: env.SAYARI_CLIENT_ID,
+            sayariClientSecret: env.SAYARI_CLIENT_SECRET,
+            nominatimUserAgent: env.NOMINATIM_USER_AGENT,
+          },
+        });
+        const toolCtx = {
+          db: database,
+          upstream,
+          meter: { addModelTokens: () => {} },
+          runId: job.runId,
+          jobId: job.id,
+          surface: 'job' as const,
+        };
+        await discoverLeads(
+          {
+            db: database,
+            upstream,
+            toolCtx,
+            modelCtx: {
+              db: database,
+              runId: job.runId,
+              jobId: job.id,
+              credentials: { apiKey: env.ANTHROPIC_API_KEY },
+            },
+            jobId: job.id,
+          },
+          { programId: category.programId, categoryId: category.id },
+        );
+        return { state: 'done' };
+      },
+
+      // The rest arrive with their build-order steps: resolve (8), traverse (9),
+      // assess and recommend (10).
     },
     shouldStop: () => shuttingDown,
   });
