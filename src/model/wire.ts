@@ -60,6 +60,82 @@ function dump(hash: string, bodyText: string): void {
   }
 }
 
+/**
+ * Row ids, replaced by the order in which they first appear.
+ *
+ * ## Why the raw body cannot be hashed
+ *
+ * A prompt contains **database row ids**, and it has to: a Citation points at a
+ * row, so the model is given `matchId`, `criterionValueIds`, `enrichmentId` and
+ * the rest, or it cannot cite anything. Those ids come from
+ * `gen_random_uuid()`, so they differ in every database — and a fixture whose
+ * hash covers them can only ever replay against the database it was recorded
+ * on.
+ *
+ * Making the seed deterministic fixed this for *authored* rows. Derived rows
+ * are created as a run goes, and cannot be pinned the same way.
+ *
+ * So the hash is taken over a **database-independent projection** of the
+ * request: each distinct uuid becomes `«id:N»`, numbered by first appearance.
+ *
+ * ## What that keeps, and what it gives up
+ *
+ * It stays sensitive to **how many** ids appear, **where** they appear, and
+ * **the pattern of repetition** between them — so a prompt that cites three
+ * rows where it cited two, or cites the same row twice where it cited two
+ * different ones, still changes the hash.
+ *
+ * It is deliberately blind to **which** row an id names. Two requests that
+ * differ only by pointing at a different row of the same kind, in the same
+ * position, hash identically. That is a real loss, and it is the price of a
+ * fixture that replays anywhere; the alternative is no assess or recommend
+ * fixture at all, since every one of their prompts is full of ids.
+ *
+ * Only uuids are normalised. Sayari entity ids, LEIs, HS codes and every number
+ * are hashed as they stand — those are *content*, and a change in them is
+ * exactly the drift a replay must catch.
+ */
+const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/**
+ * Row **instants**, normalised for the same reason as row ids.
+ *
+ * `get_supplier` returns the Match row, which carries `settled_at`; a Criterion
+ * value carries when it was written. Those are wall-clock, so a replay — which
+ * is time-shifted by construction — can never reproduce them.
+ *
+ * **Instants only, never dates.** The pattern requires a `T` and a time, so
+ * `2026-06-16T14:02:11.481Z` is normalised and `2026-06-16` is not. That line
+ * is where the meaning changes: in this domain a plain date is *content* — a
+ * registration date, a latest shipment, a WGI vintage — and a change in one is
+ * exactly the drift a replay must catch. A row's insert instant is bookkeeping.
+ */
+const INSTANT_ANYWHERE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g;
+
+/**
+ * Replaces database-minted values with placeholders numbered by first
+ * appearance, so the projection stays sensitive to *how many* and *where* while
+ * being blind to the values themselves.
+ */
+export function normaliseRowIds(text: string): string {
+  const seen = new Map<string, string>();
+  const placeholder = (kind: string, raw: string): string => {
+    const key = `${kind}:${raw.toLowerCase()}`;
+    let existing = seen.get(key);
+    if (!existing) {
+      existing = `«${kind}:${seen.size}»`;
+      seen.set(key, existing);
+    }
+    return existing;
+  };
+
+  // Instants first: a uuid can never contain one, but an instant is replaced
+  // wholesale and must not have had its digits renumbered underneath it.
+  return text
+    .replace(INSTANT_ANYWHERE, (instant) => placeholder('ts', instant))
+    .replace(UUID_ANYWHERE, (id) => placeholder('id', id));
+}
+
 /** Hashes an outbound request body, tolerating a body that is not JSON. */
 export function wireHash(bodyText: string): string {
   let canonical: string;
@@ -68,7 +144,7 @@ export function wireHash(bodyText: string): string {
   } catch {
     canonical = bodyText;
   }
-  const hash = createHash('sha256').update(canonical).digest('hex');
+  const hash = createHash('sha256').update(normaliseRowIds(canonical)).digest('hex');
   dump(hash, bodyText);
   return hash;
 }

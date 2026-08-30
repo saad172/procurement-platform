@@ -44,10 +44,47 @@ export type EvaluationResult =
   | { kind: 'pass'; rubric: unknown; text: string }
   | { kind: 'objections'; objections: string[]; rubric: unknown; text: string };
 
+/**
+ * Three Rounds could not produce a document that passes our own checks.
+ *
+ * Named, rather than a bare throw, so a worker can tell this from a crash: the
+ * Job did everything it was asked and the answer is that there is nothing
+ * publishable — which is a result, not a malfunction.
+ */
+export class UnpublishableDraftError extends Error {
+  constructor(
+    readonly kind: string,
+    readonly objections: readonly string[],
+  ) {
+    super(
+      [
+        `The ${kind} was rejected by our own checks in every round, so nothing was published.`,
+        ...objections.map((objection) => `  - ${objection}`),
+      ].join('\n'),
+    );
+    this.name = 'UnpublishableDraftError';
+  }
+}
+
 export type LoopOutcome<TDraft> = {
   /** The draft to publish. Present unless the loop never produced one at all. */
   draft: TDraft | undefined;
-  evaluatorOutcome: 'passed' | 'published_with_objections';
+  /**
+   * `rejected_by_code` is **not publishable**, and that is the distinction the
+   * other two do not carry.
+   *
+   * Dissent is *the evaluator's* unanswered objections — matters of judgement,
+   * which a reader can weigh. A **code** objection is not a matter of
+   * judgement: a Citation pointing at a row that does not exist cannot be
+   * inserted at all, and a number matching nothing must not be published
+   * whatever anyone thinks of it.
+   *
+   * The loop used to fall through to `published_with_objections` after
+   * `MAX_ROUNDS` regardless — publishing a draft its own validator had just
+   * rejected. It surfaced as a Job crashing on a foreign key, three Rounds
+   * after the check that should have stopped it.
+   */
+  evaluatorOutcome: 'passed' | 'published_with_objections' | 'rejected_by_code';
   rounds: RoundRecord[];
   /** The objections that survived, each with the reply it drew. This IS dissent. */
   dissent: { objection: string; reply: string | undefined }[];
@@ -77,6 +114,8 @@ export async function runProposerEvaluatorLoop<TDraft>(
   const rounds: RoundRecord[] = [];
   let carriedObjections: string[] = [];
   let lastDraft: TDraft | undefined;
+  /** Empty unless the most recent draft failed the code checks. */
+  let lastCodeObjections: Objection[] = [];
 
   for (let roundN = 1; roundN <= maxRounds; roundN += 1) {
     // ── Propose, with free retries for a mis-shaped output ─────────────────
@@ -135,8 +174,10 @@ export async function runProposerEvaluatorLoop<TDraft>(
         objection: codeObjections.map((o) => `[${o.check}] ${o.message}`).join('\n'),
       });
       carriedObjections = codeObjections.map((o) => o.message);
+      lastCodeObjections = codeObjections;
       continue;
     }
+    lastCodeObjections = [];
 
     // ── The stateless evaluator ────────────────────────────────────────────
     const evaluation = await deps.evaluate({ roundN, draft: proposal.draft });
@@ -153,6 +194,25 @@ export async function runProposerEvaluatorLoop<TDraft>(
       return { draft: proposal.draft, evaluatorOutcome: 'passed', rounds, dissent: [], roundsUsed: roundN };
     }
     carriedObjections = evaluation.objections;
+  }
+
+  /**
+   * A draft that never passed the code checks is **not published**.
+   *
+   * A run must complete, and for a disagreement of judgement that means
+   * publishing with the dissent attached. It cannot mean publishing something
+   * that fails a check no reader can overrule — the insert would refuse it, and
+   * a Job that crashes on a constraint three Rounds later has spent the whole
+   * budget to arrive at an error it could have named in Round 1.
+   */
+  if (lastCodeObjections.length > 0) {
+    return {
+      draft: undefined,
+      evaluatorOutcome: 'rejected_by_code',
+      rounds,
+      dissent: lastCodeObjections.map((o) => ({ objection: `[${o.check}] ${o.message}`, reply: undefined })),
+      roundsUsed: maxRounds,
+    };
   }
 
   // ── MAX_ROUNDS without convergence: PUBLISH, carrying the dissent ────────

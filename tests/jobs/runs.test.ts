@@ -12,7 +12,8 @@ import {
   settleRunState,
 } from '@/jobs/runs';
 import { runWorker } from '@/worker/poll';
-import { RUN_BUDGET_USD_PER_SUPPLIER } from '@/config/constants';
+import { MAX_ROUNDS, RUN_BUDGET_USD_PER_SUPPLIER } from '@/config/constants';
+import { runProposerEvaluatorLoop } from '@/jobs/rounds';
 import {
   START_TEST_DB_HINT,
   closeTestDb,
@@ -255,5 +256,55 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
       expect(jobs[0]!.state).toBe('failed');
       expect(jobs[0]!.error).toMatch(/no handler registered/);
     });
+  });
+});
+
+/**
+ * A draft the code checks rejected is **not published**, and that is a
+ * different thing from publishing with dissent.
+ *
+ * Dissent is the evaluator's unanswered objections — matters of judgement a
+ * reader can weigh. A code objection is not: a Citation pointing at a row that
+ * does not exist cannot be inserted at all.
+ *
+ * The loop used to fall through to `published_with_objections` after
+ * MAX_ROUNDS regardless, and a recommend Job crashed on a foreign key three
+ * Rounds after the check that should have stopped it.
+ */
+describe('a draft that never passes the code checks', () => {
+  it('ends rejected_by_code, with no draft to publish', async () => {
+    const outcome = await runProposerEvaluatorLoop<{ text: string }>({
+      propose: async ({ roundN }) => ({
+        kind: 'draft',
+        draft: { text: `attempt ${roundN}` },
+        text: '',
+      }),
+      // Never satisfied, the way a dangling citation never becomes valid by
+      // being asked about again.
+      validate: async () => [{ check: 'citations', message: 'points at a row that does not exist' }],
+      evaluate: async () => {
+        throw new Error('the evaluator must not run on a draft the code rejected');
+      },
+    });
+
+    expect(outcome.evaluatorOutcome).toBe('rejected_by_code');
+    expect(outcome.draft).toBeUndefined();
+    expect(outcome.dissent.map((d) => d.objection).join(' ')).toContain('does not exist');
+    // Every Round was spent, and each is on record as a code rejection.
+    expect(outcome.roundsUsed).toBe(MAX_ROUNDS);
+    expect(outcome.rounds.filter((r) => r.source === 'code')).toHaveLength(MAX_ROUNDS);
+  });
+
+  it('still publishes with dissent when only the evaluator objects', async () => {
+    // The contrast that makes the distinction meaningful: judgement survives as
+    // dissent, a failed check does not survive at all.
+    const outcome = await runProposerEvaluatorLoop<{ text: string }>({
+      propose: async () => ({ kind: 'draft', draft: { text: 'a draft' }, text: '' }),
+      validate: async () => [],
+      evaluate: async () => ({ kind: 'objections', objections: ['I would weigh this differently'], rubric: {}, text: '' }),
+    });
+
+    expect(outcome.evaluatorOutcome).toBe('published_with_objections');
+    expect(outcome.draft).toBeDefined();
   });
 });

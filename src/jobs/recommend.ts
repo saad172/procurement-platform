@@ -14,6 +14,7 @@ import { getRegistry, type ToolContext } from '@/tools';
 import type { ModelContext } from '@/model/types';
 import { buildEvidence, buildFrozenInputs, parseObjections } from './assess';
 import { publishVersion } from './publish';
+import { UnpublishableDraftError } from './rounds';
 import { runProposerEvaluatorLoop } from './rounds';
 
 /**
@@ -196,7 +197,20 @@ export async function recommendCategory(
     },
   });
 
-  if (!outcome.draft) throw new Error('the recommend loop produced no draft at all');
+  /**
+   * A draft the code checks rejected is not published, and the Job says why.
+   *
+   * `UnpublishableDraftError` rather than a bare throw, so the worker can tell
+   * *"three Rounds could not produce a document that passes our own checks"*
+   * from a genuine crash. The surviving objections are the whole message —
+   * they are what a person would have to fix.
+   */
+  if (outcome.evaluatorOutcome === 'rejected_by_code' || !outcome.draft) {
+    throw new UnpublishableDraftError(
+      'recommendation',
+      outcome.dissent.map((d) => d.objection),
+    );
+  }
 
   const published = await publishVersion(db, {
     target: {

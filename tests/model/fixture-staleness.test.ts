@@ -51,6 +51,23 @@ describe('fixture manifests match the current prompts', () => {
   it.each(names)('%s', async (name) => {
     const fixture = await loadFixture(name);
     const recorded = fixture.manifest.loopHashes;
+
+    /**
+     * A **data-only** fixture pins no prompts, because it ran no model.
+     *
+     * `enrich` is the fan-out: our code calling five upstreams, with no turns
+     * by design. What it carries is upstream bodies, which a later Job's replay
+     * needs — and there is no prompt in it that could go stale.
+     *
+     * The check below still runs for everything else, so a model-driven fixture
+     * that somehow pinned nothing is still caught.
+     */
+    if (fixture.turns.length === 0) {
+      expect(fixture.upstream.length, `"${name}" has no turns and no bodies, so it holds nothing`)
+        .toBeGreaterThan(0);
+      return;
+    }
+
     expect(Object.keys(recorded).length).toBeGreaterThan(0);
 
     for (const [loop, recordedHash] of Object.entries(recorded)) {

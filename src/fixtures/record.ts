@@ -48,7 +48,24 @@ export async function recordFixture(
     .where(eq(t.traceTurn.jobId, args.jobId))
     .orderBy(asc(t.traceTurn.n));
 
-  if (turnRows.length === 0) throw new UnrecordableJobError(args.jobId, 'it has no trace turns');
+  /**
+   * A Job with **no turns** is recordable, and that is not a loophole.
+   *
+   * `enrich` runs no model at all — the fan-out is our code calling five
+   * upstreams — so it has no turns by design, and refusing it would be refusing
+   * a Job for behaving exactly as specified. What such a fixture carries is its
+   * **upstream bodies**, which is precisely what a later Job's replay needs:
+   * `assess` reads enrichments, and enrichments come from those bodies.
+   *
+   * The distinction that matters is *no turns* versus *turns we cannot replay*.
+   * The second is still refused, below.
+   */
+  if (turnRows.length === 0 && job.kind !== 'enrich') {
+    throw new UnrecordableJobError(
+      args.jobId,
+      `it has no trace turns, and "${job.kind}" is a model-driven kind that should have produced some`,
+    );
+  }
 
   const turns: FixtureTurn[] = turnRows.map((row) => {
     const request = row.request as { loop?: string; roundN?: number | null; wireHash?: string | null };
