@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod/v4';
 import * as t from '@/db/schema';
+import { isDatabaseId, notAnIdObjection } from '../ids';
 import { defineTool, type ReadWithWidget, type ToolContext, type WidgetType } from '../define';
 
 /**
@@ -85,6 +86,15 @@ export const getSupplier = defineTool({
   spends: [],
   latency: 'fast',
   handler: async (input, ctx) => {
+    // Checked before the query, because Postgres answers a non-uuid with a
+    // thrown type error rather than an empty result.
+    if (!isDatabaseId(input.supplierId)) {
+      return {
+        ok: false,
+        objections: [notAnIdObjection('supplier id', input.supplierId, 'find_supplier_by_name')],
+      };
+    }
+
     const supplier = await ctx.db.query.supplier.findFirst({
       where: eq(t.supplier.id, input.supplierId),
       with: { categories: { with: { category: true } } },

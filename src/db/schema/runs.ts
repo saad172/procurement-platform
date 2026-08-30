@@ -229,6 +229,25 @@ export const usageEvent = pgTable('usage_event', {
   /** A cache hit costs no credit; the confirm gate reads this to say so. */
   cacheHit: boolean('cache_hit').notNull().default(false),
 
+  /**
+   * The cached body this call read or wrote — **the only complete link between
+   * a Run and the upstream rows it touched.**
+   *
+   * `trace_tool_call` also points at `upstream_response`, and that link is the
+   * narrower one on purpose: it records calls a *model* made. The batch
+   * pre-pass is a **Job step, not a tool** (SPEC §15.6) — one call carrying
+   * every roster row — so it makes an upstream call that no `trace_tool_call`
+   * row will ever describe, and a replay fixture that missed it would throw a
+   * cache miss on the first thing the Job did.
+   *
+   * Every upstream call writes a `usage_event`, including a cache hit, which is
+   * why the link belongs here as well. Null on model rows, and on a call that
+   * failed before a body existed.
+   */
+  upstreamResponseId: uuid('upstream_response_id').references(() => upstreamResponse.id, {
+    onDelete: 'set null',
+  }),
+
   // ── Model rows only ──
   /**
    * Keyed by model id though we only ever ask for one, because server-side

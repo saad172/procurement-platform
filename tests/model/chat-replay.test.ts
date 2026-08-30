@@ -7,6 +7,7 @@ import { replayFetch } from '@/fixtures/replay-fetch';
 import { loadFixture } from '@/fixtures/load';
 import { seedUpstream } from '@/fixtures/replay-upstream';
 import { getTestDb, testDatabaseIsUp } from '../support/test-db';
+import { resetDerived } from '../support/reset';
 
 /**
  * `chat/one-turn` (SPEC §19.2) — the sole home of three claims:
@@ -37,6 +38,11 @@ describe('chat/one-turn replays', () => {
     if (!(await testDatabaseIsUp())) return;
     const db = await getTestDb();
     const fixture = await loadFixture(FIXTURE);
+
+    // A replay is a function of the database it starts from, and the recorded
+    // run saw a freshly-seeded one. See `resetDerived` for the suite-ordering
+    // failure this prevents.
+    await resetDerived(db);
 
     const [program] = await db.select().from(t.program).limit(1);
     if (!program) return;

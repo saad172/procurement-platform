@@ -112,6 +112,16 @@ export type ResolveDeps = {
     resolverVerdicts: ReturnType<typeof runDiscriminators>;
     evaluatorVerdicts: ReturnType<typeof runDiscriminators>;
     objection: string | undefined;
+    /** Which rungs the Round actually climbed — measured, never assumed. */
+    rungsUsed: string[];
+    /**
+     * Every entity id the Round looked at, including its picks.
+     *
+     * The rung tools hand candidates straight to the model, so without this the
+     * Job never learns they exist — and a Job that agrees on a company it has
+     * not stored cannot settle, because `match.entity_id` is a foreign key.
+     */
+    entityIdsSeen: string[];
   }>;
 };
 
@@ -216,7 +226,45 @@ export async function resolveSupplier(
   }
 
   const seen = [...candidates];
+  let rungsUsed = ['R1'];
   let objection: string | undefined;
+
+  /**
+   * Which rung each Candidate came from.
+   *
+   * Every Candidate used to be recorded as `foundByRung: 'R1'`, which is the
+   * pre-pass — true of the ones the pre-pass returned and false of every one an
+   * agent climbed a rung to find. The Needs Review view reads this to say *what
+   * it took to find each option*, and an answer of "R1" for all of them makes
+   * the ladder look free.
+   */
+  const foundByRung = new Map<string, string>(candidates.map((c) => [c.entityId, 'R1']));
+
+  /**
+   * Folds a Round's discoveries into what the Job knows.
+   *
+   * Fetching here rather than inside the Round keeps every upstream call on the
+   * Job's own `usage_event` trail, and it is what makes the picked entity exist
+   * locally before `settleMatch` tries to reference it.
+   *
+   * A fetch that fails is skipped rather than fatal: an id the agents saw but
+   * we cannot re-fetch is a candidate we cannot describe, not a reason to throw
+   * away a Round that otherwise succeeded. It simply never becomes a pick,
+   * because a pick with no local row cannot be settled.
+   */
+  const absorb = async (entityIds: readonly string[], rung: string): Promise<void> => {
+    for (const entityId of entityIds) {
+      if (seen.some((candidate) => candidate.entityId === entityId)) continue;
+      try {
+        const fetched = await upstream.sayari.getEntity({ id: entityId });
+        await upsertEntity(db, fetched.data);
+        seen.push(toCandidateFacts(fetched.data));
+        foundByRung.set(entityId, rung);
+      } catch (error) {
+        console.error(`[resolve] could not absorb candidate ${entityId}:`, error);
+      }
+    }
+  };
 
   for (let roundN = 1; roundN <= MAX_ROUNDS; roundN += 1) {
     // The seed is derived from the attempt and the Round, so a replay
@@ -230,6 +278,12 @@ export async function resolveSupplier(
       shuffledForEvaluator: shuffleCandidates(seen, seed),
     });
 
+    // Everything the Round found, before anything is decided about it — so the
+    // agreement check below is comparing ids the Job can actually store.
+    // The highest rung this Round climbed is where anything new came from.
+    await absorb(round.entityIdsSeen, round.rungsUsed.at(-1) ?? 'R1');
+    rungsUsed = [...new Set([...rungsUsed, ...round.rungsUsed])];
+
     // AGREEMENT IS OUR CODE COMPARING TWO ENTITY IDS. Neither agent is asked
     // whether it agrees, and neither is told what the other said.
     if (round.resolverPick && round.resolverPick === round.evaluatorPick) {
@@ -240,11 +294,11 @@ export async function resolveSupplier(
         entityId: round.resolverPick,
         settledBy: 'agents',
         jobId: args.jobId,
-        rungsUsed: ['R1'],
+        rungsUsed,
         note: `Both agents independently named ${picked?.label ?? round.resolverPick} at round ${roundN}.`,
         candidates: seen.map((c) => ({
           entityId: c.entityId,
-          foundByRung: 'R1',
+          foundByRung: foundByRung.get(c.entityId) ?? 'R1',
           verdicts: [
             { reportedBy: 'resolver', results: round.resolverVerdicts },
             { reportedBy: 'evaluator', results: round.evaluatorVerdicts },
@@ -270,12 +324,28 @@ export async function resolveSupplier(
     entityId: null,
     settledBy: 'agents',
     jobId: args.jobId,
-    rungsUsed: ['R1'],
+    rungsUsed,
     note:
       status === 'needs_review'
         ? `The agents did not converge in ${MAX_ROUNDS} rounds. Candidates in the roster's country were seen, so a person can choose among them.`
         : `The agents did not converge in ${MAX_ROUNDS} rounds, and no candidate in the roster's country was ever seen.`,
-    candidates: candidateRecords('resolver'),
+    /**
+     * `seen`, not the pre-pass list.
+     *
+     * Needs Review exists so a person can choose among the candidates, and the
+     * ones the agents climbed a rung to find are exactly the ones worth
+     * showing. Recording only the pre-pass would hide the work that was done
+     * and present a shorter list than the Round actually considered.
+     */
+    candidates: seen.map((c) => ({
+      entityId: c.entityId,
+      foundByRung: foundByRung.get(c.entityId) ?? 'R1',
+      queryProvenance:
+        foundByRung.get(c.entityId) === 'R1'
+          ? 'batch resolution pre-pass over the roster row'
+          : 'found by an agent during a Match round',
+      verdicts: [{ reportedBy: 'resolver', results: runDiscriminators(args.roster, c) }],
+    })),
   });
   return {
     status,

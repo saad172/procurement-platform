@@ -71,22 +71,31 @@ export async function recordFixture(
   }
 
   /**
-   * The upstream rows this Job actually read, found through the tool calls that
-   * read them — never "every row in the table".
+   * The upstream rows this Job actually read, found through its **usage rows** —
+   * never "every row in the table".
    *
    * A fixture carrying rows its Job never touched would still replay, and would
    * still be wrong: the keyless wrapper's job is to throw on a lookup the
    * recording did not make, and a fixture stuffed with spare rows silently
    * answers lookups that should have been misses.
+   *
+   * **`usage_event`, not `trace_tool_call`.** The narrower table records calls a
+   * *model* made, and the batch pre-pass is a **Job step, not a tool** (SPEC
+   * §15.6) — one call carrying every roster row — so its body appears in no
+   * `trace_tool_call` row at all. A fixture built from those alone throws a
+   * cache miss on the first thing a resolve Job does.
+   *
+   * Every upstream call writes a `usage_event`, **including a cache hit**,
+   * which matters more than it sounds: on the warm development cache where
+   * fixtures are recorded, almost every read is a hit.
    */
-  const turnIds = turnRows.map((row) => row.id);
-  const toolCalls = await db
-    .select({ upstreamResponseId: t.traceToolCall.upstreamResponseId })
-    .from(t.traceToolCall)
-    .where(inArray(t.traceToolCall.traceTurnId, turnIds));
+  const usageRows = await db
+    .select({ upstreamResponseId: t.usageEvent.upstreamResponseId })
+    .from(t.usageEvent)
+    .where(eq(t.usageEvent.jobId, args.jobId));
 
   const upstreamIds: string[] = [
-    ...new Set(toolCalls.map((call) => call.upstreamResponseId).filter((id): id is string => id != null)),
+    ...new Set(usageRows.map((row) => row.upstreamResponseId).filter((id): id is string => id != null)),
   ];
 
   // `inArray` with an empty list is a query with no legal shape, so the empty

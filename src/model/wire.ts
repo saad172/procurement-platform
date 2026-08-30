@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { canonicalJson } from '@/lib/canonical-json';
 
 /**
@@ -34,6 +36,30 @@ import { canonicalJson } from '@/lib/canonical-json';
  * once.
  */
 
+/**
+ * A debugging affordance: set `MODEL_REQUEST_DUMP_DIR` and every outbound body
+ * is written there as `<hash>.json`.
+ *
+ * It exists because a replay miss says *which turn* drifted and cannot say
+ * *what in it* drifted — the fixture stores a hash, not a body, for good
+ * reasons (a body is the whole conversation so far, repeated per turn). Dumping
+ * both sides and diffing the two files is the only way to answer that question,
+ * and it has now been the answer twice.
+ *
+ * Off unless the variable is set, and never on in normal running.
+ */
+const DUMP_DIR = process.env.MODEL_REQUEST_DUMP_DIR;
+
+function dump(hash: string, bodyText: string): void {
+  if (!DUMP_DIR) return;
+  try {
+    mkdirSync(DUMP_DIR, { recursive: true });
+    writeFileSync(join(DUMP_DIR, `${hash}.json`), bodyText);
+  } catch {
+    // A debugging aid that can break a run is worse than no debugging aid.
+  }
+}
+
 /** Hashes an outbound request body, tolerating a body that is not JSON. */
 export function wireHash(bodyText: string): string {
   let canonical: string;
@@ -42,7 +68,9 @@ export function wireHash(bodyText: string): string {
   } catch {
     canonical = bodyText;
   }
-  return createHash('sha256').update(canonical).digest('hex');
+  const hash = createHash('sha256').update(canonical).digest('hex');
+  dump(hash, bodyText);
+  return hash;
 }
 
 /**

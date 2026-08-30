@@ -77,6 +77,8 @@ async function writeUsage(
     cacheHit: boolean;
     via?: 'sdk' | 'raw' | undefined;
     errorKind?: string | undefined;
+    /** The body this call read or wrote; null when it failed before one existed. */
+    upstreamResponseId?: string | undefined;
   },
 ): Promise<void> {
   await ctx.db.insert(t.usageEvent).values({
@@ -90,6 +92,7 @@ async function writeUsage(
     outcome: row.outcome,
     errorKind: (row.errorKind ?? null) as never,
     cacheHit: row.cacheHit,
+    upstreamResponseId: row.upstreamResponseId ?? null,
   });
 }
 
@@ -110,7 +113,15 @@ export async function call<TParams extends Record<string, unknown>, TProjected>(
     if (cached) {
       // A cache hit is still a usage row, with `cache_hit` true and `ms` 0 —
       // the confirm gate reads exactly this to say "cached — no credits".
-      await writeUsage(ctx, def, { ms: 0, outcome: 'ok', cacheHit: true, via: cached.via });
+      await writeUsage(ctx, def, {
+        ms: 0,
+        outcome: 'ok',
+        cacheHit: true,
+        via: cached.via,
+        // Recorded on a hit as well as a live call. A fixture has to find the
+        // bodies a Job READ, and on a warm cache almost every read is a hit.
+        upstreamResponseId: cached.id,
+      });
       return {
         data: project(def, cached.body, paramsHash),
         cacheHit: true,
@@ -165,7 +176,13 @@ export async function call<TParams extends Record<string, unknown>, TProjected>(
           via,
         })
         .returning({ id: t.upstreamResponse.id, fetchedAt: t.upstreamResponse.fetchedAt });
-      await writeUsage(ctx, def, { ms, outcome: 'ok', cacheHit: false, via });
+      await writeUsage(ctx, def, {
+        ms,
+        outcome: 'ok',
+        cacheHit: false,
+        via,
+        upstreamResponseId: stored!.id,
+      });
 
       // ── 4. Project ───────────────────────────────────────────────────────
       return {

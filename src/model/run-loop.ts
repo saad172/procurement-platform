@@ -167,6 +167,7 @@ export async function runLoop(
 
       const traceTurnId = await writeTurn(ctx, params, turn);
       await writeUsage(ctx, turn, traceTurnId);
+      await writeToolCalls(ctx, turn, traceTurnId);
 
       // ── A whole-chain refusal fails the Job ──────────────────────────────
       // `failed`, meaning *something broke* — never `terminated`, which means
@@ -300,6 +301,44 @@ async function writeTurn(
     })
     .returning({ id: t.traceTurn.id });
   return row?.id;
+}
+
+/**
+ * One `trace_tool_call` row per `tool_use` block, written **before the tool
+ * runs** (SPEC §3.7).
+ *
+ * ## Why the input is written here and the output elsewhere
+ *
+ * A turn's `tool_use` blocks carry the id, the name and the input, and they are
+ * known the moment the turn is written. The *output* is not — the runner has
+ * not executed anything yet. Waiting for it would mean a crash inside a tool
+ * leaves no record of the call that caused it, which is the same reason the
+ * turn itself is written before any check runs.
+ *
+ * So the row is inserted with a null output, and `tool-adapter.ts` fills it in
+ * by `tool_use_id` when the tool returns. A tool that never returns leaves a
+ * row with a null output, which is the honest record: it was called, and it did
+ * not finish.
+ */
+async function writeToolCalls(
+  ctx: ModelContext,
+  message: BetaMessage,
+  traceTurnId: string | undefined,
+): Promise<void> {
+  if (!traceTurnId) return; // Chat has no Trace; the transcript is the record.
+
+  const uses = message.content.filter((block) => block.type === 'tool_use');
+  if (uses.length === 0) return;
+
+  await ctx.db.insert(t.traceToolCall).values(
+    uses.map((block) => ({
+      traceTurnId,
+      toolUseId: block.id,
+      toolName: block.name,
+      input: block.input as never,
+      ms: 0,
+    })),
+  );
 }
 
 /**

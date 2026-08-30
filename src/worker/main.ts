@@ -2,12 +2,10 @@
 import 'dotenv/config';
 import { boot } from '@/config/boot';
 import { closeDirectDb, getDirectDb, type Database } from '@/db/client';
-import { PREPASS_CANDIDATES } from '@/config/constants';
 import { createUpstream } from '@/upstream';
 import { discoverLeads } from '@/jobs/discover';
 import { enrichSupplier } from '@/jobs/enrich-supplier';
-import { prepassCandidateIds, resolveSupplier } from '@/jobs/resolve';
-import { makeRunRound } from '@/jobs/resolve-round';
+import { runResolveJob } from '@/jobs/resolve-job';
 import { assessSupplier } from '@/jobs/assess';
 import { recommendCategory } from '@/jobs/recommend';
 import { runWorker } from './poll';
@@ -166,14 +164,6 @@ async function main(): Promise<void> {
        * the ladder's rungs stay honest about what each one costs.
        */
       resolve: async (job, database) => {
-        const supplier = await database.query.supplier.findFirst({
-          where: (row, { eq: equals }) => equals(row.id, job.subjectId),
-        });
-        if (!supplier) return { state: 'failed', error: `no supplier ${job.subjectId}` };
-        if (!supplier.rosterName) {
-          return { state: 'failed', error: `supplier ${job.subjectId} has no roster name` };
-        }
-
         const upstream = createUpstream({
           db: database,
           runId: job.runId,
@@ -181,42 +171,17 @@ async function main(): Promise<void> {
           credentials: upstreamCredentials,
         });
 
-        const prepass = await upstream.sayari.resolve({
-          body: {
-            name: [supplier.rosterName],
-            ...(supplier.rosterAddress ? { address: [supplier.rosterAddress] } : {}),
-            ...(supplier.rosterCountry ? { country: [supplier.rosterCountry] } : {}),
-          },
-        });
-
-        const outcome = await resolveSupplier(
+        const outcome = await runResolveJob(
           {
             db: database,
             upstream,
-            /**
-             * Without this the ladder stops at the auto-accept gate and parks
-             * every row it cannot settle by rules — a legitimate state, and the
-             * wrong one for a worker, which is the thing that is supposed to
-             * spend tokens on the rows rules could not settle.
-             */
-            runRound: makeRunRound({
+            round: {
               toolCtx: toolContext(database, upstream, job),
               modelCtx: modelContext(database, job),
-            }),
-          },
-          {
-            supplierId: supplier.id,
-            roster: {
-              name: supplier.rosterName,
-              address: supplier.rosterAddress,
-              country: supplier.rosterCountry,
-              hasCategory: true,
             },
-            prepassEntityIds: prepassCandidateIds(prepass.data)
-              .slice(0, PREPASS_CANDIDATES)
-              .map((candidate) => candidate.entityId),
             jobId: job.id,
           },
+          { supplierId: job.subjectId },
         );
 
         /**
@@ -225,7 +190,7 @@ async function main(): Promise<void> {
          * waits for a person. Marking it `failed` would put a red row in the
          * Run for the one outcome the ladder is proudest of.
          */
-        console.log(`  resolve ${supplier.rosterName}: ${outcome.status} (settled by ${outcome.settledBy})`);
+        console.log(`  resolve ${job.subjectId}: ${outcome.status} (settled by ${outcome.settledBy})`);
         return { state: 'done' };
       },
 
