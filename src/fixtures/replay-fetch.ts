@@ -77,6 +77,19 @@ export class UnhashableFixtureError extends Error {
  * Each turn is served **at most once**. A loop that repeats a request it already
  * made is looping, and a replay that cheerfully served the same turn twice would
  * hide it.
+ *
+ * ## A miss is *returned*, not thrown
+ *
+ * Throwing from `fetch` is the obvious implementation and it is wrong here. The
+ * SDK treats a thrown fetch as a transport failure: it wraps it as
+ * `APIConnectionError: Connection error.` — discarding the message that named
+ * the drifted turn — and then **retries it twice**, so the fixture is asked the
+ * same impossible question three times before anyone sees a useless error.
+ *
+ * A `400` carries the message through the SDK's own error formatting and is not
+ * retried, so the first miss is the one reported, and it says which turn.
+ * `ReplayMissError` is still constructed — for its message, and for callers
+ * that drive the fetch directly.
  */
 export function replayFetch(fixture: Fixture): typeof fetch {
   const unhashable = fixture.turns.filter((turn) => turn.wireHash == null).map((turn) => turn.n);
@@ -98,7 +111,11 @@ export function replayFetch(fixture: Fixture): typeof fetch {
     const bucket = byHash.get(hash);
     const turn = bucket?.find((candidate) => !served.includes(candidate.n));
     if (!turn) {
-      throw new ReplayMissError(fixture.manifest.name, hash, served, fixture.turns);
+      const miss = new ReplayMissError(fixture.manifest.name, hash, served, fixture.turns);
+      return new Response(JSON.stringify({ type: 'error', error: { type: 'replay_miss', message: miss.message } }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      });
     }
     served.push(turn.n);
 

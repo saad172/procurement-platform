@@ -1,0 +1,142 @@
+{
+  "manifest": {
+    "name": "model/two-turn-tool-loop",
+    "recordedAt": "2026-08-30T00:26:50.205Z",
+    "loopHashes": {
+      "assess": "0e20692173389dc4249d6fa13e534efccea9c6569ad77b0c4848a7610689b699"
+    },
+    "toolDigests": {
+      "assess": "smoke"
+    }
+  },
+  "turns": [
+    {
+      "n": 1,
+      "wireHash": "4097b38d26da9c9972166c5c3d7f2853612e2886c44131b28aac65b4345c55dc",
+      "loop": "assess",
+      "roundN": 1,
+      "response": {
+        "id": "msg_011CeXyq9Tca2RcrqgCZkGHR",
+        "role": "assistant",
+        "type": "message",
+        "model": "claude-opus-5",
+        "usage": {
+          "iterations": [
+            {
+              "type": "message",
+              "input_tokens": 566,
+              "output_tokens": 178,
+              "cache_creation": {
+                "ephemeral_1h_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 0
+              },
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0
+            }
+          ],
+          "input_tokens": 566,
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "output_tokens": 178,
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0
+        },
+        "content": [
+          {
+            "id": "toolu_01AkRHV2ssKCGGnFFu88vGiq",
+            "name": "lookup_supplier_country",
+            "type": "tool_use",
+            "input": {
+              "supplierName": "Yazaki"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          },
+          {
+            "id": "toolu_014hESm2NcxwkD3FzEKBmigQ",
+            "name": "lookup_supplier_country",
+            "type": "tool_use",
+            "input": {
+              "supplierName": "Sumitomo Electric"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          },
+          {
+            "id": "toolu_014PXvfyX5tsemH5bypAQyUn",
+            "name": "lookup_supplier_country",
+            "type": "tool_use",
+            "input": {
+              "supplierName": "Aptiv"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "stop_details": null,
+        "stop_sequence": null
+      }
+    },
+    {
+      "n": 2,
+      "wireHash": "38268b2f140c9ced906eb957aaec630ac45e90f068259b87232ebd7d4d59aca5",
+      "loop": "assess",
+      "roundN": 1,
+      "response": {
+        "id": "msg_011CeXyqP4vHYAtGaVWJGcCq",
+        "role": "assistant",
+        "type": "message",
+        "model": "claude-opus-5",
+        "usage": {
+          "iterations": [
+            {
+              "type": "message",
+              "input_tokens": 873,
+              "output_tokens": 285,
+              "cache_creation": {
+                "ephemeral_1h_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 0
+              },
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0
+            }
+          ],
+          "input_tokens": 873,
+          "service_tier": "standard",
+          "inference_geo": "global",
+          "output_tokens": 285,
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0
+        },
+        "content": [
+          {
+            "text": "Roster countries: Yazaki — JPN, Sumitomo Electric — JPN, Aptiv — USA.\n\nOn roster country alone, Yazaki and Sumitomo Electric share the same country (Japan) and so would be treated alike; Aptiv (USA) differs.\n\nWhat the roster country does not tell you: it's a corporate/roster designation, not a country of origin for the goods. Wire harnesses are labour-intensive and typically assembled in third countries — Mexico, Morocco, the Philippines, Eastern Europe — regardless of where the parent company is domiciled. Import duty turns on the origin of the shipped goods (substantial transformation, tariff classification, and any trade-agreement qualification like USMCA), none of which is in this data. So this roster can't actually settle the duty question for any of the three; you'd need plant location and origin documentation per part.",
+            "type": "text"
+          }
+        ],
+        "stop_reason": "end_turn",
+        "stop_details": null,
+        "stop_sequence": null
+      }
+    }
+  ],
+  "upstream": []
+}

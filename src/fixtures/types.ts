@@ -62,6 +62,14 @@ export type FixtureManifest = {
   recordedAt: string;
   /** Loop name → `buildManifest()`'s per-loop hash, as of recording. */
   loopHashes: Record<string, string>;
+  /**
+   * Loop name → the tool digest in force at recording, read off `trace_turn`.
+   *
+   * Stored separately from the hash it feeds because the staleness test has to
+   * hold it *constant* to ask its question — "did the prompt move, with the
+   * tools held still?" — and a number folded into a hash cannot be held still.
+   */
+  toolDigests: Record<string, string>;
 };
 
 export type Fixture = {

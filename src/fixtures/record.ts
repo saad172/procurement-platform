@@ -1,0 +1,161 @@
+import { createHash } from 'node:crypto';
+import { asc, eq, inArray } from 'drizzle-orm';
+import * as t from '@/db/schema';
+import type { Database } from '@/db/client';
+import { buildManifest } from '@/model';
+import type { LoopName } from '@/model/settings';
+import type { Fixture, FixtureTurn, FixtureUpstreamRow } from './types';
+
+/**
+ * Exports one real Job's rows as a fixture (SPEC §19.1).
+ *
+ * **Nothing here is computed.** Every field is a column, copied. The moment
+ * this file started reconstructing a request or synthesising a body, the output
+ * would stop being a record of a run and become a hand-written fixture that
+ * merely looks like one — and the replay-bar claim rests on the fixture being
+ * an export, not a construction.
+ *
+ * The one exception is the manifest, and it is a *snapshot* rather than a
+ * computation: `buildManifest()` is called and its answer stored, so a later
+ * disagreement can only mean the code actually changed.
+ */
+
+export class UnrecordableJobError extends Error {
+  constructor(jobId: string, reason: string) {
+    super(`Job ${jobId} cannot be exported as a fixture: ${reason}`);
+    this.name = 'UnrecordableJobError';
+  }
+}
+
+/**
+ * `trace_fidelity` is the Job's own claim about whether it can drive a replay.
+ * Exporting a `timeline` Job would produce a fixture that fails at the first
+ * turn, which is a slower way of learning what the column already says.
+ */
+export async function recordFixture(
+  db: Database,
+  args: { name: string; jobId: string; recordedAt: string },
+): Promise<Fixture> {
+  const job = await db.query.job.findFirst({ where: eq(t.job.id, args.jobId) });
+  if (!job) throw new UnrecordableJobError(args.jobId, 'no such job');
+  if (job.traceFidelity !== 'replayable') {
+    throw new UnrecordableJobError(args.jobId, `its trace_fidelity is "${job.traceFidelity}"`);
+  }
+
+  const turnRows = await db
+    .select()
+    .from(t.traceTurn)
+    .where(eq(t.traceTurn.jobId, args.jobId))
+    .orderBy(asc(t.traceTurn.n));
+
+  if (turnRows.length === 0) throw new UnrecordableJobError(args.jobId, 'it has no trace turns');
+
+  const turns: FixtureTurn[] = turnRows.map((row) => {
+    const request = row.request as { loop?: string; roundN?: number | null; wireHash?: string | null };
+    return {
+      n: row.n,
+      wireHash: request.wireHash ?? null,
+      loop: request.loop ?? 'unknown',
+      roundN: request.roundN ?? null,
+      response: row.response,
+    };
+  });
+
+  const unhashable = turns.filter((turn) => turn.wireHash == null).map((turn) => turn.n);
+  if (unhashable.length > 0) {
+    throw new UnrecordableJobError(
+      args.jobId,
+      `turns ${unhashable.join(', ')} have no wire hash, so they could only be replayed by ` +
+        'position. They were recorded before the capture existed — re-run the Job.',
+    );
+  }
+
+  /**
+   * The upstream rows this Job actually read, found through the tool calls that
+   * read them — never "every row in the table".
+   *
+   * A fixture carrying rows its Job never touched would still replay, and would
+   * still be wrong: the keyless wrapper's job is to throw on a lookup the
+   * recording did not make, and a fixture stuffed with spare rows silently
+   * answers lookups that should have been misses.
+   */
+  const turnIds = turnRows.map((row) => row.id);
+  const toolCalls = await db
+    .select({ upstreamResponseId: t.traceToolCall.upstreamResponseId })
+    .from(t.traceToolCall)
+    .where(inArray(t.traceToolCall.traceTurnId, turnIds));
+
+  const upstreamIds: string[] = [
+    ...new Set(toolCalls.map((call) => call.upstreamResponseId).filter((id): id is string => id != null)),
+  ];
+
+  // `inArray` with an empty list is a query with no legal shape, so the empty
+  // case is answered without asking the database.
+  const upstreamRows =
+    upstreamIds.length === 0
+      ? []
+      : await db.select().from(t.upstreamResponse).where(inArray(t.upstreamResponse.id, upstreamIds));
+
+  const upstream: FixtureUpstreamRow[] = upstreamRows.map((row) => ({
+    source: row.source,
+    endpoint: row.endpoint,
+    paramsHash: row.paramsHash,
+    params: row.params,
+    body: row.body,
+    bodyHash: row.bodyHash,
+    via: row.via,
+  }));
+
+  /**
+   * Only the loops this fixture actually used.
+   *
+   * Pinning all six would redden this fixture when an unrelated loop's prompt
+   * changed — a false alarm that trains people to re-record without reading,
+   * which is the habit that makes a staleness test worthless.
+   */
+  const usedLoops = new Set(turns.map((turn) => turn.loop));
+  const digests = digestsByLoop(turnRows);
+  const loopHashes: Record<string, string> = {};
+  const toolDigests: Record<string, string> = {};
+  for (const entry of buildManifest(digests)) {
+    if (!usedLoops.has(entry.loop)) continue;
+    loopHashes[entry.loop] = entry.hash;
+    toolDigests[entry.loop] = entry.toolDigestHash;
+  }
+
+  return {
+    manifest: { name: args.name, recordedAt: args.recordedAt, loopHashes, toolDigests },
+    turns,
+    upstream,
+  };
+}
+
+/**
+ * The tool digest **as recorded**, read off the turns rather than re-derived.
+ *
+ * A digest re-derived here would be today's tool list, so the manifest would
+ * agree with itself no matter how far the tools had drifted since — a staleness
+ * test that can never fail.
+ */
+function digestsByLoop(
+  turnRows: { request: unknown; toolDigestHash: string | null }[],
+): Partial<Record<LoopName, string>> {
+  const digests: Partial<Record<LoopName, string>> = {};
+  for (const row of turnRows) {
+    const loop = (row.request as { loop?: string }).loop as LoopName | undefined;
+    if (loop && row.toolDigestHash) digests[loop] = row.toolDigestHash;
+  }
+  return digests;
+}
+
+/** Stable, diffable JSON — a fixture is committed and reviewed like source. */
+export function serializeFixture(fixture: Fixture): string {
+  return `${JSON.stringify(fixture, null, 2)}\n`;
+}
+
+/** Names the fixture's content, so a re-record that changed nothing is visible. */
+export function fixtureDigest(fixture: Fixture): string {
+  return createHash('sha256')
+    .update(JSON.stringify({ turns: fixture.turns, upstream: fixture.upstream }))
+    .digest('hex');
+}
