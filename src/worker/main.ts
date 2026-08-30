@@ -7,6 +7,7 @@ import { createUpstream } from '@/upstream';
 import { discoverLeads } from '@/jobs/discover';
 import { enrichSupplier } from '@/jobs/enrich-supplier';
 import { prepassCandidateIds, resolveSupplier } from '@/jobs/resolve';
+import { makeRunRound } from '@/jobs/resolve-round';
 import { assessSupplier } from '@/jobs/assess';
 import { recommendCategory } from '@/jobs/recommend';
 import { runWorker } from './poll';
@@ -189,7 +190,20 @@ async function main(): Promise<void> {
         });
 
         const outcome = await resolveSupplier(
-          { db: database, upstream },
+          {
+            db: database,
+            upstream,
+            /**
+             * Without this the ladder stops at the auto-accept gate and parks
+             * every row it cannot settle by rules — a legitimate state, and the
+             * wrong one for a worker, which is the thing that is supposed to
+             * spend tokens on the rows rules could not settle.
+             */
+            runRound: makeRunRound({
+              toolCtx: toolContext(database, upstream, job),
+              modelCtx: modelContext(database, job),
+            }),
+          },
           {
             supplierId: supplier.id,
             roster: {

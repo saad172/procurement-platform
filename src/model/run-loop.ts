@@ -201,6 +201,7 @@ export async function runLoop(
           turns,
           toolCalls,
           tokens,
+          toolUses,
         };
       }
       if (params.caps.tokens > 0 && tokens > params.caps.tokens) {
@@ -211,6 +212,7 @@ export async function runLoop(
           turns,
           toolCalls,
           tokens,
+          toolUses,
         };
       }
 
@@ -230,7 +232,7 @@ export async function runLoop(
     if (controller.signal.aborted) {
       // An abort we initiated has already returned its outcome above; reaching
       // here means the abort raced the iterator, so report what we counted.
-      return { status: 'terminated', reason: 'aborted at a ceiling', turns, toolCalls, tokens };
+      return { status: 'terminated', reason: 'aborted at a ceiling', turns, toolCalls, tokens, toolUses };
     }
     // Named loudly: a failure here is something only we can fix, and a silent
     // one reads to the caller as the model mis-shaping its output.

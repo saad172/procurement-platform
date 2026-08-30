@@ -1,5 +1,6 @@
 import { z } from 'zod/v4';
 import { matchStrengthValue } from '@/upstream/projections/sayari';
+import { toEntityView } from '@/domain/entity-view';
 import { defineTool, type Estimate, type ToolContext } from '../define';
 
 /**
@@ -246,7 +247,8 @@ export const sayariSearchEntity = defineTool({
 
 export const sayariGetEntity = defineTool({
   name: 'sayari_get_entity',
-  description: 'Fetch one company from Sayari by entity id, with its attributes, risk factors and relationships.',
+  description:
+    'Fetch one company from Sayari by entity id: identity, every address, identifiers, risk factors with their traversal paths, and relationship counts by type. Relationship rows are not included — use get_supplier_family for ownership.',
   input: z.object({ entityId: z.string() }),
   surfaces: ['chat', 'job', 'mcp'],
   effect: 'read',
@@ -255,7 +257,9 @@ export const sayariGetEntity = defineTool({
   confirm: spendOneSayariCall('Fetch this company from Sayari.'),
   handler: async (input, ctx) => {
     const r = await ctx.upstream.sayari.getEntity({ id: input.entityId });
-    return { ok: true, data: sourceResult('Sayari entity', r.cacheHit, r.data) };
+    // Projected, not raw. A whole entity is a graph node with every edge
+    // attached — see `toEntityView` for the 703,956-token turn that earned this.
+    return { ok: true, data: sourceResult('Sayari entity', r.cacheHit, toEntityView(r.data)) };
   },
 });
 

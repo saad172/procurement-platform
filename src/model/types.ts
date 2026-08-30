@@ -100,8 +100,24 @@ export type RunLoopOutcome =
       toolCalls: number;
       tokens: number;
     }
-  /** A cap fired: a number you set. Amber, and re-runnable. */
-  | { status: 'terminated'; reason: string; turns: number; toolCalls: number; tokens: number }
+  /**
+   * A cap fired: a number you set. Amber, and re-runnable.
+   *
+   * It carries `toolUses` for the same reason `done` does. A ceiling firing one
+   * turn after the model submitted its answer used to discard that answer — the
+   * Round reported "neither agent submitted a pick" when both had. What a
+   * ceiling stops is *more spending*, not the work already done, and whether
+   * the caller can use a submission from a terminated loop is the caller's
+   * judgement to make.
+   */
+  | {
+      status: 'terminated';
+      reason: string;
+      turns: number;
+      toolCalls: number;
+      tokens: number;
+      toolUses: { name: string; input: unknown }[];
+    }
   /** The run budget was reached at a Round boundary. The ONLY resumable stop. */
   | { status: 'paused_on_budget'; spentUsd: number; turns: number; toolCalls: number; tokens: number }
   /** Something broke, including a whole-chain refusal. Red, and retryable. */
