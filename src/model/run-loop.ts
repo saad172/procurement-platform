@@ -1,4 +1,5 @@
 import type { BetaMessage } from '@anthropic-ai/sdk/resources/beta';
+import type { BetaMessageStream } from '@anthropic-ai/sdk/lib/BetaMessageStream';
 import { eq, sql } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { MODEL_PRICE_USD_PER_MTOK } from '@/config/constants';
@@ -60,6 +61,37 @@ function toolCallsIn(message: BetaMessage): number {
   return message.content.filter((block) => block.type === 'tool_use').length;
 }
 
+/**
+ * One yielded turn, resolved to a finished `BetaMessage`.
+ *
+ * The runner yields a `BetaMessage` when `stream` is off and a
+ * `BetaMessageStream` when it is on. Normalising here rather than branching the
+ * whole loop is what keeps a single statement of the order of work — write,
+ * then check, then let the tools run — instead of two copies that can drift.
+ *
+ * Text deltas are forwarded as they arrive; if no one is listening, the stream
+ * is simply awaited, which is exactly the non-streaming behaviour.
+ */
+async function resolveTurn(
+  yielded: BetaMessage | BetaMessageStream,
+  onTextDelta: ((text: string) => void) | undefined,
+): Promise<BetaMessage> {
+  if (!isMessageStream(yielded)) return yielded;
+  if (onTextDelta) yielded.on('text', onTextDelta);
+  return yielded.finalMessage();
+}
+
+/**
+ * Told apart by `finalMessage`, not by `instanceof`.
+ *
+ * The class is reachable only through a deep subpath import, and a type guard
+ * that depends on which copy of the SDK a bundler resolved is a guard that
+ * fails silently in exactly one environment.
+ */
+function isMessageStream(value: BetaMessage | BetaMessageStream): value is BetaMessageStream {
+  return typeof (value as BetaMessageStream).finalMessage === 'function';
+}
+
 export async function runLoop(
   params: RunLoopParams,
   ctx: ModelContext,
@@ -82,6 +114,17 @@ export async function runLoop(
       tools: params.tools as never,
       thinking: THINKING,
       output_config: { effort: settings.effort },
+      /**
+       * `stream` comes from the settings table, and only chat sets it.
+       *
+       * It changes what the runner yields — a `BetaMessageStream` per turn
+       * rather than a finished `BetaMessage` — which is why the loop below
+       * resolves each turn before doing anything with it. Every guarantee
+       * downstream (write before checking, one `usage_event` per turn) is
+       * stated in terms of a finished message, and a half-arrived one cannot
+       * honour them.
+       */
+      stream: settings.stream,
       betas: betas as never,
       // Routes a refusal by category, with no model list of ours to maintain.
       fallbacks: 'default',
@@ -99,7 +142,17 @@ export async function runLoop(
 
   try {
     for await (const message of runner) {
-      const turn = message as BetaMessage;
+      /**
+       * Streaming turns arrive as a `BetaMessageStream`. Text deltas are handed
+       * to `onTextDelta` as they land — that is the whole point of streaming —
+       * and then the turn is awaited to completion.
+       *
+       * **The bookkeeping still runs on the finished message.** Metering a
+       * partial turn would mean a `usage_event` whose token counts are not yet
+       * known, and a cap check against a number still moving. Streaming changes
+       * when the *person* sees the answer, not when the ledger is written.
+       */
+      const turn = await resolveTurn(message, params.onTextDelta);
       turns += 1;
       lastMessage = turn;
 

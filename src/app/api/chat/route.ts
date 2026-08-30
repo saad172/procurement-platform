@@ -119,61 +119,121 @@ export async function POST(request: Request): Promise<Response> {
     buildPageBlock(body.pageRef, body.viewState ?? {}),
   ];
 
-  const outcome = await runLoop(
-    {
-      loop: 'chat',
-      system: chatPrompts.system,
-      tools,
-      messages: messages as never,
-      // Chat has no per-Job ceiling in the Job sense; the confirm gate bounds it.
-      caps: { toolCalls: 20, tokens: 0 },
-      toolDigest: registry.digest(chatTools),
+  /**
+   * The turn is streamed (SPEC §2, §11).
+   *
+   * ## Why the writes still happen at the end
+   *
+   * Streaming changes when the *person* sees the answer. It does not change
+   * what is on record: the transcript rows — the widgets, the frozen proposals,
+   * the assistant's text — are written after the loop settles, and `done` is
+   * emitted only once they are. A client that re-reads the Thread on `done`
+   * therefore cannot see a half-written turn.
+   *
+   * Text deltas are the one thing sent early, and they are sent as *display*,
+   * not as a record. The row that gets stored is the settled text.
+   *
+   * ## Why Citations are not validated here
+   *
+   * The Citation rule is deliberately not extended to chat prose. A validator
+   * on a streaming turn either blocks the stream or rejects after the person
+   * has already read the sentence — and it would tempt the model to pad
+   * ordinary conversation with citations it does not need. The Trace's absence
+   * and the transcript's completeness are what make chat honest instead.
+   */
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: string, data: unknown) => {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      };
+
+      // First, so the client can attach to the Thread before any text arrives —
+      // a new Thread's id is otherwise unknown until the turn ends.
+      send('open', { threadId });
+
+      try {
+        const outcome = await runLoop(
+          {
+            loop: 'chat',
+            system: chatPrompts.system,
+            tools,
+            messages: messages as never,
+            // Chat has no per-Job ceiling in the Job sense; the confirm gate bounds it.
+            caps: { toolCalls: 20, tokens: 0 },
+            toolDigest: registry.digest(chatTools),
+            onTextDelta: (delta) => send('delta', delta),
+          },
+          // No jobId: chat spends inside a Run but outside any Job, and writes
+          // no trace_turn at all.
+          { db, runId, credentials: { apiKey: env.ANTHROPIC_API_KEY } },
+        );
+
+        const text =
+          outcome.status === 'done'
+            ? ((outcome.finalMessage as { content?: { type: string; text?: string }[] } | undefined)?.content ?? [])
+                .filter((block) => block.type === 'text')
+                .map((block) => block.text ?? '')
+                .join('\n')
+                .trim()
+            : `That did not work: ${'error' in outcome ? outcome.error : outcome.status}`;
+
+        // Every tool call is its own row, which is what makes the transcript
+        // the complete record and is why chat needs no Trace.
+        for (const { toolName, widget } of widgets) {
+          await db.insert(t.threadMessage).values({
+            threadId,
+            role: 'tool',
+            text: toolName,
+            widget: widget as never,
+            pageRef: body.pageRef,
+          });
+        }
+
+        // A proposal is stored with its estimate FROZEN, in the state
+        // `proposed`. Nothing has run.
+        for (const proposal of proposals) {
+          await db.insert(t.threadMessage).values({
+            threadId,
+            role: 'assistant',
+            text: proposal.estimate.what,
+            confirm: { toolName: proposal.toolName, input: proposal.input, estimate: proposal.estimate } as never,
+            confirmState: 'proposed',
+            pageRef: body.pageRef,
+          });
+        }
+
+        await db.insert(t.threadMessage).values({
+          threadId,
+          role: 'assistant',
+          text,
+          pageRef: body.pageRef,
+        });
+
+        send('done', { threadId, text, widgets, proposals });
+      } catch (error) {
+        /**
+         * A throw here would otherwise reach the client as a truncated stream,
+         * which is indistinguishable from a dropped connection. Naming it is
+         * the difference between "the app broke" and "the network did".
+         */
+        console.error('[chat] turn failed:', error);
+        send('error', { message: error instanceof Error ? error.message : String(error) });
+      } finally {
+        controller.close();
+      }
     },
-    // No jobId: chat spends inside a Run but outside any Job, and writes no
-    // trace_turn at all.
-    { db, runId, credentials: { apiKey: env.ANTHROPIC_API_KEY } },
-  );
-
-  const text =
-    outcome.status === 'done'
-      ? ((outcome.finalMessage as { content?: { type: string; text?: string }[] } | undefined)?.content ?? [])
-          .filter((block) => block.type === 'text')
-          .map((block) => block.text ?? '')
-          .join('\n')
-          .trim()
-      : `That did not work: ${'error' in outcome ? outcome.error : outcome.status}`;
-
-  // Every tool call is its own row, which is what makes the transcript the
-  // complete record and is why chat needs no Trace.
-  for (const { toolName, widget } of widgets) {
-    await db.insert(t.threadMessage).values({
-      threadId,
-      role: 'tool',
-      text: toolName,
-      widget: widget as never,
-      pageRef: body.pageRef,
-    });
-  }
-
-  // A proposal is stored with its estimate FROZEN, in the state `proposed`.
-  // Nothing has run.
-  for (const proposal of proposals) {
-    await db.insert(t.threadMessage).values({
-      threadId,
-      role: 'assistant',
-      text: proposal.estimate.what,
-      confirm: { toolName: proposal.toolName, input: proposal.input, estimate: proposal.estimate } as never,
-      confirmState: 'proposed',
-      pageRef: body.pageRef,
-    });
-  }
-
-  await db.insert(t.threadMessage).values({
-    threadId,
-    role: 'assistant',
-    text,
-    pageRef: body.pageRef,
   });
 
-  return Response.json({ threadId, text, widgets, proposals });
+  return new Response(stream, {
+    headers: {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      // Proxies that buffer an SSE body turn streaming back into one late
+      // response, silently — the symptom is a working app that feels broken.
+      'x-accel-buffering': 'no',
+    },
+  });
 }

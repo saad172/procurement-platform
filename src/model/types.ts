@@ -65,6 +65,15 @@ export type RunLoopParams = {
   roundN?: number | undefined;
   /** The per-Round tool digest, recorded on every turn (SPEC §15.7). */
   toolDigest?: { names: string[]; hash: string } | undefined;
+  /**
+   * Called with each text delta, on the loops whose settings enable streaming.
+   *
+   * It is a callback rather than a returned stream because `runLoop` owns the
+   * turn boundary: the caller sees text as it arrives *and* still gets one
+   * settled outcome at the end, rather than having to reconstruct the loop's
+   * state from the events.
+   */
+  onTextDelta?: ((text: string) => void) | undefined;
 };
 
 /** One `tool_use` block the model emitted, whether or not the runner ran it. */

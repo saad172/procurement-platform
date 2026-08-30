@@ -2,6 +2,7 @@
 
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
+import { readServerSentEvents } from '@/lib/server-sent-events';
 
 /**
  * The chat dock (SPEC §14).
@@ -74,20 +75,60 @@ export function ChatDock({ programId }: { programId: string }) {
           viewState: Object.fromEntries(searchParams.entries()),
         }),
       });
-      const data = (await response.json()) as {
-        threadId: string;
-        text: string;
-        widgets: Widget[];
-        proposals: Proposal[];
-      };
-      setThreadId(data.threadId);
-      setTurns((previous) => [
-        ...previous,
-        { role: 'assistant', text: data.text, widgets: data.widgets, proposals: data.proposals },
-      ]);
+      if (!response.ok || !response.body) {
+        throw new Error(`the chat route answered ${response.status}`);
+      }
+
+      /**
+       * The assistant's turn is appended **empty** and then filled.
+       *
+       * Every later update rewrites this one entry rather than appending, which
+       * is what keeps a streamed turn a single turn in the transcript — the
+       * alternative, appending per delta, renders as a wall of one-word
+       * messages.
+       */
+      let streamed = '';
+      setTurns((previous) => [...previous, { role: 'assistant', text: '' }]);
+      const replaceLast = (turn: Turn) =>
+        setTurns((previous) => [...previous.slice(0, -1), turn]);
+
+      for await (const event of readServerSentEvents(response.body)) {
+        if (event.event === 'open') {
+          setThreadId((JSON.parse(event.data) as { threadId: string }).threadId);
+        } else if (event.event === 'delta') {
+          streamed += JSON.parse(event.data) as string;
+          replaceLast({ role: 'assistant', text: streamed });
+        } else if (event.event === 'done') {
+          /**
+           * The settled payload replaces the streamed text rather than
+           * appending to it. Deltas are display; this is the row that was
+           * stored, and the two must not be able to disagree on screen.
+           */
+          const data = JSON.parse(event.data) as {
+            threadId: string;
+            text: string;
+            widgets: Widget[];
+            proposals: Proposal[];
+          };
+          setThreadId(data.threadId);
+          replaceLast({
+            role: 'assistant',
+            text: data.text,
+            widgets: data.widgets,
+            proposals: data.proposals,
+          });
+        } else if (event.event === 'error') {
+          // Named, never dressed up as an assistant apology.
+          replaceLast({
+            role: 'assistant',
+            text: `The request failed: ${(JSON.parse(event.data) as { message: string }).message}`,
+          });
+        }
+      }
     } catch (error) {
       // A failure renders as an error block naming what happened, NEVER as an
-      // assistant apology.
+      // assistant apology. It appends, because a throw here may have happened
+      // before the empty assistant turn was ever added.
       setTurns((previous) => [
         ...previous,
         { role: 'assistant', text: `The request failed: ${error instanceof Error ? error.message : String(error)}` },
