@@ -15,6 +15,16 @@ import { MODEL_PRICE_USD_PER_MTOK } from '@/config/constants';
  */
 
 export type RunTrigger =
+  /**
+   * **The whole pipeline, chained.** A `pipeline` Run carries a Supplier
+   * through resolve → enrich → assess, each stage queued by the worker as the
+   * one before it succeeds. It is a distinct trigger rather than a flag because
+   * the chain must NOT fire for the Supplier-page buttons: Re-enrich and
+   * Re-assess are deliberately separate controls answering different questions,
+   * and a Re-enrich that silently rewrote the assessment would answer the one
+   * the reviewer did not ask.
+   */
+  | 'pipeline'
   | 'full'
   | 'settlement'
   | 'traverse'

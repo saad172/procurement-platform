@@ -28,6 +28,37 @@ import { runWorker } from './poll';
  * Streamable HTTP transport, and only when the Dossier flag is on.
  */
 
+/**
+ * Queues the next stage of a **pipeline** Run, and nothing otherwise.
+ *
+ * The chain is `resolve → enrich → assess`, each hop fired by the stage before
+ * it succeeding — because every hop needs the previous one's output and a Job
+ * queued up front would dequeue before that output existed. A row that parks at
+ * `needs_review` correctly never gets an enrichment, and a Supplier whose
+ * enrichment found nothing still gets an assessment that says so.
+ *
+ * It joins the **same Run**, because it is the spend that Run was opened for.
+ * A one-off Re-enrich or Re-assess opens its own Run with a different trigger,
+ * and gets no chain — those two buttons are separate on purpose.
+ */
+async function chainNext(
+  database: Database,
+  job: { runId: string; subjectId: string },
+  kind: 'enrich' | 'assess',
+): Promise<void> {
+  const run = await database.query.run.findFirst({
+    where: (row, { eq: equals }) => equals(row.id, job.runId),
+  });
+  if (run?.trigger !== 'pipeline') return;
+
+  await enqueueJob(database, {
+    runId: job.runId,
+    kind,
+    subjectType: 'supplier',
+    subjectId: job.subjectId,
+  });
+}
+
 let shuttingDown = false;
 
 async function shutdown(signal: string): Promise<void> {
@@ -107,6 +138,20 @@ async function main(): Promise<void> {
           { db: database, upstream, jobId: job.id },
           { supplierId: supplier.id, programId: supplier.programId },
         );
+
+        /**
+         * **Enrichment unblocks the assessment, so a pipeline Run queues it.**
+         *
+         * This hop did not exist. `resolve` chained into `enrich` and the chain
+         * stopped there, so nothing in the app queued an `assess` for a roster
+         * — the Programme strip's *"N of 50 assessed"* could only ever be moved
+         * one Supplier at a time, by hand, from a Supplier page.
+         *
+         * Only a `pipeline` Run chains. The Supplier page's Re-enrich asks *has
+         * the evidence changed*, and answering it must not also rewrite the
+         * argument; that is a separate button on purpose.
+         */
+        await chainNext(database, job, 'assess');
         return { state: 'done' };
       },
       /**
@@ -198,12 +243,7 @@ async function main(): Promise<void> {
          * opened for. Only a decision a person makes later starts a new one.
          */
         if (outcome.status === 'accepted') {
-          await enqueueJob(database, {
-            runId: job.runId,
-            kind: 'enrich',
-            subjectType: 'supplier',
-            subjectId: job.subjectId,
-          });
+          await chainNext(database, job, 'enrich');
         }
 
         /**
