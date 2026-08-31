@@ -9,6 +9,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { entity } from './entities';
@@ -207,7 +208,24 @@ export const familyMember = pgTable('family_member', {
   exploredCount: integer('explored_count'),
   reachableCount: integer('reachable_count'),
   firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index('family_member_root_idx').on(t.rootEntityId)]);
+}, (t) => [
+  index('family_member_root_idx').on(t.rootEntityId),
+  /**
+   * **One row per (root, member).**
+   *
+   * The table had only its `id` primary key, so the `onConflictDoNothing` on
+   * the insert had nothing to conflict on — a fresh uuid never collides — and
+   * a second enrichment of the same Profile simply inserted the family again.
+   * Bosch and Magna each held **100 rows for 50 distinct members**, which the
+   * supplier page then counted, so the badge read *"28 of 100 explored"* where
+   * the truth was 14 of 50. Both halves of that were doubled.
+   *
+   * A family member is a fact about the ownership graph, not about the read
+   * that found it, so the row identity is the pair — and the constraint is what
+   * makes re-enrichment idempotent rather than merely repeated.
+   */
+  uniqueIndex('family_member_root_member_key').on(t.rootEntityId, t.memberEntityId),
+]);
 
 export const enrichmentRelations = relations(enrichment, ({ one, many }) => ({
   upstreamResponse: one(upstreamResponse, {

@@ -36,6 +36,13 @@
       "when": 1788193480337,
       "tag": "0004_broad_shinobi_shaw",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788206815890,
+      "tag": "0005_slow_emma_frost",
+      "breakpoints": true
     }
   ]
 }

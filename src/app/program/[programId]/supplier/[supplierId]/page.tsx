@@ -62,11 +62,32 @@ export default async function SupplierPage({
 
   const familyRows = match?.entityId
     ? await db
-        .select({ member: t.entity, hopDepth: t.familyMember.hopDepth })
+        .select({
+          member: t.entity,
+          hopDepth: t.familyMember.hopDepth,
+          exploredCount: t.familyMember.exploredCount,
+          reachableCount: t.familyMember.reachableCount,
+        })
         .from(t.familyMember)
         .innerJoin(t.entity, eq(t.entity.id, t.familyMember.memberEntityId))
         .where(eq(t.familyMember.rootEntityId, match.entityId))
     : [];
+
+  /**
+   * **The coverage figures are read, not counted.**
+   *
+   * `explored_count` is what the traversal itself reported, and counting rows
+   * instead answers a different question — how many rows we hold — which is
+   * only ever accidentally the same number. It was not: with the family stored
+   * twice for Bosch and Magna, the badge read *"28 of 100 explored"* against a
+   * truth of 14 of 50. The unique index added alongside this stops the rows
+   * doubling; reading the stored figure is what stops a future divergence from
+   * being invisible.
+   */
+  const coverage = {
+    explored: familyRows[0]?.exploredCount ?? familyRows.length,
+    reachable: familyRows[0]?.reachableCount ?? null,
+  };
 
   const exposure = computeFamilyExposure(
     familyRows.map((row) => ({
@@ -76,7 +97,7 @@ export default async function SupplierPage({
       factors: unionRiskFactors([{ source: 'getEntity', risk: row.member.risk }]).map((u) => u.factor),
       fromDeepTraversal: false,
     })),
-    { explored: familyRows.length, reachable: null },
+    coverage,
   );
 
   // Ages are computed in the query, not during render: reading a clock while

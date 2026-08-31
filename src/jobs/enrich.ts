@@ -408,7 +408,27 @@ export async function enrichFamily(
         exploredCount: byId.size,
         reachableCount: null,
       })
-      .onConflictDoNothing();
+      /**
+       * **On the pair, not on `id`.** This used to be a bare
+       * `onConflictDoNothing()`, which conflicts on the primary key — a fresh
+       * uuid, so it never fired, and a second enrichment inserted the family
+       * again. Bosch and Magna each ended up with 100 rows for 50 members.
+       *
+       * And it updates rather than does nothing, because a re-read is newer
+       * evidence about the same pair: the path it came through and how much of
+       * the graph was covered can both have changed. `firstSeenAt` is left
+       * alone — the *new evidence* chip is computed from it.
+       */
+      .onConflictDoUpdate({
+        target: [t.familyMember.rootEntityId, t.familyMember.memberEntityId],
+        set: {
+          enrichmentId,
+          path: (path ?? null) as never,
+          hopDepth: depth,
+          truncated,
+          exploredCount: byId.size,
+        },
+      });
 
     members.push({
       entityId,

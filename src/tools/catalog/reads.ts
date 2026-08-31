@@ -277,7 +277,11 @@ export const getSupplierFamily = defineTool({
       ok: true,
       data: widget('supplier_family', {
         entityId: match.entityId,
-        explored: members.length,
+        // What the traversal reported it covered, not how many rows we hold.
+        // Counting rows answers a different question, and it was the wrong
+        // answer whenever a Profile had been enriched twice: Bosch's family was
+        // stored 100 times for 50 members, so this reported 100 to the model.
+        explored: members[0]?.exploredCount ?? members.length,
         truncated: members.some((m) => m.truncated),
         members: members.map((m) => ({
           entityId: m.memberEntityId,
