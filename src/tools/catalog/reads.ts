@@ -1,7 +1,6 @@
 import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod/v4';
 import * as t from '@/db/schema';
-import { toEntityView } from '@/domain/entity-view';
 import { isDatabaseId, notAnIdObjection } from '../ids';
 import { defineTool, type ReadWithWidget, type ToolContext, type WidgetType } from '../define';
 
@@ -152,7 +151,46 @@ export const getSupplier = defineTool({
             settledBy: match.settledBy,
             matchStrength: match.matchStrength,
             entityId: match.entityId,
-            entity: match.entity ? toEntityView(match.entity as never) : null,
+            /**
+             * The **local** entity row, projected by its own shape.
+             *
+             * This called `toEntityView`, which reads a *Sayari* projection —
+             * `countries`, `addresses`, `identifiers`, `source_count` as an
+             * object. The local table stores `country`, `address_line`, `lei`
+             * and a separate `distinct_source_count`, so every field read
+             * `undefined` and the model was handed a company with no country,
+             * no address and no identifiers.
+             *
+             * It said so, in the published Assessment: *"the entity snapshot
+             * carried on the match itself is thin … no country, no addresses,
+             * no identifiers and a source count of 0"*, and then went and found
+             * the real row through another tool. The prose was accurate about
+             * what it had been shown, and what it had been shown was wrong.
+             *
+             * The same casing-and-shape confusion as finding 5, one layer in:
+             * two representations of one company, and a projection pointed at
+             * the wrong one. `as never` is what let it compile.
+             */
+            entity: match.entity
+              ? {
+                  id: match.entity.id,
+                  label: match.entity.label,
+                  entityType: match.entity.entityType,
+                  country: match.entity.country,
+                  addressLine: match.entity.addressLine,
+                  city: match.entity.city,
+                  postcode: match.entity.postcode,
+                  lei: match.entity.lei,
+                  distinctSourceCount: match.entity.distinctSourceCount,
+                  sanctioned: match.entity.sanctioned,
+                  pep: match.entity.pep,
+                  closed: match.entity.closed,
+                  psaCount: match.entity.psaCount,
+                  risk: match.entity.risk,
+                  relationshipCount: match.entity.relationshipCount,
+                  relationshipsTruncated: match.entity.relationshipsTruncated,
+                }
+              : null,
           }
         : null,
       criterionValues: criterionValues.map((row) => ({
