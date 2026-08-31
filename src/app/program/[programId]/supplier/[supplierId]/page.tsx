@@ -338,11 +338,19 @@ export default async function SupplierPage({
                     {sentence.text}{' '}
                     {/*
                       A citation is a HOP, not a tooltip: clicking it navigates
-                      to the entity, and an attribute's record chip navigates to
-                      the record. Level 4 is reached from the Assessment.
+                      to the evidence, and from there to the entity or the
+                      record itself. Level 4 is reached from the Assessment.
+
+                      This used to point at
+                      `.../supplier/[supplierId]/citation/[sentenceId]`, which
+                      was never built — 169 published links, every one a 404.
+                      The route lives under the Programme now, because a
+                      Citation belongs to a sentence and a sentence already
+                      knows whether an Assessment or a Recommendation published
+                      it.
                     */}
                     <Link
-                      href={`/program/${programId}/supplier/${supplierId}/citation/${sentence.id}` as never}
+                      href={`/program/${programId}/citation/${sentence.id}` as never}
                       title="Go to the evidence"
                       style={{ textDecoration: 'none' }}
                     >
