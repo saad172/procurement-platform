@@ -12,7 +12,14 @@
 
   --ink: #16181d;
   --ink-2: #4a5058;
-  --ink-3: #767d87;
+  /*
+   * Measured, not chosen: #767d87 is 4.16:1 on white and 3.91:1 on --paper-2,
+   * both under WCAG AA's 4.5:1 for body text — and this token sets `.note`,
+   * every `th`, the breadcrumb and the label under every figure, so it is most
+   * of the small text on every page. #5c636d is 6.07:1 and 5.71:1 and reads as
+   * the same grey.
+   */
+  --ink-3: #5c636d;
   --rule: #e3e6ea;
   --rule-2: #f0f2f4;
   --paper: #ffffff;
@@ -78,8 +85,17 @@ td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--rule-2); vertical-al
 tr:last-child td { border-bottom: none; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
-/* A filtered row keeps its true rank and is dimmed, never renumbered. */
-tr.hidden-by-filter td { opacity: 0.32; }
+/*
+ * A filtered row keeps its true rank and is dimmed, never renumbered.
+ *
+ * At `opacity: .32` its body text measured 1.47–2.05:1, which is not dimmed but
+ * unreadable, and nothing told a screen reader it was dimmed at all. The row
+ * still has to read as excluded — the gap in the rank numbers is the disclosure
+ * and it must be impossible to overlook — so this recolours rather than fades,
+ * and says so with `aria-hidden` left alone and an explicit note in the cell.
+ */
+tr.hidden-by-filter td { color: var(--ink-3); background: var(--paper-2); }
+tr.hidden-by-filter td a { color: var(--ink-3); }
 
 .badge {
   display: inline-block; font-size: 0.72rem; font-weight: 600;
@@ -137,3 +153,112 @@ tr.hidden-by-filter td { opacity: 0.32; }
 
 .bar > i.warn { background: var(--warn); }
 .bar > i.bad { background: var(--bad); }
+
+/* ═══ Answer-first ═════════════════════════════════════════════════════════
+ *
+ * Four components, and one idea between them: **a page opens with what is
+ * happening and what to do, and the working sits underneath.**
+ *
+ * The critique that produced them found the opposite everywhere. Bosch's page
+ * is 2,707 words; "score 30.1" arrives at word 30 with no scale, and the
+ * verdict `escalate` at word 609, as a grey badge weighing exactly as much as
+ * "assessed". On the Category page — the page the product exists to produce —
+ * "Actions", "Tariff" and "Weights" all render before "Shortlist". The pages
+ * were named after the pipeline's stages rather than the buyer's questions.
+ *
+ * These are extensions of the language already here: same tokens, same radius,
+ * same weights. Nothing new is invented that an existing class already says.
+ */
+
+/*
+ * The conclusion, before the evidence for it.
+ *
+ * `.said` is the sentence a manager could act on alone, `.because` is why, and
+ * `.do` carries what to do about it. The left rule is the only colour it
+ * carries: `.stop` a reason not to proceed, `.you` something waiting on a
+ * person, `.ok` a clean result. A verdict rendered as a grey badge among other
+ * grey badges is a verdict nobody reads.
+ */
+.answer {
+  border: 1px solid var(--rule); border-left: 4px solid var(--ink-3);
+  border-radius: var(--radius); background: var(--paper);
+  padding: 0.9rem 1.1rem; margin: 0 0 1.1rem;
+}
+.answer.stop { border-left-color: var(--bad); background: #fefaf9; }
+.answer.you  { border-left-color: var(--warn); background: #fffdf8; }
+.answer.ok   { border-left-color: var(--good); background: #f9fdfb; }
+.answer .said {
+  font-size: 1.12rem; line-height: 1.4; font-weight: 600;
+  margin: 0; letter-spacing: -0.005em;
+}
+.answer .because { font-size: 0.9rem; color: var(--ink-2); margin: 0.45rem 0 0; max-width: 62rem; }
+.answer .do { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.75rem; }
+.answer .do .note { margin: 0; }
+
+/* A row of plain figures, each labelled in the words a buyer would use. */
+.where {
+  display: flex; flex-wrap: wrap; gap: 0;
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  overflow: hidden; background: var(--rule); margin: 0 0 1.4rem;
+}
+.where > div {
+  background: var(--paper); padding: 0.7rem 0.95rem;
+  flex: 1 1 9rem; border-right: 1px solid var(--rule);
+}
+.where > div:last-child { border-right: 0; }
+.where b {
+  display: block; font-size: 1.25rem; font-weight: 650;
+  font-variant-numeric: tabular-nums; line-height: 1.15;
+}
+.where span { display: block; font-size: 0.78rem; color: var(--ink-3); margin-top: 0.1rem; }
+.where .bad b { color: var(--bad); }
+.where .warn b { color: var(--warn); }
+.where .good b { color: var(--good); }
+
+/*
+ * The buyer's word on the surface, the canonical term still available.
+ *
+ * `CONTEXT.md`'s one-meaning-per-word discipline stays load-bearing in the data
+ * model and the agent prompts and is not rewritten — this is a surface, and it
+ * is what lets the surface speak plainly without the vocabulary going soft
+ * underneath. Written `<span class="term">group companies<i>Corporate family</i></span>`.
+ */
+.term { border-bottom: 1px dotted var(--ink-3); }
+.term i {
+  font-style: normal; font-size: 0.78em;
+  color: var(--ink-3); font-family: var(--font-mono);
+}
+.term i::before { content: ' · '; }
+
+/* The working out: demoted, never hidden. */
+.working {
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  background: var(--paper-2); padding: 0.7rem 0.9rem; margin: 1rem 0;
+}
+.working > summary { cursor: pointer; font-size: 0.88rem; font-weight: 600; color: var(--ink-2); }
+.working[open] > summary {
+  margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--rule);
+}
+
+/* An action in `.do`, sized to sit beside a sentence rather than above one. */
+.btn {
+  display: inline-block; font-size: 0.85rem; font-weight: 600;
+  padding: 0.35rem 0.75rem; border-radius: var(--radius);
+  border: 1px solid var(--rule); background: var(--paper); color: var(--ink-2);
+}
+.btn:hover { text-decoration: none; border-color: var(--ink-3); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { border-color: var(--accent); filter: brightness(1.08); }
+
+/*
+ * ── Focus ──
+ *
+ * There were no `:focus` rules anywhere, so a keyboard reader crossing a page
+ * of links had whatever the browser happened to draw over whatever background
+ * happened to be behind it. `:focus-visible` keeps it off mouse clicks.
+ */
+:where(a, button, summary, [tabindex], input, select, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
