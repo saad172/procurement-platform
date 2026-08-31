@@ -5,6 +5,8 @@ import { getPooledDb } from '@/db/client';
 import * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { loadRunInsights, loadRuns, activeRun } from '@/db/queries/runs';
+import { runsAnswer } from '@/domain/runs-answer';
+import { inArray } from 'drizzle-orm';
 import { LiveRefresh } from '@/components/live-refresh';
 
 /**
@@ -36,47 +38,106 @@ export default async function RunsPage({
   const insights = await loadRunInsights(db, programId);
   const totalUsd = runs.reduce((sum, r) => sum + r.actualUsd, 0);
 
+  /**
+   * Every job of every run, so the page can say what was left undone.
+   *
+   * `loadRuns` counts jobs by state per run but not the ones that never began,
+   * and "43 never started" is the whole explanation for why only three
+   * suppliers have a write-up — the single most useful sentence this page can
+   * produce, from data it already had.
+   */
+  const jobs = runs.length
+    ? await db
+        .select({
+          runId: t.job.runId,
+          state: t.job.state,
+          subjectId: t.job.subjectId,
+          error: t.job.error,
+        })
+        .from(t.job)
+        .where(inArray(t.job.runId, runs.map((r) => r.run.id)))
+    : [];
+
+  /**
+   * Failures that were **our own checks refusing to publish**, as against
+   * anything upstream going wrong. The distinction matters enough to be made
+   * on the surface: one is the system working and the other is not, and on a
+   * ledger they look identical.
+   */
+  const refusedIds = jobs.filter(
+    (job) => job.state === 'failed' && job.error?.includes('rejected by our own checks'),
+  );
+  const refusedSuppliers = refusedIds.length
+    ? await db
+        .select({ id: t.supplier.id, rosterName: t.supplier.rosterName })
+        .from(t.supplier)
+        .where(inArray(t.supplier.id, refusedIds.map((job) => job.subjectId)))
+    : [];
+  const nameOf = new Map(refusedSuppliers.map((row) => [row.id, row.rosterName]));
+
+  const answers = runsAnswer({
+    runs: runs.map((summary) => {
+      const runJobs = jobs.filter((job) => job.runId === summary.run.id);
+      return {
+        id: summary.run.id,
+        label: summary.run.subjectLabel ?? 'A run',
+        state: summary.run.state,
+        jobs: {
+          total: runJobs.length,
+          done: runJobs.filter((job) => job.state === 'done').length,
+          failed: runJobs.filter((job) => job.state === 'failed').length,
+          // Cancelled and still queued are both "never began", and to a reader
+          // asking why the work is not done they are the same fact.
+          neverStarted: runJobs.filter(
+            (job) => job.state === 'cancelled' || job.state === 'queued',
+          ).length,
+        },
+        actualUsd: summary.actualUsd,
+      };
+    }),
+    refusedByOurChecks: refusedIds.map((job) => ({
+      subjectLabel: nameOf.get(job.subjectId) ?? 'a supplier',
+      runId: job.runId,
+    })),
+    totalUsd,
+    runHref: (runId) => `/program/${programId}/runs/${runId}`,
+  });
+
   return (
     <main>
-      <Breadcrumb trail={[{ label: program.name, href: `/program/${programId}` }, { label: 'Runs' }]} />
-      <h1>Runs</h1>
+      <Breadcrumb trail={[{ label: program.name, href: `/program/${programId}` }, { label: 'What has run' }]} />
+      <h1>What has run, and what it cost</h1>
       <p className="sub">
-        {runs.length} run{runs.length === 1 ? '' : 's'} · ${totalUsd.toFixed(2)} in total
+        {runs.length} {runs.length === 1 ? 'batch' : 'batches'} of work · $
+        {totalUsd.toFixed(2)} spent in total
         {running ? <> · <LiveRefresh active /></> : null}
       </p>
 
-      <div className="grid two">
-        <section className="card">
-          <h3 style={{ marginTop: 0 }}>Settled without a model</h3>
-          <p style={{ fontSize: '1.3rem', fontWeight: 620, margin: '0 0 0.3rem' }}>
-            {insights.settledByRules.rules} of {insights.settledByRules.total} settled by rules — 0 tokens
-          </p>
-          <p className="note" style={{ margin: 0 }}>
-            Each of these passed all eight discriminators and was independently confirmed by a GLEIF
-            exact-LEI join. A company with no LEI can never clear that bar, which is the safe
-            direction of failure — and how often it happens is a result, not a defect.
-          </p>
-        </section>
+      {/* ── The answers, before the ledger ── */}
+      {answers.map((answer) => (
+        <div
+          key={answer.said}
+          className={`answer ${answer.tone === 'neutral' ? '' : answer.tone}`}
+        >
+          <p className="said">{answer.said}</p>
+          <p className="because">{answer.because}</p>
+          {answer.actions.length > 0 ? (
+            <div className="do">
+              {answer.actions.map((action) => (
+                <Link
+                  key={action.label}
+                  className={`btn ${action.primary ? 'primary' : ''}`}
+                  href={action.href as never}
+                >
+                  {action.label}
+                </Link>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ))}
 
-        <section className="card">
-          <h3 style={{ marginTop: 0 }}>Rounds</h3>
-          <p style={{ fontSize: '1.3rem', fontWeight: 620, margin: '0 0 0.3rem' }}>
-            {insights.rounds.total} rounds · {insights.rounds.codeRejections} spent on code rejections
-          </p>
-          <p className="note" style={{ margin: 0 }}>
-            {/*
-              This makes Round consumption a QUALITY number rather than only a
-              cost one: a code rejection is the citation, number-fidelity or
-              caveat checks refusing a draft before it was written anywhere.
-            */}
-            A code rejection is the citation, number-fidelity, caveat or pick-legality checks refusing
-            a draft before anything was inserted. Rounds spent that way are the validator working,
-            not waste.
-          </p>
-        </section>
-      </div>
-
-      <h2>Every run</h2>
+      <h2>Everything that has run</h2>
       <div className="card scroll-x">
         {runs.length === 0 ? (
           <p className="empty">Nothing has run yet.</p>
@@ -135,7 +196,42 @@ export default async function RunsPage({
         numbers are not the same kind of thing, so they are shown separately
         with no delta anywhere: reconciliation stays a human act.
       */}
-      <h2>Your Sayari account</h2>
+      <h2>The working</h2>
+      <p className="note" style={{ margin: '-0.4rem 0 0.8rem', maxWidth: '56rem' }}>
+        Two numbers the ledger cannot show, and what Sayari&rsquo;s own counters say.
+      </p>
+      <div className="grid two">
+        <section className="card">
+          <h3 style={{ marginTop: 0 }}>Settled without a model</h3>
+          <p style={{ fontSize: '1.3rem', fontWeight: 620, margin: '0 0 0.3rem' }}>
+            {insights.settledByRules.rules} of {insights.settledByRules.total} settled by rules — 0 tokens
+          </p>
+          <p className="note" style={{ margin: 0 }}>
+            Each of these passed all eight discriminators and was independently confirmed by a GLEIF
+            exact-LEI join. A company with no LEI can never clear that bar, which is the safe
+            direction of failure — and how often it happens is a result, not a defect.
+          </p>
+        </section>
+
+        <section className="card">
+          <h3 style={{ marginTop: 0 }}>Rounds</h3>
+          <p style={{ fontSize: '1.3rem', fontWeight: 620, margin: '0 0 0.3rem' }}>
+            {insights.rounds.total} rounds · {insights.rounds.codeRejections} spent on code rejections
+          </p>
+          <p className="note" style={{ margin: 0 }}>
+            {/*
+              This makes Round consumption a QUALITY number rather than only a
+              cost one: a code rejection is the citation, number-fidelity or
+              caveat checks refusing a draft before it was written anywhere.
+            */}
+            A code rejection is the citation, number-fidelity, caveat or pick-legality checks refusing
+            a draft before anything was inserted. Rounds spent that way are the validator working,
+            not waste.
+          </p>
+        </section>
+      </div>
+
+      <h3>Your Sayari account</h3>
       <section className="card">
         <p className="note" style={{ marginTop: 0 }}>
           Sayari reports seven endpoint-class counters, <strong>account-wide</strong>, over a rolling
