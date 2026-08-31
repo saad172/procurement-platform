@@ -228,6 +228,8 @@ export async function resolveSupplier(
   const seen = [...candidates];
   let rungsUsed = ['R1'];
   let objection: string | undefined;
+  /** The last Round's picks and verdicts, for the non-convergence settlement. */
+  let lastRound: Awaited<ReturnType<NonNullable<ResolveDeps['runRound']>>> | undefined;
 
   /**
    * Which rung each Candidate came from.
@@ -280,6 +282,8 @@ export async function resolveSupplier(
 
     // Everything the Round found, before anything is decided about it — so the
     // agreement check below is comparing ids the Job can actually store.
+    lastRound = round;
+
     // The highest rung this Round climbed is where anything new came from.
     await absorb(round.entityIdsSeen, round.rungsUsed.at(-1) ?? 'R1');
     rungsUsed = [...new Set([...rungsUsed, ...round.rungsUsed])];
@@ -337,15 +341,40 @@ export async function resolveSupplier(
      * showing. Recording only the pre-pass would hide the work that was done
      * and present a shorter list than the Round actually considered.
      */
-    candidates: seen.map((c) => ({
-      entityId: c.entityId,
-      foundByRung: foundByRung.get(c.entityId) ?? 'R1',
-      queryProvenance:
-        foundByRung.get(c.entityId) === 'R1'
-          ? 'batch resolution pre-pass over the roster row'
-          : 'found by an agent during a Match round',
-      verdicts: [{ reportedBy: 'resolver', results: runDiscriminators(args.roster, c) }],
-    })),
+    /**
+     * **Both agents' verdicts, per Candidate** (SPEC §19.2).
+     *
+     * The Needs Review view exists so a person can choose between Candidates,
+     * and choosing means seeing *where the two reads differed*, Discriminator
+     * by Discriminator. Storing only the resolver's would hand over an answer
+     * with half its argument missing — and this path stored exactly that until
+     * the `needs_review` test asked for the evaluator's and found none.
+     *
+     * The last Round's verdicts are attributed to the agent that produced
+     * them; every other Candidate carries our own Discriminator run, reported
+     * as `rules`, because neither agent named it.
+     */
+    candidates: seen.map((c) => {
+      const verdicts: { reportedBy: string; results: ReturnType<typeof runDiscriminators> }[] = [];
+      if (lastRound?.resolverPick === c.entityId) {
+        verdicts.push({ reportedBy: 'resolver', results: lastRound.resolverVerdicts });
+      }
+      if (lastRound?.evaluatorPick === c.entityId) {
+        verdicts.push({ reportedBy: 'evaluator', results: lastRound.evaluatorVerdicts });
+      }
+      if (verdicts.length === 0) {
+        verdicts.push({ reportedBy: 'rules', results: runDiscriminators(args.roster, c) });
+      }
+      return {
+        entityId: c.entityId,
+        foundByRung: foundByRung.get(c.entityId) ?? 'R1',
+        queryProvenance:
+          foundByRung.get(c.entityId) === 'R1'
+            ? 'batch resolution pre-pass over the roster row'
+            : 'found by an agent during a Match round',
+        verdicts,
+      };
+    }),
   });
   return {
     status,
