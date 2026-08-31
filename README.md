@@ -61,10 +61,43 @@ pnpm dev        # web
 pnpm worker     # in a second terminal
 ```
 
+### Running a Job the way production does
+
+The smoke scripts call a Job's function directly, which is right for probing one
+layer — but they pass no `jobId`, so nothing writes a Trace. Queueing exercises
+what production runs: the dequeue, the caps, the Trace, the usage rows.
+
+```
+pnpm enqueue resolve Yazaki          # queue it
+pnpm worker                          # in a second terminal, claim and run it
+pnpm enqueue recommend HAR
+pnpm enqueue resolve Rosoboronexport --test-program   # the arranged fixtures programme
+```
+
+### Re-recording a fixture
+
+A fixture is an **export of one real Job's rows**, never hand-written. Change a
+prompt, a tool schema or a stored figure and every recording made before it is
+stale — re-run the Job, then export it.
+
+```
+pnpm fixtures:record resolve/agree-r1        # latest resolve Job, or pass a job id
+pnpm fixtures:record-chat                    # chat has no Trace; recorded at the fetch seam
+pnpm fixtures:rehash <name> <dumpDir>        # only when the HASH changed, not the request
+```
+
+Record with `MODEL_REQUEST_DUMP_DIR=/tmp/dumps` set and `fixtures:rehash` can
+rebuild the hashes offline. Without it, a change to how a request is hashed costs
+a full pipeline re-run — about forty-five minutes
+([finding 56](docs/BUILD-NOTES.md)).
+
 ### Checks
 
 ```bash
 pnpm check      # typecheck + lint + tests — no credentials, no network
+pnpm typecheck  # tsc --noEmit
+pnpm test       # vitest run  (pnpm test:watch to iterate)
+pnpm format     # prettier --write
 ```
 
 Two checks spend real Sayari credits and so are scripts rather than tests:
@@ -75,7 +108,9 @@ pnpm smoke:model              # one Tool Runner loop with every pinned setting
 pnpm smoke:resolve [name]     # the eight Discriminators and the auto-accept gate, live
 pnpm smoke:enrich [name] [id] # the six enrichment sources and the Corporate family
 pnpm smoke:assess [name]      # the full proposer/evaluator loop, published
+pnpm smoke:discover [code]    # trade counterparties, classified
 pnpm check:founding-example   # re-measures the Bosch example the app is built around
+pnpm check:prefilter          # grades the forwarder heuristic against Sayari's own flag
 ```
 
 The suite is keyless by construction (`docs/SPEC.md` §19.1): it runs off cached
@@ -139,7 +174,13 @@ Sequenced so each step is verifiable before the next depends on it
 - [x] 10 — Assess and Recommend
 - [x] 11 — Pages
 - [x] 12 — Chat
-- [ ] 13 — Discover
+- [x] 13 — Discover
 - [x] 14 — The Runs branch
-- [ ] 15 — Fixtures and replay
-- [ ] 16 — CI
+- [x] 15 — Fixtures and replay
+- [x] 16 — CI
+
+All sixteen are done. What each step actually cost, and every place the spec's
+assumptions turned out to be wrong, is in
+[`docs/BUILD-NOTES.md`](docs/BUILD-NOTES.md) — 87 numbered findings, each one a
+measurement rather than an opinion. **The write-up should quote that file, not
+the spec, for any number.**
