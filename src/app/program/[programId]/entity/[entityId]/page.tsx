@@ -48,6 +48,7 @@ export default async function EntityPage({
       })
     : undefined;
 
+  const sources = readSources(entity.sourceCount);
   const factors = parseRiskObject(entity.risk);
 
   return (
@@ -70,8 +71,27 @@ export default async function EntityPage({
           <h3 style={{ marginTop: 0 }}>Attributes</h3>
           <table>
             <tbody>
+              <tr><td>Type</td><td>{entity.entityType ?? '—'}</td></tr>
               <tr><td>Address</td><td>{entity.addressLine ?? '—'}</td></tr>
               <tr><td>City</td><td>{entity.city ?? '—'}</td></tr>
+              <tr><td>Postcode</td><td className="mono">{entity.postcode ?? '—'}</td></tr>
+              <tr>
+                <td>Coordinates</td>
+                <td>
+                  {/*
+                    Sayari's own coordinates supersede external geocoding for a
+                    resolved Profile, so the Proximity criterion is measured
+                    from these — worth showing beside the number they produce.
+                  */}
+                  {entity.lat != null && entity.lon != null ? (
+                    <span className="mono">
+                      {entity.lat.toFixed(4)}, {entity.lon.toFixed(4)}
+                    </span>
+                  ) : (
+                    <span className="note">none recorded — proximity falls back to geocoding</span>
+                  )}
+                </td>
+              </tr>
               <tr>
                 <td>Distinct sources</td>
                 <td>
@@ -94,6 +114,19 @@ export default async function EntityPage({
                       — a twin is the same company for evidence and never for identity
                     </span>
                   ) : null}
+                </td>
+              </tr>
+              <tr>
+                <td>First seen / last fetched</td>
+                <td className="note">
+                  {/*
+                    `firstSeenAt` is never re-stamped: the *new evidence*
+                    staleness mark is computed from it, so a row first seen
+                    after a version was written is what makes that version
+                    stale.
+                  */}
+                  {entity.firstSeenAt.toISOString().slice(0, 10)} ·{' '}
+                  {entity.fetchedAt.toISOString().slice(0, 10)}
                 </td>
               </tr>
               <tr>
@@ -138,6 +171,48 @@ export default async function EntityPage({
           <p className="note">{edges.length} edge(s) stored locally.</p>
         </section>
       </div>
+
+      {/*
+        `sourceCount` is an object keyed by source hash, and each value carries
+        the source's own label, country and kind. The page counted the keys and
+        showed the total — the names of the sources a company is known from were
+        stored on every row and displayed nowhere.
+      */}
+      <h2>
+        Sources{' '}
+        <span className="note">
+          {sources.length} distinct, {sources.reduce((sum, s) => sum + s.count, 0).toLocaleString('en-US')}{' '}
+          mentions in total
+        </span>
+      </h2>
+      {sources.length === 0 ? (
+        <div className="card">
+          <p className="note" style={{ margin: 0 }}>No source breakdown stored for this company.</p>
+        </div>
+      ) : (
+        <div className="card scroll-x">
+          <table>
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Kind</th>
+                <th>Country</th>
+                <th className="num">Mentions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sources.map((source) => (
+                <tr key={source.hash}>
+                  <td>{source.label}</td>
+                  <td className="note">{source.sourceType.replace(/_/g, ' ')}</td>
+                  <td className="mono note">{source.country}</td>
+                  <td className="num">{source.count.toLocaleString('en-US')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <h2>Risk factors, and how each was treated</h2>
       <div className="card scroll-x">
@@ -324,4 +399,34 @@ function groupEdges(
       return { relationshipType: group.type, side: group.side, reading, total: group.total, current: group.current, former: group.former };
     })
     .sort((a, b) => b.total - a.total);
+}
+
+/**
+ * The sources a company is known from, out of `source_count`.
+ *
+ * The column is an **object keyed by source hash**, and each value carries the
+ * source's label, country and kind. The page has always counted its keys for
+ * the data-confidence band and shown nothing else, so a reader could see that a
+ * company had 38 distinct sources and never which ones.
+ *
+ * Sorted by mentions, because *45 rows of trade data and one sanctions listing*
+ * is a different company from the reverse, and the order is what says so.
+ */
+function readSources(
+  sourceCount: unknown,
+): { hash: string; label: string; country: string; sourceType: string; count: number }[] {
+  if (!sourceCount || typeof sourceCount !== 'object') return [];
+
+  return Object.entries(sourceCount as Record<string, unknown>)
+    .map(([hash, raw]) => {
+      const value = (raw ?? {}) as Record<string, unknown>;
+      return {
+        hash,
+        label: typeof value['label'] === 'string' ? value['label'] : hash.slice(0, 12),
+        country: typeof value['country'] === 'string' ? value['country'] : '—',
+        sourceType: typeof value['source_type'] === 'string' ? value['source_type'] : 'unknown',
+        count: typeof value['count'] === 'number' ? value['count'] : 0,
+      };
+    })
+    .sort((a, b) => b.count - a.count);
 }
