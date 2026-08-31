@@ -122,3 +122,18 @@ tr.hidden-by-filter td { opacity: 0.32; }
 
 .empty { color: var(--ink-3); padding: 1.5rem; text-align: center; }
 .scroll-x { overflow-x: auto; }
+
+/* ── The live indicator: a page that is still re-reading, saying so ── */
+.live {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.82rem; color: var(--ink-3);
+}
+.live > i {
+  width: 0.45rem; height: 0.45rem; border-radius: 999px;
+  background: var(--accent); animation: live-pulse 1.4s ease-in-out infinite;
+}
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+@media (prefers-reduced-motion: reduce) { .live > i { animation: none; } }
+
+.bar > i.warn { background: var(--warn); }
+.bar > i.bad { background: var(--bad); }

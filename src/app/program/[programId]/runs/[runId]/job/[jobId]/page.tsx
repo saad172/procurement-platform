@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
 import * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
+import { LiveRefresh } from '@/components/live-refresh';
 
 /**
  * The Trace (SPEC §3.7, §19.1) — the bottom of the Runs branch.
@@ -17,7 +18,13 @@ import { Breadcrumb } from '@/components/breadcrumb';
  * these rows through the validator with no live model call.
  *
  * The reasoning shown is a **summary, never the chain of thought**.
+ *
+ * A Job still running writes turns into this table as it goes, so the page
+ * re-reads until the Job settles — the Trace is the most detailed live view the
+ * app has, and it was previously only readable after the fact.
  */
+export const dynamic = 'force-dynamic';
+
 export default async function TracePage({
   params,
 }: {
@@ -55,6 +62,11 @@ export default async function TracePage({
         {job.traceFidelity === 'timeline' ? (
           <span className="note"> — a dossier’s context is rewritten server-side, so this cannot drive a replay</span>
         ) : null}
+        {' · '}
+        <LiveRefresh
+          active={job.state === 'queued' || job.state === 'running'}
+          idle={`${job.state} — this trace is complete`}
+        />
       </p>
 
       {turns.map((turn) => {

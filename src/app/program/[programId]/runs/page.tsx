@@ -4,7 +4,8 @@ import { eq } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
 import * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
-import { loadRunInsights, loadRuns } from '@/db/queries/runs';
+import { loadRunInsights, loadRuns, activeRun } from '@/db/queries/runs';
+import { LiveRefresh } from '@/components/live-refresh';
 
 /**
  * The Runs branch (SPEC §18.5) — `Program → Runs → Run → Trace`.
@@ -31,6 +32,7 @@ export default async function RunsPage({
   if (!program) notFound();
 
   const runs = await loadRuns(db, programId);
+  const running = await activeRun(db, programId);
   const insights = await loadRunInsights(db, programId);
   const totalUsd = runs.reduce((sum, r) => sum + r.actualUsd, 0);
 
@@ -40,6 +42,7 @@ export default async function RunsPage({
       <h1>Runs</h1>
       <p className="sub">
         {runs.length} run{runs.length === 1 ? '' : 's'} · ${totalUsd.toFixed(2)} in total
+        {running ? <> · <LiveRefresh active /></> : null}
       </p>
 
       <div className="grid two">
