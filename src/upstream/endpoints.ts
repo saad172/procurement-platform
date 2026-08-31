@@ -32,9 +32,24 @@ import type { DispatchDeps, EndpointDef } from './types';
  * ## Timeouts (SPEC §16.4)
  *
  *   30 s  fast Sayari
- *   60 s  the three slow ones — trade (3.6–13.4 s measured), negativeNews
- *         (7–15 s measured), traversal
+ *   90 s  the three slow ones — trade (3.6–13.4 s measured), negativeNews,
+ *         traversal
  *   10 s  the four external sources
+ *
+ * **`negativeNews` was 60 s and is now 90 s, because the endpoint got slower
+ * than the measurement this table was built on.** It was recorded here at
+ * 7–15 s. Called directly on 2026-08-31 it returned `200` with real data in
+ * **64.7 s** — past the 60 s ceiling, so `call()` aborted it, retried, and
+ * aborted again: two full timeouts and a backoff, ~3 minutes, to fail a request
+ * the server was answering correctly the whole time. The job reported *"Could
+ * not reach sayari"*, which was true of us and not of Sayari.
+ *
+ * 90 s is ~25 s of headroom over that one measurement, and one measurement is
+ * not a distribution — if it drifts again the number is wrong again. The cost
+ * is paid by genuinely dead endpoints, which now take 2 × 90 s to give up
+ * instead of 2 × 60 s. That is the right side to be wrong on: a slow answer is
+ * still an answer, and a re-run of an enrichment that timed out spends its
+ * Sayari calls a second time.
  *
  * ## Request parameters are explicit (SPEC §16.6)
  *
@@ -47,7 +62,7 @@ import type { DispatchDeps, EndpointDef } from './types';
  */
 
 const SAYARI_FAST_MS = 30_000;
-const SAYARI_SLOW_MS = 60_000;
+const SAYARI_SLOW_MS = 90_000;
 const EXTERNAL_MS = 10_000;
 
 /** Small helper so each row reads as data rather than as a type puzzle. */

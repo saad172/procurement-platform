@@ -12,7 +12,9 @@ import type { Upstream } from '@/upstream';
  * - a side effect that touches no row (`navigate_to`, which renders a link);
  * - a call that is **slow without fanning out** — trade at 3.6–13.4 s and
  *   `negativeNews` at 7–15 s are both legitimately `slow`, and both barred from
- *   chat for that reason alone.
+ *   chat for that reason alone. (`negativeNews` measured 64.7 s on 2026-08-31,
+ *   which only makes the case harder; `endpoints.ts` carries that measurement
+ *   and the timeout it forced.)
  *
  * So `effect`, `spends` and `latency` are separate, and every boot invariant is
  * a statement over one or two of them.
