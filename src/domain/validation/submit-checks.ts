@@ -270,17 +270,45 @@ function checkLimitsNamesUnknowns(
   evidence: ResolvedEvidence,
 ): Objection[] {
   const limits = sentences.filter((s) => s.section === 'limits').map((s) => s.text.toLowerCase()).join(' ');
-  const missing = evidence.unknownCriteria.filter(
-    (key) => !limits.includes(key.replace(/_/g, ' ')) && !limits.includes(key),
-  );
+  const missing = evidence.unknownCriteria.filter((key) => !limitsNames(limits, key));
   return missing.length === 0
     ? []
     : [
         {
           check: 'caveats',
-          message: `The limits section must name every criterion that returned unknown. Missing: ${missing.join(', ')}.`,
+          message:
+            `The limits section must name every criterion that returned unknown. Missing: ${missing.join(', ')}. ` +
+            `Write the criterion's own words in a limits sentence — "${missing[0]!.replace(/_/g, ' ')}" — not a paraphrase of them.`,
         },
       ];
+}
+
+/**
+ * Whether a limits section names one criterion.
+ *
+ * **The head word is enough, and it has to be.** The check used to demand the
+ * whole key, `tariff_exposure` or `tariff exposure`, as a literal substring. A
+ * draft that said *"One tariff criterion returned unknown, with the stored
+ * reason that no MFN rate was returned for HS 8504.40"* named the criterion,
+ * gave its reason, and was rejected — three Rounds of it, then a Job that
+ * published nothing.
+ *
+ * That is a check objecting to phrasing rather than to substance, which this
+ * codebase has been caught by once already (see the entity-id shape in
+ * `number-fidelity`). What the reader needs is to find every unknown criterion
+ * in the limits section; *tariff* finds it. The scope is already narrow — only
+ * `limits` sentences are searched, and a limits section is where a writer talks
+ * about what is missing — so the head word carries little risk of a false pass
+ * and removes a real class of false rejection.
+ *
+ * The objection still asks for the criterion's full words, because a document
+ * that uses them reads better. It is guidance the writer can follow, not a
+ * gate it can fail on wording alone.
+ */
+function limitsNames(limits: string, key: string): boolean {
+  if (limits.includes(key) || limits.includes(key.replace(/_/g, ' '))) return true;
+  const head = key.split('_')[0]!;
+  return head.length >= 4 && new RegExp(String.raw`\b${head}\b`).test(limits);
 }
 
 // ── Checks 4 and 6: eligibility and pick legality ───────────────────────────

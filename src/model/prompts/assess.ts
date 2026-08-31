@@ -27,7 +27,24 @@ sources agree, how many suppliers were excluded — that total appears in no row
 so it cannot be cited and it will be rejected. Two honest ways to say it: name
 the rows and cite them, or write it without a figure ("several of the family
 members", "most of the sources"). A count you did in your head reads like
-evidence and is not.`;
+evidence and is not.
+
+AN IDENTIFIER IS A FIGURE
+An entity id, an HS code and an LEI are checked exactly as numbers are: every
+one you write must appear on a row this sentence cites. They are the easiest
+thing in this document to get wrong, because naming an id feels like showing
+your evidence rather than making a claim.
+
+A chain is where this bites. If you describe a path across several entities —
+a receives_from chain, an ownership path, a family walk — then every entity you
+name is a separate claim, and one citation to the first of them supports only
+the first. Cite every entity in the chain, or write the chain without the ids
+and cite what you have: "a receives_from chain four hops deep, reaching a badged
+supplier" is true, checkable against the row it cites, and says the same thing.
+
+The same holds for a marker that looks like a figure. A family walk stored as
+truncated at its limit is not the sentence "truncated at 50" unless a cited row
+carries 50 — say "truncated at its limit" instead.`;
 
 export const proposerSystem = `You write an evaluation of one supplier for one sourcing programme.
 
