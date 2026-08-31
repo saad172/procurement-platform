@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
 import * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
@@ -10,6 +10,8 @@ import { activeRun, rosterWork, workerSeemsUp } from '@/db/queries/runs';
 import { LiveRefresh } from '@/components/live-refresh';
 import { CountryBreakdown, MatchOutcomes, SharedOwnership, SupplierMap } from './charts';
 import { RunPanel } from './run-panel';
+import { programmeAnswer } from '@/domain/programme-answer';
+import { loadRuns } from '@/db/queries/runs';
 import { SupplierTable } from './supplier-table';
 
 /**
@@ -75,10 +77,6 @@ export default async function ProgramPage({
   const assessedIds = new Set(assessed.map((a) => a.supplierId));
 
   const waitingOnYou = matches.filter((m) => m.status === 'needs_review').length;
-  const lastRun = await db.query.run.findFirst({
-    where: eq(t.run.programId, programId),
-    orderBy: [desc(t.run.createdAt)],
-  });
 
   const uncategorised = await db
     .select({ id: t.supplier.id })
@@ -96,6 +94,51 @@ export default async function ProgramPage({
     biddersByCategory.set(row.categoryId, (biddersByCategory.get(row.categoryId) ?? 0) + 1);
   }
 
+  const recommendations = await db
+    .select({ categoryId: t.recommendation.categoryId })
+    .from(t.recommendation)
+    .where(eq(t.recommendation.programId, programId));
+
+  /**
+   * The rows only a person can settle, **named**. A count alone makes them
+   * anonymous, and two roster names are what turns "2 waiting" into a task.
+   */
+  const waitingNames = suppliers
+    .filter((row) => matchBySupplier.get(row.id)?.status === 'needs_review')
+    .map((row) => row.rosterName ?? 'a promoted lead');
+
+  // Real spend, summed from usage rather than from a Run's estimate: an
+  // estimate is a ceiling somebody agreed to, not money that went.
+  const runs = await loadRuns(db, programId);
+  const spent = runs.reduce((sum, run) => sum + run.actualUsd, 0);
+
+  const awardable = new Set(recommendations.map((r) => r.categoryId)).size;
+
+  const answers = programmeAnswer({
+    workerUp,
+    running: running
+      ? {
+          jobsInFlight: running.running,
+          queued: running.queued,
+          href: `/program/${programId}/runs/${running.id}`,
+          label: running.subjectLabel ?? 'A run',
+        }
+      : undefined,
+    suppliers: {
+      total: suppliers.length,
+      identified: matches.filter((m) => m.status === 'accepted').length,
+      assessed: assessedIds.size,
+      uncategorised: uncategorised.length,
+    },
+    waitingOnYou: { count: waitingOnYou, names: waitingNames },
+    categories: {
+      total: program.categories.length,
+      withRecommendation: awardable,
+    },
+    needsReviewHref: `/program/${programId}/needs-review`,
+    runsHref: `/program/${programId}/runs`,
+  });
+
   return (
     <main>
       <Breadcrumb trail={[{ label: program.name }]} />
@@ -104,54 +147,93 @@ export default async function ProgramPage({
         {program.vehicleClass} · importing into {program.importingCountry} · {program.sourcingHorizon}
       </p>
 
-      {/*
-        The Programme strip carries EXACTLY TWO FIGURES (SPEC §13.2):
-        completeness, linking to Needs Review, and cost, linking to Runs.
-        Completeness deliberately does not live on the Runs page — "is my work
-        done?" and "what did it cost?" are different questions, and only the
-        first belongs where a person starts.
-      */}
-      <section className="card strip" aria-label="Programme status">
-        <div>
-          <span className="figure">
-            {assessedIds.size} of {suppliers.length} assessed
-          </span>
-          <span className="label">
-            {waitingOnYou > 0 ? (
-              <Link href={`/program/${programId}/needs-review` as never}>{waitingOnYou} waiting on you</Link>
-            ) : (
-              'nothing waiting on you'
-            )}
-          </span>
-        </div>
-        <div>
-          <span className="figure">
-            {lastRun?.estimateUsd ? `$${Number(lastRun.estimateUsd).toFixed(2)}` : '—'}
-          </span>
-          <span className="label">
-            <Link href={`/program/${programId}/runs` as never}>last run</Link>
-          </span>
-        </div>
-      </section>
-
-      {running ? (
-        <section className="card" aria-label="Run in progress">
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-            <strong>
-              <Link href={`/program/${programId}/runs/${running.id}` as never}>
-                {running.subjectLabel ?? 'A run'}
-              </Link>{' '}
-              is running
-            </strong>
-            <LiveRefresh active />
-          </div>
-          <p className="note" style={{ margin: '0.4rem 0 0' }}>
-            {running.running} job{running.running === 1 ? '' : 's'} in flight, {running.queued}{' '}
-            queued. The figures below update as matches land; the job-by-job view is on the{' '}
-            <Link href={`/program/${programId}/runs/${running.id}` as never}>run page</Link>.
+      {/* ── The answers, before any of the apparatus ── */}
+      {answers.map((answer) => (
+        <div
+          key={answer.said}
+          className={`answer ${answer.tone === 'neutral' ? '' : answer.tone}`}
+        >
+          <p className="said">
+            {answer.said}
+            {running && answer.said.endsWith('is running.') ? (
+              <>
+                {' '}
+                <LiveRefresh active />
+              </>
+            ) : null}
           </p>
-        </section>
-      ) : null}
+          <p className="because">{answer.because}</p>
+          {answer.actions.length > 0 ? (
+            <div className="do">
+              {answer.actions.map((action) => (
+                <Link
+                  key={action.label}
+                  className={`btn ${action.primary ? 'primary' : ''}`}
+                  href={action.href as never}
+                >
+                  {action.label}
+                </Link>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ))}
+
+      {/* ── Where you stand ── */}
+      <h2>Where you stand</h2>
+      <div className="where">
+        <div className={awardable === 0 ? 'bad' : ''}>
+          <b>
+            {awardable} of {program.categories.length}
+          </b>
+          <span>categories you could award today</span>
+        </div>
+        <div className={assessedIds.size < suppliers.length / 2 ? 'warn' : ''}>
+          <b>
+            {assessedIds.size} of {suppliers.length}
+          </b>
+          <span>suppliers fully worked up</span>
+        </div>
+        <div className={waitingOnYou > 0 ? 'warn' : ''}>
+          <b>{waitingOnYou}</b>
+          <span>waiting on your decision</span>
+        </div>
+        <div>
+          <b>
+            {matches.filter((m) => m.status === 'accepted').length} of {suppliers.length}
+          </b>
+          <span>suppliers we could identify</span>
+        </div>
+        <div>
+          <b>{uncategorised.length}</b>
+          <span>bid on no category, so cannot be ranked</span>
+        </div>
+        <div>
+          <b>${spent.toFixed(2)}</b>
+          <span>
+            {/*
+              Real spend, summed from usage. The strip here used to show the
+              LAST RUN's estimate, which is a ceiling somebody agreed to rather
+              than money that went — and labelled "last run", so it read as
+              both and was neither.
+            */}
+            spent so far, across {runs.length} {runs.length === 1 ? 'run' : 'runs'}
+          </span>
+        </div>
+      </div>
+      <p className="note" style={{ margin: '-0.9rem 0 1.6rem', maxWidth: '56rem' }}>
+        A category can be awarded once its bidders have been researched and{' '}
+        <span className="term">
+          an argued case written for it<i>Recommendation</i>
+        </span>
+        . <Link href={`/program/${programId}/runs` as never}>What has run, and what it cost</Link>.
+      </p>
+
+      {/* ── The working ── */}
+      <h2>The working</h2>
+      <p className="note" style={{ margin: '-0.4rem 0 0.8rem', maxWidth: '56rem' }}>
+        What you can set going, and the shape of the roster underneath the figures above.
+      </p>
 
       <RunPanel programId={programId} work={work} workerUp={workerUp} />
 
@@ -159,7 +241,7 @@ export default async function ProgramPage({
         Four charts, and the charts ARE the filter control. Clicking a bar
         navigates — because view state lives in the URL, a filter is a link.
       */}
-      <h2>Where this roster is, and whether resolution worked</h2>
+      <h3>Where this roster is, and whether resolution worked</h3>
       <div className="grid two">
         <CountryBreakdown
           programId={programId}
@@ -176,7 +258,7 @@ export default async function ProgramPage({
         <SharedOwnership matchBySupplier={matchBySupplier} suppliers={suppliers} />
       </div>
 
-      <h2>Categories</h2>
+      <h3>What you are buying</h3>
       <div className="card scroll-x">
         <table>
           <thead>
@@ -209,12 +291,12 @@ export default async function ProgramPage({
         </table>
       </div>
 
-      <h2>
-        Suppliers{' '}
+      <h3>
+        Every company on the roster{' '}
         <span className="note">
           {uncategorised.length} of {suppliers.length} bid on no category, and reach no shortlist
         </span>
-      </h2>
+      </h3>
       <SupplierTable
         programId={programId}
         suppliers={suppliers}
