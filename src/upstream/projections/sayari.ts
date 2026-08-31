@@ -24,9 +24,32 @@ import { snakeKeys } from './key-case';
 /** Wraps a schema so it sees one key casing whichever path produced the body. */
 const eitherCasing = <T extends z.ZodType>(schema: T) => z.preprocess(snakeKeys, schema);
 
-/** Sayari returns `x`/`y` (lon/lat) on a structured address. */
-const addressProperties = z
+/**
+ * The `properties` bag on an attribute entry — **for every attribute type, not
+ * just `address`**, and **open**, because its key space is not ours to close.
+ *
+ * `value` is the one key that is effectively universal: measured over the local
+ * corpus it is present on 1857/1857 `name` entries, 1827/1827 `address`,
+ * 3224/3224 `identifier`, 3112/3112 `country`, 779/779 `companyType` and
+ * 1943/2078 `businessPurpose`. Everything else is source-specific and often
+ * free-form — `additionalInformation` alone contributes keys like
+ * `Awarding Sub Agency Name` and `Ausländische Behörde`. An earlier version of
+ * this schema was a **closed** object listing only the address fields, so Zod
+ * stripped `value`, `code` and `standard` from every non-address attribute and
+ * projected `{}`. The named fields below are the ones we actually read; `.loose()`
+ * is what keeps the rest from being thrown away.
+ *
+ * `x`/`y` are lon/lat on a structured address.
+ */
+const attributeProperties = z
   .object({
+    /** Where an attribute's text actually lives. See `attributeText()`. */
+    value: z.unknown().nullish(),
+    type: z.unknown().nullish(),
+    context: z.unknown().nullish(),
+    /** `business_purpose` carries an industry code and the standard it is in. */
+    code: z.unknown().nullish(),
+    standard: z.unknown().nullish(),
     x: z.number().nullish(),
     y: z.number().nullish(),
     city: z.string().nullish(),
@@ -36,16 +59,32 @@ const addressProperties = z
     house_number: z.string().nullish(),
     street: z.string().nullish(),
   })
-  .partial();
+  .partial()
+  .loose();
 
+/**
+ * One attribute entry.
+ *
+ * **There is no top-level `value` here, and there never was.** Across all 313
+ * cached `entity.getEntity` bodies, every entry of every attribute type carries
+ * exactly `record`, `sources`, `editable`, `recordCount` and `properties` —
+ * 2078 `businessPurpose` entries, 3224 `identifier`, 1857 `name`, and not one
+ * `value` among them. The field used to be declared here anyway, and because
+ * the projection is lenient it read `undefined` on every entry without ever
+ * failing: `businessPurposes` and `aliases` were silently always `[]`.
+ *
+ * It is deliberately **not** declared any more. Read the text with
+ * `attributeText()`; a reader reaching for `.value` should not typecheck.
+ */
 const attributeValue = z
   .object({
-    value: z.unknown().nullish(),
     /** Every attribute carries citable record ids — the Citation's record hop. */
     record: z.array(z.string()).nullish(),
-    properties: addressProperties.nullish(),
-    context: z.unknown().nullish(),
-    type: z.string().nullish(),
+    /** The source hashes behind those records. */
+    sources: z.array(z.string()).nullish(),
+    /** How many records assert this entry — a weak confidence signal. */
+    record_count: z.number().nullish(),
+    properties: attributeProperties.nullish(),
   })
   .partial();
 
@@ -342,6 +381,31 @@ export const tradeSearchSchema = eitherCasing(tradeSearchSchemaInner);
 export type SayariEntity = z.infer<typeof entitySchemaInner>;
 export type SayariResolutionCandidate = z.infer<typeof resolutionCandidateSchemaInner>;
 export type SayariTraversalPath = z.infer<typeof traversalPathSchemaInner>;
+
+/** One entry of one attribute block, as the projection produces it. */
+export type SayariAttributeValue = NonNullable<
+  NonNullable<SayariEntity['attributes']>[string]['data']
+>[number];
+
+/**
+ * The text of one attribute entry.
+ *
+ * It lives at `properties.value` — never at the top level, on any attribute
+ * type, in any of the 313 measured bodies. This function exists so that fact is
+ * written down once instead of being re-learned at each call site, which is how
+ * `businessPurposes` and `aliases` came to be silently empty everywhere.
+ */
+export function attributeText(entry: SayariAttributeValue | undefined | null): string | null {
+  const value = entry?.properties?.value;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/** Every attribute entry that has text, in order, with the empties dropped. */
+export function attributeTexts(
+  entries: readonly (SayariAttributeValue | undefined | null)[] | undefined | null,
+): string[] {
+  return (entries ?? []).map(attributeText).filter((text): text is string => text != null);
+}
 
 /** Reads `match_strength` whichever of its two shapes an endpoint returned. */
 export function matchStrengthValue(

@@ -35,7 +35,8 @@
     "fixtures:record-chat": "tsx scripts/record-chat-fixture.ts",
     "enqueue": "tsx scripts/enqueue.ts",
     "fixtures:rehash": "tsx scripts/rehash-fixture.ts",
-    "reproject:relationships": "tsx scripts/reproject-relationships.ts"
+    "reproject:relationships": "tsx scripts/reproject-relationships.ts",
+    "remeasure:discriminators": "tsx scripts/remeasure-discriminators.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.122.0",

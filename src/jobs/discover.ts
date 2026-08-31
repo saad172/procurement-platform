@@ -8,7 +8,7 @@ import * as classifierPrompts from '@/model/prompts/classifier';
 import { getRegistry, type ToolContext } from '@/tools';
 import type { ModelContext } from '@/model/types';
 import type { Upstream } from '@/upstream';
-import type { SayariEntity } from '@/upstream/projections/sayari';
+import { attributeTexts, type SayariEntity } from '@/upstream/projections/sayari';
 import { upsertEntity } from './resolve';
 
 /**
@@ -203,10 +203,9 @@ export async function discoverLeads(
               countries: candidate.entity.countries ?? [],
               shipmentCount: candidate.shipments,
               topHsCodes: hsCodes,
-              businessPurpose: (candidate.entity.attributes?.business_purpose?.data ?? [])
-                .map((entry) => (typeof entry.value === 'string' ? entry.value : ''))
-                .filter(Boolean)
-                .join('; '),
+              businessPurpose: attributeTexts(
+                candidate.entity.attributes?.business_purpose?.data,
+              ).join('; '),
               addresses: candidate.entity.addresses ?? [],
             }),
           },

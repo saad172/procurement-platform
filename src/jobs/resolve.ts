@@ -10,7 +10,7 @@ import { runDiscriminators, type CandidateFacts, type RosterRow } from '@/domain
 import { seedFor, shuffleCandidates } from '@/domain/match/shuffle';
 import { settleMatch, type CandidateRecord } from '@/domain/match/settle-match';
 import type { Upstream } from '@/upstream';
-import { matchStrengthValue, type SayariEntity } from '@/upstream/projections/sayari';
+import { attributeTexts, matchStrengthValue, type SayariEntity } from '@/upstream/projections/sayari';
 
 /**
  * The resolve Job (SPEC §6).
@@ -65,12 +65,8 @@ export function toCandidateFacts(entity: SayariEntity, gleif?: CandidateFacts['g
     // `countries[]` — one seeded company returned eight.
     country: properties?.country ?? entity.countries?.[0] ?? null,
     addresses: addresses.length > 0 ? addresses : [{ city: null, postcode: null, country: entity.countries?.[0] ?? null }],
-    aliases: aliasBlock
-      .map((a) => (typeof a.value === 'string' ? a.value : null))
-      .filter((a): a is string => a != null),
-    businessPurposes: (entity.attributes?.business_purpose?.data ?? [])
-      .map((b) => (typeof b.value === 'string' ? b.value : null))
-      .filter((b): b is string => b != null),
+    aliases: attributeTexts(aliasBlock),
+    businessPurposes: attributeTexts(entity.attributes?.business_purpose?.data),
     companyType: entity.company_type ?? null,
     closed: entity.closed ?? false,
     latestStatus,
