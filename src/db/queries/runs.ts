@@ -189,6 +189,13 @@ export function runProgress(jobs: { state: typeof t.job.$inferSelect.state }[]):
 export type JobActivity = {
   turns: number;
   toolCalls: number;
+  /**
+   * Billed outbound attempts. **The number the per-Job ceiling actually
+   * bounds**, and for a deterministic Job it is the only one there is: `enrich`
+   * runs no model, so its Trace has no turns and no tool calls, and the column
+   * read `0 / 25` however many sources it had fetched.
+   */
+  upstreamCalls: number;
   tokens: number;
   /** The tool names of the most recent turn — the legible "what it is doing". */
   lastTools: string[];
@@ -222,6 +229,8 @@ export async function loadJobActivity(
   const usage = await db
     .select({
       jobId: t.usageEvent.jobId,
+      model: t.usageEvent.model,
+      cacheHit: t.usageEvent.cacheHit,
       inputTokens: t.usageEvent.inputTokens,
       outputTokens: t.usageEvent.outputTokens,
       cacheCreationInputTokens: t.usageEvent.cacheCreationInputTokens,
@@ -247,6 +256,8 @@ export async function loadJobActivity(
     activity.set(jobId, {
       turns: jobTurns.length,
       toolCalls: jobTurns.reduce((sum, turn) => sum + (callsByTurn.get(turn.id)?.length ?? 0), 0),
+      // Billed only: a cache hit spends no credit, and the ceiling bounds spend.
+      upstreamCalls: usage.filter((row) => row.jobId === jobId && !row.model && !row.cacheHit).length,
       tokens: usage
         .filter((row) => row.jobId === jobId)
         .reduce(

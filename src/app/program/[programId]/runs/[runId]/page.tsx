@@ -194,7 +194,7 @@ export default async function RunPage({
             */}
             In-flight jobs stopped at their next round boundary and queued jobs stayed queued, so
             resuming is one act on the run rather than one per job. The increment comes from the same
-            $3.00 × N formula applied to the suppliers still unfinished.
+            $8.00 × N formula applied to the suppliers still unfinished.
           </p>
 
           {/*
@@ -222,7 +222,7 @@ export default async function RunPage({
               <th>Subject</th>
               <th>State</th>
               <th>Doing</th>
-              <th className="num">Tool calls</th>
+              <th className="num">Upstream calls</th>
               <th className="num">Tokens</th>
               <th>Trace</th>
             </tr>
@@ -247,7 +247,16 @@ export default async function RunPage({
                     <td><JobState job={job} stranded={stuck.includes(job)} /></td>
                     <td className="note"><Doing job={job} activity={now} /></td>
                     <td className="num note">
-                      {now?.toolCalls ?? 0} / {job.toolCallCap}
+                      {/*
+                        The ceiling counts outbound attempts, so that is what is
+                        shown against it. A Job that runs a model has both
+                        numbers and they are different questions: how much
+                        reasoning it did, and how much it spent doing it.
+                      */}
+                      {now?.upstreamCalls ?? 0} / {job.toolCallCap}
+                      {now?.toolCalls ? (
+                        <div className="note">{now.toolCalls} model tool call{now.toolCalls === 1 ? '' : 's'}</div>
+                      ) : null}
                     </td>
                     <td className="num note">
                       {job.tokenCap === 0

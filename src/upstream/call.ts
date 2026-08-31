@@ -1,7 +1,7 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { classify } from './classify';
-import { UpstreamCacheMissError, UpstreamError } from './errors';
+import { UpstreamCacheMissError, UpstreamCapExceededError, UpstreamError } from './errors';
 import { canonicalParams, hashBody, hashParams } from './hash';
 import { withRateLimit } from './rate-limit';
 import type { EndpointDef, UpstreamContext, UpstreamResult } from './types';
@@ -130,6 +130,31 @@ export async function call<TParams extends Record<string, unknown>, TProjected>(
         upstreamResponseId: cached.id,
         bodyHash: cached.bodyHash,
       };
+    }
+  }
+
+  /**
+   * ── The per-Job ceiling, checked before a live call ─────────────────────
+   *
+   * **After the cache, and deliberately.** A cache hit spends no credit, so
+   * refusing one would stop a Job that was costing nothing — and replaying a
+   * fixture, which is all cache hits, would hit a ceiling sized for real calls.
+   * What this bounds is spend, so it sits exactly where spend begins.
+   *
+   * Counted from `usage_event`, the one home of usage, rather than from a
+   * counter held in memory: a Job resumed after a killed worker has already
+   * spent what its earlier attempt spent, and a fresh in-process count would
+   * hand it the whole ceiling a second time.
+   */
+  if (ctx.jobId && ctx.toolCallCap && ctx.toolCallCap > 0) {
+    const [used] = (await ctx.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(t.usageEvent)
+      .where(and(eq(t.usageEvent.jobId, ctx.jobId), eq(t.usageEvent.cacheHit, false)))) as [
+      { n: number },
+    ];
+    if ((used?.n ?? 0) >= ctx.toolCallCap) {
+      throw new UpstreamCapExceededError(ctx.jobId, ctx.toolCallCap, def.endpoint);
     }
   }
 

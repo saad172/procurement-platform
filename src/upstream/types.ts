@@ -38,6 +38,14 @@ export type UpstreamContext = {
    * *cached — no credits* (SPEC §16.5).
    */
   refresh?: boolean | undefined;
+  /**
+   * This Job's upstream-call ceiling, checked before a live call.
+   *
+   * Supplied by the worker from `job.tool_call_cap`. Absent for a page read or
+   * a chat lookup, which are not Jobs and are bounded by the confirm gate
+   * instead — the stronger bound, because it stops a spend before it happens.
+   */
+  toolCallCap?: number | undefined;
   credentials?: UpstreamCredentials | undefined;
 };
 

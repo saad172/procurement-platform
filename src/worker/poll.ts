@@ -3,6 +3,7 @@ import type * as t from '@/db/schema';
 import { checkRunBudget, dequeueJob, finishJob, settleRunState } from '@/jobs/runs';
 import { describeError } from '@/jobs/describe-error';
 import { UnpublishableDraftError } from '@/jobs/rounds';
+import { UpstreamCapExceededError } from '@/upstream/errors';
 
 /**
  * The worker's dequeue loop (SPEC §2.2, §18.2).
@@ -97,7 +98,12 @@ async function runOneJob(
      * *something broke*, next to a Run whose whole claim is that it does not
      * publish sentences it cannot support. It is amber, and it says why.
      */
-    if (error instanceof UnpublishableDraftError) {
+    if (error instanceof UpstreamCapExceededError) {
+      // A ceiling somebody set, so `terminated` and re-runnable — same rule as
+      // the model loop's own caps, now applied to the deterministic Jobs that
+      // never pass through it.
+      await finishJob(db, job.id, { state: 'terminated', reason: error.message });
+    } else if (error instanceof UnpublishableDraftError) {
       await finishJob(db, job.id, {
         state: 'terminated',
         reason: describeError(error),

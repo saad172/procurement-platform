@@ -82,3 +82,30 @@ export class UpstreamCacheMissError extends Error {
     this.name = 'UpstreamCacheMissError';
   }
 }
+
+/**
+ * A Job reached its own upstream-call ceiling (SPEC §18.2, §18.3).
+ *
+ * **`terminated`, never `failed`** — it names a number somebody set, so the
+ * Job is re-runnable and the row is amber rather than red.
+ *
+ * This ceiling used to be enforced nowhere for a deterministic Job. The counts
+ * live inside `runLoop`, and `enrich` never calls it, so `JOB_CAPS.enrich`'s
+ * twenty-five was a number the Run page printed and nothing checked — every
+ * enrich Job displayed `0 / 25` for the whole of its life. That mattered the
+ * moment a Job started fanning out over the companies it found: the Run budget
+ * prices model tokens only, so upstream spend is bounded by this and by nothing
+ * else in the system.
+ */
+export class UpstreamCapExceededError extends Error {
+  constructor(
+    readonly jobId: string,
+    readonly cap: number,
+    readonly endpoint: string,
+  ) {
+    super(
+      `stopped at its ${cap}-upstream-call ceiling, reaching for ${endpoint}`,
+    );
+    this.name = 'UpstreamCapExceededError';
+  }
+}
