@@ -32,6 +32,7 @@
     "smoke:discover": "tsx scripts/smoke-discover.ts",
     "check:prefilter": "tsx scripts/check-prefilter.ts",
     "fixtures:record": "tsx scripts/record-fixture.ts",
+    "fixtures:record-replayable": "tsx scripts/record-replayable.ts",
     "fixtures:record-chat": "tsx scripts/record-chat-fixture.ts",
     "enqueue": "tsx scripts/enqueue.ts",
     "fixtures:rehash": "tsx scripts/rehash-fixture.ts",
