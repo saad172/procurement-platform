@@ -142,9 +142,18 @@ export default async function SupplierPage({
             <>
               <p style={{ marginTop: 0 }}>
                 <strong>No score.</strong>{' '}
+                {/*
+                  Three reasons a score is absent, and they are not the same
+                  news. The third — settled, categorised, but nothing fetched —
+                  used to render as "its match is not settled" directly beneath
+                  a heading reading "accepted", which told the reader the one
+                  thing about this page that was false.
+                */}
                 {scored?.scoreAbsentReason === 'no_category'
                   ? 'This supplier bids on no category in this programme, so it reaches no shortlist. It still carries criterion values and an assessment.'
-                  : 'Its match is not settled, so there is no profile to measure — and no estimated criterion is shown, because a number about a company we have not identified would be worse than none.'}
+                  : scored?.scoreAbsentReason === 'no_match'
+                    ? 'Its match is not settled, so there is no profile to measure — and no estimated criterion is shown, because a number about a company we have not identified would be worse than none.'
+                    : 'Its match is settled, but no criterion has a value yet — nothing has been enriched, so every weight dropped out and there is nothing left to average. Re-enrich fetches the six sources a score is computed from.'}
               </p>
               {match?.status !== 'accepted' && match?.attempts.length ? (
                 <p className="note">

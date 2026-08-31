@@ -6,7 +6,8 @@ import * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatDock } from '@/components/chat-dock';
 import { parseViewState } from '@/lib/view-state';
-import { workerSeemsUp } from '@/db/queries/runs';
+import { activeRun, rosterWork, workerSeemsUp } from '@/db/queries/runs';
+import { LiveRefresh } from '@/components/live-refresh';
 import { CountryBreakdown, MatchOutcomes, SharedOwnership, SupplierMap } from './charts';
 import { RunPanel } from './run-panel';
 import { SupplierTable } from './supplier-table';
@@ -20,6 +21,8 @@ import { SupplierTable } from './supplier-table';
  * table cannot. **The charts are the filter control**: clicking Germany on the
  * country bars narrows the table below, and there is no separate filter UI.
  */
+export const dynamic = 'force-dynamic';
+
 export default async function ProgramPage({
   params,
   searchParams,
@@ -56,8 +59,14 @@ export default async function ProgramPage({
    * otherwise look like it had done something. Recent activity is the only
    * signal available from here — the worker holds no inbound port by design.
    */
-  const unresolvedCount = suppliers.filter((s) => !matchBySupplier.has(s.id)).length;
+  const work = await rosterWork(db, programId);
   const workerUp = await workerSeemsUp(db);
+  /**
+   * A Run still moving, if there is one. Without it this page is unchanged by
+   * the click that started it — the unresolved count only falls when a Match
+   * lands — so coming back here mid-run would look like nothing had happened.
+   */
+  const running = await activeRun(db, programId);
 
   const assessed = await db
     .select({ supplierId: t.assessment.supplierId })
@@ -125,7 +134,26 @@ export default async function ProgramPage({
         </div>
       </section>
 
-      <RunPanel programId={programId} unresolved={unresolvedCount} workerUp={workerUp} />
+      {running ? (
+        <section className="card" aria-label="Run in progress">
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+            <strong>
+              <Link href={`/program/${programId}/runs/${running.id}` as never}>
+                {running.subjectLabel ?? 'A run'}
+              </Link>{' '}
+              is running
+            </strong>
+            <LiveRefresh active />
+          </div>
+          <p className="note" style={{ margin: '0.4rem 0 0' }}>
+            {running.running} job{running.running === 1 ? '' : 's'} in flight, {running.queued}{' '}
+            queued. The figures below update as matches land; the job-by-job view is on the{' '}
+            <Link href={`/program/${programId}/runs/${running.id}` as never}>run page</Link>.
+          </p>
+        </section>
+      ) : null}
+
+      <RunPanel programId={programId} work={work} workerUp={workerUp} />
 
       {/*
         Four charts, and the charts ARE the filter control. Clicking a bar
