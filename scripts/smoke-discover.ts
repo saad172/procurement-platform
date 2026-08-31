@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { loadEnv } from '@/config/env';
 import { closeDirectDb, getDirectDb } from '@/db/client';
 import * as t from '@/db/schema';
+import { PROGRAM } from '@/db/seed-data/program';
 import { createUpstream } from '@/upstream';
 import { enqueueJob, openRun, runSpendUsd } from '@/jobs/runs';
 import { discoverLeads } from '@/jobs/discover';
@@ -21,7 +22,7 @@ async function main(): Promise<void> {
   const db = getDirectDb();
   const code = process.argv[2] ?? 'BAT';
 
-  const program = await db.query.program.findFirst();
+  const program = await db.query.program.findFirst({ where: eq(t.program.name, PROGRAM.name) });
   if (!program) throw new Error('Seed the database first: pnpm db:seed');
   const category = await db.query.category.findFirst({ where: eq(t.category.code, code) });
   if (!category) throw new Error(`No category "${code}"`);

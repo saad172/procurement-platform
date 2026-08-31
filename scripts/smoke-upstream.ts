@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { loadEnv } from '@/config/env';
 import { closeDirectDb, getDirectDb } from '@/db/client';
 import * as t from '@/db/schema';
+import { PROGRAM } from '@/db/seed-data/program';
 import { createUpstream } from '@/upstream';
 import { matchStrengthValue } from '@/upstream/projections/sayari';
 import { eq } from 'drizzle-orm';
@@ -29,7 +30,7 @@ async function main(): Promise<void> {
   const db = getDirectDb();
 
   // Every amount spent belongs to exactly one Run, so the smoke check opens one.
-  const program = await db.query.program.findFirst();
+  const program = await db.query.program.findFirst({ where: eq(t.program.name, PROGRAM.name) });
   if (!program) throw new Error('Seed the database first: pnpm db:seed');
   const [run] = await db
     .insert(t.run)

@@ -4,6 +4,7 @@ import { desc, eq } from 'drizzle-orm';
 import { loadEnv } from '@/config/env';
 import { closeDirectDb, getDirectDb } from '@/db/client';
 import * as t from '@/db/schema';
+import { PROGRAM } from '@/db/seed-data/program';
 import { createUpstream } from '@/upstream';
 import { enqueueJob, openRun, runSpendUsd } from '@/jobs/runs';
 import { assessSupplier } from '@/jobs/assess';
@@ -24,7 +25,7 @@ async function main(): Promise<void> {
   const db = getDirectDb();
   const rosterName = process.argv[2] ?? 'Yazaki';
 
-  const program = await db.query.program.findFirst();
+  const program = await db.query.program.findFirst({ where: eq(t.program.name, PROGRAM.name) });
   if (!program) throw new Error('Seed the database first: pnpm db:seed');
   const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.rosterName, rosterName) });
   if (!supplier) throw new Error(`No roster row named "${rosterName}"`);

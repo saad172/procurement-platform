@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { loadEnv } from '@/config/env';
 import { closeDirectDb, getDirectDb } from '@/db/client';
 import * as t from '@/db/schema';
+import { PROGRAM } from '@/db/seed-data/program';
 import { createUpstream } from '@/upstream';
 import { openRun } from '@/jobs/runs';
 import { prepassCandidateIds, resolveSupplier } from '@/jobs/resolve';
@@ -27,7 +28,7 @@ async function main(): Promise<void> {
   const db = getDirectDb();
   const rosterName = process.argv[2] ?? 'Bosch';
 
-  const program = await db.query.program.findFirst();
+  const program = await db.query.program.findFirst({ where: eq(t.program.name, PROGRAM.name) });
   if (!program) throw new Error('Seed the database first: pnpm db:seed');
   const supplier = await db.query.supplier.findFirst({
     where: eq(t.supplier.rosterName, rosterName),

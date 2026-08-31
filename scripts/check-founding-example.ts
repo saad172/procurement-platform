@@ -2,7 +2,9 @@
 import 'dotenv/config';
 import { loadEnv } from '@/config/env';
 import { closeDirectDb, getDirectDb } from '@/db/client';
+import { eq } from 'drizzle-orm';
 import * as t from '@/db/schema';
+import { PROGRAM } from '@/db/seed-data/program';
 import { createUpstream } from '@/upstream';
 import { matchStrengthValue } from '@/upstream/projections/sayari';
 
@@ -33,7 +35,7 @@ const ROSTER_ROW = {
 async function main(): Promise<void> {
   const env = loadEnv();
   const db = getDirectDb();
-  const program = await db.query.program.findFirst();
+  const program = await db.query.program.findFirst({ where: eq(t.program.name, PROGRAM.name) });
   if (!program) throw new Error('Seed the database first: pnpm db:seed');
   const [run] = await db
     .insert(t.run)

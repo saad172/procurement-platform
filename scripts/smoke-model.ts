@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { loadEnv } from '@/config/env';
 import { closeDirectDb, getDirectDb } from '@/db/client';
 import * as t from '@/db/schema';
+import { PROGRAM } from '@/db/seed-data/program';
 import { runLoop } from '@/model';
 import { JOB_CAPS } from '@/config/constants';
 
@@ -27,7 +28,7 @@ import { JOB_CAPS } from '@/config/constants';
 async function main(): Promise<void> {
   const env = loadEnv();
   const db = getDirectDb();
-  const program = await db.query.program.findFirst();
+  const program = await db.query.program.findFirst({ where: eq(t.program.name, PROGRAM.name) });
   if (!program) throw new Error('Seed the database first: pnpm db:seed');
 
   const [run] = await db

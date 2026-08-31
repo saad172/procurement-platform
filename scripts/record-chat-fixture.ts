@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { and, eq, gte, isNotNull } from 'drizzle-orm';
 import { closeDirectDb, getDirectDb } from '@/db/client';
 import * as t from '@/db/schema';
+import { PROGRAM } from '@/db/seed-data/program';
 import { loadEnv } from '@/config/env';
 import { runChatTurn } from '@/chat/turn';
 import { resetAnthropicClients } from '@/model/client';
@@ -58,7 +59,7 @@ async function main(): Promise<void> {
   const db = getDirectDb();
 
   try {
-    const program = await db.query.program.findFirst();
+    const program = await db.query.program.findFirst({ where: eq(t.program.name, PROGRAM.name) });
     if (!program) {
       console.error('Seed the database first: pnpm db:seed');
       process.exitCode = 1;
