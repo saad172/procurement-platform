@@ -12,7 +12,12 @@ import {
   settleRunState,
 } from '@/jobs/runs';
 import { runWorker } from '@/worker/poll';
-import { MAX_FREE_RETRIES_PER_ROUND, MAX_ROUNDS, RUN_BUDGET_USD_PER_SUPPLIER } from '@/config/constants';
+import {
+  MAX_FREE_RETRIES_PER_ROUND,
+  MAX_ROUNDS,
+  MODEL_PRICE_USD_PER_MTOK,
+  RUN_BUDGET_USD_PER_SUPPLIER,
+} from '@/config/constants';
 import { runProposerEvaluatorLoop } from '@/jobs/rounds';
 import {
   START_TEST_DB_HINT,
@@ -59,7 +64,7 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
   });
 
   describe('a Run carries the budget its Supplier count implies', () => {
-    it('is $3.00 × N', async () => {
+    it('is the per-Supplier constant × N', async () => {
       const runId = await openRun(db, { programId, trigger: 'full', supplierCount: 10 });
       const run = await db.query.run.findFirst({ where: eq(t.run.id, runId) });
       expect(Number(run!.budgetUsd)).toBe(RUN_BUDGET_USD_PER_SUPPLIER * 10);
@@ -156,13 +161,19 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
       await enqueueJob(db, { runId, kind: 'assess', subjectType: 'program', subjectId: programId });
       await enqueueJob(db, { runId, kind: 'assess', subjectType: 'program', subjectId: programId });
 
-      // Spend past the $3.00 budget.
+      /**
+       * Spend past the budget, computed from the same constants the app prices
+       * with. Writing a token count that happened to exceed $3.00 is what tied
+       * this test to a figure the spec always said would be re-fit.
+       */
+      const outputPricePerMTok = MODEL_PRICE_USD_PER_MTOK['claude-opus-5']!.output;
+      const outputTokens = Math.ceil((RUN_BUDGET_USD_PER_SUPPLIER / outputPricePerMTok) * 1e6) + 1e5;
       await testSql()`
         INSERT INTO usage_event (run_id, endpoint, ms, outcome, model, input_tokens, output_tokens)
-        VALUES (${runId}, 'messages.toolRunner', 10, 'ok', 'claude-opus-5', 0, 200000)`;
+        VALUES (${runId}, 'messages.toolRunner', 10, 'ok', 'claude-opus-5', 0, ${outputTokens})`;
       const budget = await checkRunBudget(db, runId);
       expect(budget.withinBudget).toBe(false);
-      expect(await runSpendUsd(db, runId)).toBeCloseTo(5, 6);
+      expect(await runSpendUsd(db, runId)).toBeGreaterThan(RUN_BUDGET_USD_PER_SUPPLIER);
 
       let idled = 0;
       await runWorker(db, {
@@ -177,7 +188,7 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
       expect(jobs.every((j) => j.state === 'paused_on_budget')).toBe(true);
     });
 
-    it('resume raises the budget by the same $3 × N formula and re-queues', async () => {
+    it('resume raises the budget by the same per-Supplier × N formula and re-queues', async () => {
       // A flat step would be arbitrary; a free-text box would hole the
       // code-constant discipline.
       const runId = await openRun(db, { programId, trigger: 'full', supplierCount: 10 });
@@ -190,7 +201,7 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
       expect(addedUsd).toBe(RUN_BUDGET_USD_PER_SUPPLIER * 2);
 
       const run = await db.query.run.findFirst({ where: eq(t.run.id, runId) });
-      expect(Number(run!.budgetUsd)).toBe(30 + addedUsd);
+      expect(Number(run!.budgetUsd)).toBe(RUN_BUDGET_USD_PER_SUPPLIER * 10 + addedUsd);
       expect(run!.state).toBe('running');
 
       const jobs = await db.select().from(t.job).where(eq(t.job.runId, runId));

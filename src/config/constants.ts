@@ -67,6 +67,11 @@ export const DEEP_TRAVERSAL_MAX_NODES = 200;
 export const JOB_CAPS = {
   resolve: { toolCalls: 60, tokens: 400_000 },
   enrich: { toolCalls: 25, tokens: 0 },
+  /**
+   * One company, one `getEntity`. The ceiling is 2 rather than 1 only because a
+   * retried attempt after a transport error is the same Job doing the same work.
+   */
+  fetch_entity: { toolCalls: 2, tokens: 0 },
   traverse: { toolCalls: 20, tokens: 0 },
   assess: { toolCalls: 40, tokens: 450_000 },
   recommend: { toolCalls: 60, tokens: 900_000 },
@@ -80,11 +85,32 @@ export type JobKind = keyof typeof JOB_CAPS;
  * The run budget is a spending decision a person may revise; a per-Job ceiling
  * is a correctness backstop they may not (SPEC §18.2).
  *
- * $3.00 × N Suppliers, against a worst-case full-50 arithmetic of ~$110. It is
- * a soft ceiling with bounded overshoot: worker concurrency IS the overshoot
- * (4 × a ~$0.60 recommend Round ≈ $2.40 on the smallest budget), and checking
- * more finely would only discard spend already made, because a Round is the
- * smallest resumable unit.
+ * **$8.00 × N Suppliers, re-fit from the first real run.** The spec published
+ * $3.00 against a worst-case full-50 arithmetic of ~$110 and said in the same
+ * breath that the numbers were *provisional, to be re-fit after the first real
+ * run* (SPEC §18.3). That run has now happened, and it measured:
+ *
+ *     resolve   $0.65 per Job   (51 done)
+ *     enrich    $0.00           — no model runs in it at all
+ *     assess    $4.92           for the one Job that converged and published
+ *     ────────────────────────────────────────────────────
+ *     pipeline  ~$5.57 per Supplier, so ~$280 for a full fifty
+ *
+ * $8.00 leaves about 40% over the measured figure, which is the room a Supplier
+ * needs when it uses all three Rounds rather than converging early. A budget
+ * sized at the mean would pause on any Supplier costlier than average, and a
+ * bound that fires on healthy work teaches a reader to raise it without reading
+ * it.
+ *
+ * It stays a soft ceiling with bounded overshoot: worker concurrency IS the
+ * overshoot, and checking more finely would only discard spend already made,
+ * because a Round is the smallest resumable unit.
+ *
+ * **It bounds Anthropic dollars and nothing else.** `runSpendUsd` prices model
+ * rows only — Sayari publishes no per-call price, so upstream calls contribute
+ * zero to it and `checkRunBudget` cannot see them. Upstream spend is bounded by
+ * the per-Job call ceilings instead, which is why those had to start being
+ * enforced.
  */
 /**
  * Chat's own tool-call ceiling, which is deliberately **not** a `JOB_CAPS`
@@ -98,7 +124,7 @@ export type JobKind = keyof typeof JOB_CAPS;
  */
 export const CHAT_TOOL_CALL_CAP = 20;
 
-export const RUN_BUDGET_USD_PER_SUPPLIER = 3.0;
+export const RUN_BUDGET_USD_PER_SUPPLIER = 8.0;
 
 /** The Dossier's own dollar budget, enforced by Managed Agents (SPEC §18.3). */
 export const DOSSIER_BUDGET_USD = 2.0;

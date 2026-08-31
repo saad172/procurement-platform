@@ -48,7 +48,8 @@ export const run = pgTable('run', {
   subjectLabel: text('subject_label'),
 
   /**
-   * $3.00 × N Suppliers. A **soft ceiling with bounded overshoot**: it is
+   * $8.00 × N Suppliers, re-fit from the first real run. A **soft ceiling
+   * with bounded overshoot**: it is
    * checked before dequeuing a Job and at each Round boundary inside one, and
    * concurrency 4 *is* the overshoot. Raisable — it is a spending decision a
    * person may revise, unlike a per-Job ceiling (SPEC §18.2).

@@ -37,7 +37,7 @@ export type RunTrigger =
 /**
  * Opens a Run.
  *
- * `budgetUsd` is `$3.00 × N Suppliers` — a **soft ceiling with bounded
+ * `budgetUsd` is `$8.00 × N Suppliers` — a **soft ceiling with bounded
  * overshoot**, not a hard stop, because a Round is the smallest resumable unit
  * and checking finer would only discard spend already made.
  *
