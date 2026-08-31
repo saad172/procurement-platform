@@ -1,10 +1,11 @@
 // Next.js loads `.env` itself; a plain Node entrypoint has to ask.
 import 'dotenv/config';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { closeDirectDb, getDirectDb } from '@/db/client';
 import * as t from '@/db/schema';
 import { parseRelationships } from '@/domain/parse-relationships';
 import { storeRelationships } from '@/jobs/enrich';
+import { asc } from 'drizzle-orm';
 
 /**
  * Re-projects the relationship graph out of the responses already stored.
@@ -20,6 +21,13 @@ import { storeRelationships } from '@/jobs/enrich';
  * It is a script rather than a Job because it is a one-off repair of a defect,
  * not work a Run should be able to trigger. Nothing here is a spend, so nothing
  * here needs a budget.
+ *
+ * It does two repairs, both from the same cache:
+ *
+ * 1. **The relationship graph**, which was empty.
+ * 2. **`entity.upstream_response_id`**, which is new — every company that was
+ *    fetched on its own gets a link to the body it was projected from, so the
+ *    Profile page can show a reader what the figures were computed against.
  *
  * Re-runnable: every write is `onConflictDoNothing` against the edge's unique
  * key, and `first_seen_at` is left for the database to set once.
@@ -92,6 +100,9 @@ async function main(): Promise<void> {
     }
   }
 
+  // ── 2. Provenance: link each entity to its own fetched body ──────────────
+  const linked = dryRun ? 0 : await backfillProvenance(db);
+
   const [{ after }] = (await db
     .select({ after: sql<number>`count(*)::int` })
     .from(t.entityRelationship)) as [{ after: number }];
@@ -103,9 +114,51 @@ async function main(): Promise<void> {
   if (unclassified.size > 0) {
     console.log(`unclassified types (stored, excluded from ownership): ${[...unclassified].join(', ')}`);
   }
+  console.log(`${linked} entit(ies) linked to the body they were projected from`);
   if (dryRun) console.log('dry run — nothing written');
 
   await closeDirectDb();
+}
+
+/**
+ * Sets `entity.upstream_response_id` for every company fetched on its own.
+ *
+ * **Only `entity.getEntity` bodies qualify.** A search or traversal response
+ * contains many companies and is nobody's own payload; pointing an entity at
+ * one would answer *what was this projected from* with a body about somebody
+ * else. Those rows stay null, and the page says so in words.
+ *
+ * Oldest first, so the newest fetch wins the row — the same latest-wins rule
+ * the cache read itself uses.
+ */
+async function backfillProvenance(db: ReturnType<typeof getDirectDb>): Promise<number> {
+  const bodies = await db
+    .select({ id: t.upstreamResponse.id, body: t.upstreamResponse.body })
+    .from(t.upstreamResponse)
+    .where(
+      and(
+        eq(t.upstreamResponse.source, 'sayari'),
+        eq(t.upstreamResponse.endpoint, 'entity.getEntity'),
+      ),
+    )
+    .orderBy(asc(t.upstreamResponse.fetchedAt));
+
+  let linked = 0;
+  for (const row of bodies) {
+    const body = row.body as { data?: { id?: unknown }; id?: unknown };
+    const entityId = typeof body?.data?.id === 'string' ? body.data.id
+      : typeof body?.id === 'string' ? body.id
+      : null;
+    if (!entityId) continue;
+
+    const updated = await db
+      .update(t.entity)
+      .set({ upstreamResponseId: row.id })
+      .where(eq(t.entity.id, entityId))
+      .returning({ id: t.entity.id });
+    linked += updated.length;
+  }
+  return linked;
 }
 
 main().catch((error: unknown) => {

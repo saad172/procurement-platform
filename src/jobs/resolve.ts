@@ -174,7 +174,7 @@ export async function resolveSupplier(
       }
     }
     candidates.push(facts);
-    await upsertEntity(db, fetched.data);
+    await upsertEntity(db, fetched.data, fetched.upstreamResponseId);
   }
 
   // ── The auto-accept gate: plain code, zero tokens ────────────────────────
@@ -259,7 +259,7 @@ export async function resolveSupplier(
       if (seen.some((candidate) => candidate.entityId === entityId)) continue;
       try {
         const fetched = await upstream.sayari.getEntity({ id: entityId });
-        await upsertEntity(db, fetched.data);
+        await upsertEntity(db, fetched.data, fetched.upstreamResponseId);
         seen.push(toCandidateFacts(fetched.data));
         foundByRung.set(entityId, rung);
       } catch (error) {
@@ -397,8 +397,24 @@ function sawCandidateInCountry(roster: RosterRow, candidates: readonly Candidate
   return candidates.some((c) => c.country && c.country.toUpperCase() === roster.country!.toUpperCase());
 }
 
-/** Projects an entity into the local table, preserving `first_seen_at`. */
-export async function upsertEntity(db: Database, entity: SayariEntity): Promise<void> {
+/**
+ * Projects an entity into the local table, preserving `first_seen_at`.
+ *
+ * `upstreamResponseId` names **the body this projection came out of**, and it
+ * is optional because most entities have none of their own: they arrive nested
+ * inside somebody else's traversal or search result, and the body that carried
+ * them is that other company's, not theirs. Passing it only where it is truly
+ * this entity's own payload is what keeps the Profile page's provenance line
+ * honest — see the column's own note.
+ *
+ * On conflict it is written only when supplied, so a later nested sighting
+ * never blanks a link an earlier direct fetch established.
+ */
+export async function upsertEntity(
+  db: Database,
+  entity: SayariEntity,
+  upstreamResponseId?: string | null,
+): Promise<void> {
   const address = entity.attributes?.address?.data?.[0];
   const properties = address?.properties;
   const sourceCount = entity.source_count ?? null;
@@ -425,6 +441,7 @@ export async function upsertEntity(db: Database, entity: SayariEntity): Promise<
       psaCount: entity.psa_count ?? null,
       relationshipCount: (entity.relationship_count ?? null) as never,
       relationshipsTruncated: relationshipsTruncated(entity),
+      upstreamResponseId: upstreamResponseId ?? null,
       fetchedAt: new Date(),
     })
     .onConflictDoUpdate({
@@ -434,6 +451,10 @@ export async function upsertEntity(db: Database, entity: SayariEntity): Promise<
         risk: (entity.risk ?? null) as never,
         psaCount: entity.psa_count ?? null,
         relationshipCount: (entity.relationship_count ?? null) as never,
+        // Only when we have one. A nested sighting carries no body of this
+        // entity's own, and letting it write null would erase the provenance a
+        // direct fetch had already recorded.
+        ...(upstreamResponseId ? { upstreamResponseId } : {}),
         fetchedAt: new Date(),
         // `firstSeenAt` is deliberately absent: the *new evidence* staleness
         // chip is computed from it, and re-stamping would silence the signal.

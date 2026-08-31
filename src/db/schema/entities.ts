@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { upstreamResponse } from './upstream';
 
 /**
  * The entity layer (SPEC §3.2).
@@ -89,6 +90,29 @@ export const entity = pgTable('entity', {
   relationshipCount: jsonb('relationship_count'),
   /** True when the returned relationship window was smaller than the count. */
   relationshipsTruncated: boolean('relationships_truncated').notNull().default(false),
+
+  /**
+   * **The payload this row was projected from** (SPEC §3.2).
+   *
+   * `enrichment` has carried this link since the beginning and `entity` did
+   * not, so a Profile could show every figure it had computed and nothing a
+   * reader could check them against. Nine hundred stored bodies were reachable
+   * from nowhere in the UI.
+   *
+   * Two things it deliberately is not:
+   *
+   * - **Not `notNull`.** Most entities were never fetched on their own — they
+   *   arrived nested inside somebody else's traversal or search result, and for
+   *   those there is no payload that is theirs. Null says exactly that, and the
+   *   page says it in words rather than showing an empty box.
+   * - **Not the citation target.** A Citation points at evidence a sentence
+   *   used; this points at provenance a reader may audit. Keeping them separate
+   *   is why `on delete set null` is right here — losing a cached body must
+   *   blank a provenance link, never cascade away the company.
+   */
+  upstreamResponseId: uuid('upstream_response_id').references(() => upstreamResponse.id, {
+    onDelete: 'set null',
+  }),
 
   fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
   firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),

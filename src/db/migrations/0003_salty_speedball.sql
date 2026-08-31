@@ -1,0 +1,2 @@
+ALTER TABLE "entity" ADD COLUMN "upstream_response_id" uuid;--> statement-breakpoint
+ALTER TABLE "entity" ADD CONSTRAINT "entity_upstream_response_id_upstream_response_id_fk" FOREIGN KEY ("upstream_response_id") REFERENCES "public"."upstream_response"("id") ON DELETE set null ON UPDATE no action;

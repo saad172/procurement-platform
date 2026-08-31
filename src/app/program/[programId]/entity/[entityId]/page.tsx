@@ -6,6 +6,7 @@ import * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatDock } from '@/components/chat-dock';
 import { parseRiskObject, effectiveLevel, isCountryDerived, isTwinFactor, variantOf } from '@/domain/scoring/risk-factors';
+import { directionOf } from '@/domain/relationships';
 
 /**
  * The Sayari entity page (SPEC §13.1, §13.7) — level four of the spine.
@@ -35,6 +36,17 @@ export default async function EntityPage({
     .select()
     .from(t.entityRelationship)
     .where(or(eq(t.entityRelationship.fromEntityId, entityId), eq(t.entityRelationship.toEntityId, entityId)));
+
+  /**
+   * The body this row was projected from, when this company was fetched on its
+   * own. Most were not — they arrived nested in somebody else's traversal — and
+   * that absence is stated rather than left as an empty panel.
+   */
+  const source = entity.upstreamResponseId
+    ? await db.query.upstreamResponse.findFirst({
+        where: eq(t.upstreamResponse.id, entity.upstreamResponseId),
+      })
+    : undefined;
 
   const factors = parseRiskObject(entity.risk);
 
@@ -185,7 +197,131 @@ export default async function EntityPage({
       <p className="note" style={{ marginTop: '1rem' }}>
         <Link href={`/program/${programId}` as never}>← back to the programme</Link>
       </p>
+      {/*
+        The graph, grouped by relationship type and direction.
+        `entity_relationship` held zero rows until the projection was fixed: the
+        payload keys these under `types` (plural, an object) and the reader
+        asked for `type`, so every edge was silently dropped.
+      */}
+      <h2>
+        Relationships{' '}
+        <span className="note">{edges.length.toLocaleString('en-US')} stored, as the source states them</span>
+      </h2>
+      {edges.length === 0 ? (
+        <div className="card">
+          <p className="note" style={{ margin: 0 }}>
+            No edges stored for this company. That is not the same as a company with no
+            relationships — this one has no payload of its own, so nothing has read its graph yet.
+          </p>
+        </div>
+      ) : (
+        <div className="card scroll-x">
+          <table>
+            <thead>
+              <tr>
+                <th>Relationship</th>
+                <th>Direction</th>
+                <th className="num">Edges</th>
+                <th>Current / former</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupEdges(edges, entityId).map((group) => (
+                <tr key={`${group.relationshipType}-${group.side}`}>
+                  <td>{group.relationshipType.replace(/_/g, ' ')}</td>
+                  <td className="note">{group.reading}</td>
+                  <td className="num">{group.total.toLocaleString('en-US')}</td>
+                  <td className="note">
+                    {group.current.toLocaleString('en-US')} current
+                    {group.former > 0 ? ` · ${group.former.toLocaleString('en-US')} former` : ''}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── The payload, so every figure above can be checked against it ── */}
+      <h2>Source payload</h2>
+      <div className="card">
+        {source ? (
+          <>
+            <p className="note" style={{ marginTop: 0 }}>
+              Fetched from <span className="mono">{source.endpoint}</span> on{' '}
+              {source.fetchedAt.toISOString().slice(0, 10)}
+              {source.via ? ` · ${source.via}` : ''}. Everything above is a projection of this.
+            </p>
+            <details>
+              <summary style={{ cursor: 'pointer' }} className="note">
+                Show the raw response
+              </summary>
+              <pre className="mono scroll-x" style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
+                {JSON.stringify(source.body, null, 2)}
+              </pre>
+            </details>
+          </>
+        ) : (
+          <p className="note" style={{ margin: 0 }}>
+            {/*
+              Null is the common case and it means something specific, so it is
+              written out rather than shown as an empty panel.
+            */}
+            This company was never fetched on its own — it was seen inside another company&rsquo;s
+            response, so there is no payload that belongs to it. What is stored above came from that
+            other response.
+          </p>
+        )}
+      </div>
+
       <ChatDock programId={programId} />
     </main>
   );
+}
+
+/**
+ * Edges grouped for reading, from the perspective of the company on this page.
+ *
+ * Rows are stored as the payload states them — subject first, target second —
+ * so the same row reads differently depending on which end you are standing at.
+ * `has_shareholder` on a row where this company is the subject means *somebody
+ * owns me*; the identical row seen from the other end means *I own somebody*.
+ * Saying which is the entire point of storing direction separately from the
+ * name (see `src/domain/relationships.ts`).
+ */
+function groupEdges(
+  edges: (typeof t.entityRelationship.$inferSelect)[],
+  entityId: string,
+): {
+  relationshipType: string;
+  side: 'from' | 'to';
+  reading: string;
+  total: number;
+  current: number;
+  former: number;
+}[] {
+  const groups = new Map<string, { type: string; side: 'from' | 'to'; total: number; current: number; former: number }>();
+
+  for (const edge of edges) {
+    const side: 'from' | 'to' = edge.fromEntityId === entityId ? 'from' : 'to';
+    const key = `${edge.relationshipType}::${side}`;
+    const group = groups.get(key) ?? { type: edge.relationshipType, side, total: 0, current: 0, former: 0 };
+    group.total += 1;
+    if (edge.former) group.former += 1;
+    else group.current += 1;
+    groups.set(key, group);
+  }
+
+  return [...groups.values()]
+    .map((group) => {
+      const direction = directionOf(group.type);
+      // Read from THIS company's end, which flips when it is the target.
+      const outward = group.side === 'from';
+      const reading =
+        direction === 'lateral' ? 'neither owns the other'
+        : (direction === 'downward') === outward ? 'this company is above'
+        : 'this company is below';
+      return { relationshipType: group.type, side: group.side, reading, total: group.total, current: group.current, former: group.former };
+    })
+    .sort((a, b) => b.total - a.total);
 }
