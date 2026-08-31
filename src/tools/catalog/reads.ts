@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod/v4';
 import * as t from '@/db/schema';
+import { toEntityView } from '@/domain/entity-view';
 import { isDatabaseId, notAnIdObjection } from '../ids';
 import { defineTool, type ReadWithWidget, type ToolContext, type WidgetType } from '../define';
 
@@ -112,7 +113,61 @@ export const getSupplier = defineTool({
       .where(and(eq(t.criterionValue.supplierId, supplier.id), eq(t.criterionValue.isCurrent, true)))
       .orderBy(asc(t.criterionValue.criterionKey));
 
-    return { ok: true, data: widget('supplier_card', { supplier, match, criterionValues }) };
+    /**
+     * **Projected, not the raw rows** (SPEC §15.2; the same lesson as
+     * `sayari_get_entity`, finding 44).
+     *
+     * A `criterion_value` row carries `rawInputs` — a whole scoring input blob —
+     * plus `supersedesId`, `isCurrent` and `jobId`. Handed over whole, the
+     * model receives the app's *bookkeeping* alongside the figure, and the
+     * bookkeeping is both the larger half and the part no sentence should ever
+     * quote: `settledAt` and `jobId` are facts about when we ran, not about the
+     * Supplier.
+     *
+     * What stays is everything a sentence can honestly cite — the value, the
+     * anchor line the UI renders beside it, the reason a criterion is unknown,
+     * and the `rawInputs` the Assessment argues from. What goes is the row's
+     * own history.
+     *
+     * The widget keeps the full rows: it renders for a person, who is entitled
+     * to see when a Match was settled.
+     */
+    const forModel = {
+      supplier: {
+        id: supplier.id,
+        rosterIndex: supplier.rosterIndex,
+        rosterName: supplier.rosterName,
+        rosterAddress: supplier.rosterAddress,
+        rosterCountry: supplier.rosterCountry,
+        origin: supplier.origin,
+        categories: supplier.categories.map((link) => ({
+          code: link.category.code,
+          name: link.category.name,
+        })),
+      },
+      match: match
+        ? {
+            id: match.id,
+            status: match.status,
+            settledBy: match.settledBy,
+            matchStrength: match.matchStrength,
+            entityId: match.entityId,
+            entity: match.entity ? toEntityView(match.entity as never) : null,
+          }
+        : null,
+      criterionValues: criterionValues.map((row) => ({
+        id: row.id,
+        criterionKey: row.criterionKey,
+        value: row.value,
+        unknownReason: row.unknownReason,
+        anchorLine: row.anchorLine,
+        rawInputs: row.rawInputs,
+      })),
+    };
+
+    // `widget(type, data, payload)` — `data` is what the MODEL reads, `payload`
+    // is what the widget renders for a person. They are not the same thing here.
+    return { ok: true, data: widget('supplier_card', forModel, { supplier, match, criterionValues }) };
   },
 });
 
