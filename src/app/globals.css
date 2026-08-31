@@ -240,15 +240,114 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
   margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--rule);
 }
 
-/* An action in `.do`, sized to sit beside a sentence rather than above one. */
+/*
+ * An action in `.do`, sized to sit beside a sentence rather than above one.
+ *
+ * `font: inherit` and the explicit `cursor` are what let a real `<button>` wear
+ * this as well as a link does: a control that settles a Match is not a badge,
+ * and it was previously drawn as one.
+ */
 .btn {
-  display: inline-block; font-size: 0.85rem; font-weight: 600;
+  display: inline-block; font: inherit; font-size: 0.85rem; font-weight: 600;
   padding: 0.35rem 0.75rem; border-radius: var(--radius);
   border: 1px solid var(--rule); background: var(--paper); color: var(--ink-2);
+  cursor: pointer;
 }
 .btn:hover { text-decoration: none; border-color: var(--ink-3); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover { border-color: var(--accent); filter: brightness(1.08); }
+
+/* ═══ Settling by hand ═════════════════════════════════════════════════════
+ *
+ * **The choice is the control.** Needs Review asked a person to type a
+ * 22-character opaque entity id into a free-text box, which meant copying one
+ * out of another page's address bar, under a table that repeated the same
+ * eight verdicts once per candidate — seventy-two chips for NSK's nine
+ * records, of which sixty-eight said the same thing.
+ */
+
+/*
+ * A verdict, led by its glyph.
+ *
+ * ✓ / ✗ / ? come first and the colour follows, because a verdict that is only
+ * a hue is a verdict a colour-blind reader has to guess at — and `unavailable`
+ * against `fail` is the distinction this whole page turns on. `unavailable`
+ * takes a dashed border as its third non-colour signal: absent evidence is not
+ * contrary evidence and must never read as the same thing.
+ */
+.v {
+  display: inline-flex; align-items: center; gap: 0.28rem;
+  font-size: 0.72rem; font-weight: 600; white-space: nowrap;
+  padding: 0.12rem 0.45rem; border-radius: 999px;
+  border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink-2);
+}
+.v i { font-style: normal; font-weight: 700; font-size: 0.78rem; line-height: 1; }
+.v.pass { color: var(--good); border-color: #b6e0c8; background: #f1fbf5; }
+.v.fail { color: var(--bad); border-color: #f2c4c1; background: #fdf3f2; }
+.v.dunno { color: var(--ink-3); border-style: dashed; }
+/* Two reporters read it differently — the second read earning its keep. */
+.v.split { color: var(--warn); border-color: #f0dcb4; background: #fdf8ee; }
+.vs { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.legend {
+  display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center;
+  font-size: 0.8rem; color: var(--ink-2); margin: 0.1rem 0 0.9rem;
+}
+
+/* A pickable record. The whole row is the label, so the target is the row. */
+.pick {
+  display: grid; grid-template-columns: 1.6rem 1fr; gap: 0.1rem 0.7rem;
+  align-items: start; padding: 0.7rem 0.8rem; margin-bottom: 0.5rem;
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  background: var(--paper); cursor: pointer;
+}
+.pick:hover { border-color: var(--ink-3); background: #fcfdff; }
+/* `:has` so the selected row is drawn by the radio, with no script involved. */
+.pick:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: #f8faff; }
+.pick:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Set apart: a record excluded on a fact, or the not-found choice. */
+.pick.out { background: var(--paper-2); border-style: dashed; }
+.pick input { margin-top: 0.28rem; width: 1rem; height: 1rem; accent-color: var(--accent); }
+.pick .who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.6rem; }
+.pick .who strong { font-size: 0.95rem; }
+
+/* The facts that separate one record from the next, on one line. */
+.facts {
+  display: flex; flex-wrap: wrap; gap: 0.15rem 1.1rem;
+  margin: 0.3rem 0 0.35rem; font-size: 0.82rem; color: var(--ink-2);
+}
+.facts > span { white-space: nowrap; }
+.facts b { font-weight: 600; color: var(--ink); }
+/* An address is the one fact that must wrap rather than scroll. */
+.facts.addr > span { white-space: normal; }
+
+/* A group of records the resolver could not tell apart. */
+.same {
+  border: 1px dashed var(--rule); border-radius: var(--radius);
+  background: var(--paper-2); padding: 0.6rem 0.8rem; margin-bottom: 0.5rem;
+}
+.same > summary { cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--ink-2); }
+.same[open] > summary { margin-bottom: 0.6rem; }
+.same .pick { background: var(--paper); }
+
+/*
+ * Text for a screen reader only.
+ *
+ * The glyph in a `.v` is `aria-hidden`, because "✓" announced before every
+ * discriminator name is noise. The word it stands for goes here instead, so
+ * the verdict is spoken as *"street — pass"* rather than left to the colour.
+ */
+.vh {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+/* A refusal, said where the control that was refused is. */
+.refused {
+  border: 1px solid #f2c4c1; border-left: 4px solid var(--bad);
+  border-radius: var(--radius); background: #fdf3f2;
+  padding: 0.7rem 0.9rem; margin: 0 0 1rem; color: var(--ink);
+  font-size: 0.9rem;
+}
 
 /*
  * ── Focus ──
