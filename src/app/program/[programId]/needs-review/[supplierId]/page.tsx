@@ -74,11 +74,17 @@ export default async function SettleRowPage({
         </span>
       </p>
 
-      {/* A refusal is said where the control that was refused is. */}
+      {/*
+        A refusal is a reason not to proceed, which is what `.answer.stop`
+        already is — so it is one, rather than a fifth component wearing the
+        same left rule. The headline is constant because the outcome always is:
+        every refusal writes nothing, and only the reason varies.
+      */}
       {error ? (
-        <p className="refused" role="alert">
-          {error}
-        </p>
+        <div className="answer stop" role="alert">
+          <p className="said">Nothing was written.</p>
+          <p className="because">{error}</p>
+        </div>
       ) : null}
       {settled ? (
         <div className="answer ok">
