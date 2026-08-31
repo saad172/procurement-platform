@@ -15,11 +15,38 @@ export function CategoryActions({
   programId,
   categoryId,
   shortlistSize,
+  inline = false,
 }: {
   programId: string;
   categoryId: string;
   shortlistSize: number;
+  /**
+   * Rendered inside an `.answer` rather than as its own card.
+   *
+   * The answer at the top of the page names writing a recommendation as the
+   * thing to do, and the button that does it costs money and owns its own
+   * disabled state. Rather than the answer growing a second copy of it, the
+   * real control moves up into the answer and the card below keeps the rest.
+   */
+  inline?: boolean;
 }) {
+  if (inline) {
+    return (
+      <form action={runRecommendation}>
+        <input type="hidden" name="programId" value={programId} />
+        <input type="hidden" name="categoryId" value={categoryId} />
+        <button type="submit" className="btn primary" disabled={shortlistSize === 0}>
+          Write one
+        </button>
+        {shortlistSize === 0 ? (
+          <span className="note" style={{ marginLeft: '0.5rem' }}>
+            Nothing here has a score to argue from yet.
+          </span>
+        ) : null}
+      </form>
+    );
+  }
+
   return (
     <section className="card" aria-label="Actions">
       <h3>Actions</h3>

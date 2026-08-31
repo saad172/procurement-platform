@@ -1,0 +1,176 @@
+/**
+ * What a Category page says before anything else.
+ *
+ * **This is the page the product exists to produce**, and it rendered
+ * "Actions", "Tariff" and "Weights" — three pieces of apparatus — before the
+ * Shortlist. A buyer opening it wants to know who is in front, whether that is
+ * a real lead, and whether anybody has argued for awarding to them; all three
+ * were reachable only by scrolling past the machinery that produced them.
+ *
+ * Unlike a Supplier's, a Category's answer is **two things**, and they are two
+ * because they can be true at once and are not the same news:
+ *
+ * 1. Who leads, and whether the lead means anything.
+ * 2. Whether anybody has written a recommendation — because **a ranking is not
+ *    a decision**, and a page showing a confident order with no argued case
+ *    behind it invites being read as one.
+ */
+
+import type { AnswerTone } from './supplier-answer';
+
+export type CategoryAnswer = {
+  tone: AnswerTone;
+  said: string;
+  because: string;
+  actions: { label: string; href?: string; action?: 'recommend'; primary?: boolean }[];
+};
+
+export type CategoryAnswerInput = {
+  categoryName: string;
+  /** Ranked, best first, as the Shortlist ranked them. Unfiltered. */
+  ranked: {
+    supplierId: string;
+    displayName: string;
+    score: number | null;
+    coverage: { computed: number; total: number };
+    disqualifying: boolean;
+  }[];
+  /** Rows that reach no ranking, and why. */
+  excluded: { reason: 'no_match' | 'no_category' }[];
+  /** The published recommendation for this category, when there is one. */
+  recommendation: { versionN: number; evaluatorOutcome: 'passed' | 'published_with_objections' } | undefined;
+  recommendationHref: string;
+  compareHref: string | null;
+  supplierHref: (supplierId: string) => string;
+};
+
+/**
+ * A gap this size or smaller is **inside what moving a weight does**.
+ *
+ * Not a statistical claim and not presented as one: it is a stated threshold
+ * for when the page stops calling a first place settled. The weight rail is one
+ * drag away on the same screen, and a lead a reader can overturn by using the
+ * control next to it is a lead worth saying is narrow.
+ */
+const NARROW_LEAD = 2;
+
+export function categoryAnswer(input: CategoryAnswerInput): CategoryAnswer[] {
+  return [leadAnswer(input), recommendationAnswer(input)].filter(
+    (answer): answer is CategoryAnswer => answer != null,
+  );
+}
+
+function leadAnswer(input: CategoryAnswerInput): CategoryAnswer | null {
+  const { categoryName, ranked } = input;
+  const scored = ranked.filter((row) => row.score != null);
+
+  if (scored.length === 0) {
+    const excluded = input.excluded.length;
+    return {
+      tone: 'neutral',
+      said: `Nothing on ${categoryName} can be ranked yet.`,
+      because:
+        excluded > 0
+          ? `${excluded} ${excluded === 1 ? 'supplier bids' : 'suppliers bid'} on this category and none of them has a score. A score needs a settled identity and at least one thing measured about the company; until both exist there is nothing to put in order.`
+          : 'No supplier bids on this category in this programme, so there is nobody to rank. Suppliers reach a category through the roster mapping, and companies found by searching reach it as leads.',
+      actions: [],
+    };
+  }
+
+  const [first, second] = scored;
+  const leader = first!;
+
+  if (leader.disqualifying) {
+    return {
+      tone: 'stop',
+      said: `${leader.displayName} tops ${categoryName} and carries something that rules it out.`,
+      because:
+        'It ranks first on the weighted score and a disqualifying factor fired against it, which is a different kind of fact from a low number — the score says how well it fits, and this says whether it can be considered at all.',
+      actions: [
+        { label: `Read what fired`, href: input.supplierHref(leader.supplierId), primary: true },
+      ],
+    };
+  }
+
+  if (!second || second.score == null) {
+    return {
+      tone: 'ok',
+      said: `${leader.displayName} leads ${categoryName}, and it is the only supplier with a score.`,
+      because: `Nothing else on this category has enough measured to rank, so ${leader.displayName} is first by default rather than by comparison. One scored bidder is a shortlist of one, which is a weaker thing than it looks.`,
+      actions: [{ label: `Open ${leader.displayName}`, href: input.supplierHref(leader.supplierId) }],
+    };
+  }
+
+  const gap = leader.score! - second.score;
+  const narrow = gap <= NARROW_LEAD;
+  const compare = input.compareHref
+    ? [{ label: 'Compare the top two side by side', href: input.compareHref, primary: narrow }]
+    : [];
+
+  /**
+   * **The gap that matters is often not the score.** Two suppliers a point
+   * apart can differ far more in how much has actually been measured about
+   * them, and a reader given only the scores would never see it.
+   */
+  const coverageGap = leader.coverage.computed - second.coverage.computed;
+
+  return {
+    tone: narrow ? 'you' : 'ok',
+    said: narrow
+      ? `${leader.displayName} leads ${categoryName} — but by ${format(gap)}, which is not a settled first place.`
+      : `${leader.displayName} leads ${categoryName}, comfortably.`,
+    because: [
+      `${leader.displayName} scores ${format(leader.score!)} and ${second.displayName} ${format(second.score)}.`,
+      narrow
+        ? 'A gap that small is well inside what changes when you move a weight, and the weight rail is on this page.'
+        : `That is ${format(gap)} between them, which no single weight on this page will close.`,
+      coverageGap < 0
+        ? `And the leader rests on less: ${leader.coverage.computed} of ${leader.coverage.total} criteria returned a value against ${second.displayName}'s ${second.coverage.computed}. A higher score over fewer measurements is not the same claim.`
+        : coverageGap > 0
+          ? `Both are measured on what we have — ${leader.coverage.computed} of ${leader.coverage.total} criteria for the leader, ${second.coverage.computed} for the runner-up.`
+          : `Both rest on the same ${leader.coverage.computed} of ${leader.coverage.total} criteria, so the comparison is like for like.`,
+    ].join(' '),
+    actions: [
+      ...compare,
+      { label: `Open ${leader.displayName}`, href: input.supplierHref(leader.supplierId) },
+    ],
+  };
+}
+
+function recommendationAnswer(input: CategoryAnswerInput): CategoryAnswer | null {
+  // Nothing to recommend from, and the first answer already said so.
+  if (input.ranked.every((row) => row.score == null)) return null;
+
+  if (!input.recommendation) {
+    return {
+      tone: 'stop',
+      said: 'Nobody has written a recommendation for this category.',
+      because:
+        'There is a ranking here but no argued case for awarding to anybody — and a ranking is not a decision. A recommendation runs against the unfiltered shortlist, names picks with roles, and cites what each rests on.',
+      actions: [{ label: 'Write one', action: 'recommend', primary: true }],
+    };
+  }
+
+  if (input.recommendation.evaluatorOutcome === 'published_with_objections') {
+    return {
+      tone: 'you',
+      said: 'The recommendation for this category was published over an objection.',
+      because:
+        'The reviewer disagreed with the author and neither backed down, so it stands as written with the disagreement attached rather than resolved. Nobody has signed off on it.',
+      actions: [
+        { label: 'Read the recommendation', href: input.recommendationHref, primary: true },
+      ],
+    };
+  }
+
+  return {
+    tone: 'ok',
+    said: `There is a recommendation for ${input.categoryName}, and a second read agreed with it.`,
+    because:
+      'It names who to award to and who to hold as a second source, argued against the unfiltered shortlist, with every sentence cited to what it rests on.',
+    actions: [{ label: 'Read the recommendation', href: input.recommendationHref }],
+  };
+}
+
+/** One decimal, because that is what the Shortlist displays and ties share. */
+const format = (n: number) => n.toFixed(1);

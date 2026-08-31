@@ -8,6 +8,7 @@ import { ChatDock } from '@/components/chat-dock';
 import { WeightRail } from '@/components/weight-rail';
 import { loadShortlist } from '@/db/queries/shortlist';
 import { CategoryActions } from './category-actions';
+import { categoryAnswer } from '@/domain/category-answer';
 import { parseViewState } from '@/lib/view-state';
 import { DEFAULT_WEIGHTS } from '@/domain/score';
 import { LeadsTable } from './leads';
@@ -73,6 +74,27 @@ export default async function CategoryPage({
     .innerJoin(t.entity, eq(t.entity.id, t.lead.entityId))
     .where(eq(t.lead.categoryId, categoryId));
 
+  const version = recommendation?.versions[0];
+  const answers = categoryAnswer({
+    categoryName: category.name,
+    // The UNFILTERED shortlist, always: a filtered set would let the crop
+    // decide what the page says leads.
+    ranked: shortlist.ranked.map((row) => ({
+      supplierId: row.supplierId,
+      displayName: row.displayName,
+      score: row.score,
+      coverage: row.coverage,
+      disqualifying: row.disqualifying,
+    })),
+    excluded: shortlist.excluded.map((e) => ({ reason: e.reason })),
+    recommendation: version
+      ? { versionN: version.n, evaluatorOutcome: version.evaluatorOutcome }
+      : undefined,
+    recommendationHref: `/program/${programId}/category/${categoryId}/recommendation`,
+    compareHref: null,
+    supplierHref: (supplierId) => `/program/${programId}/supplier/${supplierId}`,
+  });
+
   return (
     <main>
       <Breadcrumb
@@ -83,57 +105,57 @@ export default async function CategoryPage({
       />
       <h1>{category.name}</h1>
       <p className="sub">
-        {shortlist.totalCount} bidder{shortlist.totalCount === 1 ? '' : 's'} ·{' '}
-        {shortlist.excluded.length} excluded from the ranking
+        {shortlist.totalCount} {shortlist.totalCount === 1 ? 'company' : 'companies'} bidding
+        {shortlist.excluded.length > 0
+          ? ` · ${shortlist.excluded.length} that cannot be ranked yet`
+          : ''}
+        {scoredLine ? ` · ${scoredLine.label}, ${Number(scoredLine.rate)}% duty into ${program.importingCountry}` : ''}
       </p>
 
-      <CategoryActions
-        programId={programId}
-        categoryId={categoryId}
-        shortlistSize={shortlist.ranked.length}
-      />
-
-      <div className="grid two">
-        <section className="card">
-          <h3 style={{ marginTop: 0 }}>Tariff</h3>
-          <table>
-            <tbody>
-              {category.hsLines.map((line) => (
-                <tr key={line.id}>
-                  <td className="mono">{line.hsCode}</td>
-                  <td>{line.label}</td>
-                  <td className="num">{Number(line.rate)}%</td>
-                  <td>{line.isDefault ? <span className="badge">scored</span> : <span className="badge mute">candidate</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {/*
-            The mandatory caveat, rendered with every rate. Trade-action flags
-            are AUTHORED and never computed — they key on facts this app does
-            not have — so they ride beside the number rather than inside it.
-          */}
-          <p className="note" style={{ marginTop: '0.6rem' }}>
-            {scoredLine ? `${Number(scoredLine.rate)}% is the general (MFN) rate for ${scoredLine.hsCode} into ${program.importingCountry}. ` : ''}
-            Trade-action surcharges are not folded into it: they key on melt-and-pour origin, regional
-            value content and declared end-use, which are facts this application does not hold.
-          </p>
-          {category.flags.length > 0 ? (
-            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-              {category.flags.map((f) => (
-                <span key={f.flagKey} className="badge warn" title={f.flag.whyNotARate}>
-                  {f.flag.label}
-                </span>
-              ))}
+      {/* ── The answers, before any of the apparatus ── */}
+      {answers.map((answer) => (
+        <div
+          key={answer.said}
+          className={`answer ${answer.tone === 'neutral' ? '' : answer.tone}`}
+        >
+          <p className="said">{answer.said}</p>
+          <p className="because">{answer.because}</p>
+          {answer.actions.some((action) => action.href) ? (
+            <div className="do">
+              {answer.actions
+                .filter((action) => action.href)
+                .map((action) => (
+                  <Link
+                    key={action.label}
+                    className={`btn ${action.primary ? 'primary' : ''}`}
+                    href={action.href as never}
+                  >
+                    {action.label}
+                  </Link>
+                ))}
             </div>
           ) : null}
-        </section>
+          {/*
+            An action that SPENDS stays with `CategoryActions`, which owns the
+            POST, the ceiling and the disabled state. The answer names it; it
+            does not grow a second copy of a button that costs money.
+          */}
+          {answer.actions.some((action) => action.action === 'recommend') ? (
+            <div className="do">
+              <CategoryActions
+                programId={programId}
+                categoryId={categoryId}
+                shortlistSize={shortlist.ranked.length}
+                inline
+              />
+            </div>
+          ) : null}
+        </div>
+      ))}
 
-        <WeightRail programDefault={programDefault} live />
-      </div>
 
       <h2>
-        Shortlist
+        <span className="term">Who is bidding, best fit first<i>Shortlist</i></span>
         {shortlist.visibleCount !== shortlist.totalCount ? (
           <span className="note">
             {' '}
@@ -195,7 +217,7 @@ export default async function CategoryPage({
 
       {shortlist.excluded.length > 0 ? (
         <>
-          <h2>Excluded from the ranking</h2>
+          <h2>Bidding, but not rankable yet</h2>
           <div className="card">
             {/*
               Two DISTINCT reasons, rendered differently. A Supplier we could not
@@ -243,24 +265,89 @@ export default async function CategoryPage({
         showDismissed={query.dismissed === '1'}
       />
 
-      <h2>Recommendation</h2>
-      <div className="card">
-        {recommendation?.versions[0] ? (
-          <p>
-            <Link href={`/program/${programId}/category/${categoryId}/recommendation` as never}>
-              Version {recommendation.versions[0].n}
-            </Link>{' '}
-            <span className={`badge ${recommendation.versions[0].evaluatorOutcome === 'passed' ? 'good' : 'warn'}`}>
-              {recommendation.versions[0].evaluatorOutcome.replace(/_/g, ' ')}
-            </span>
+      {/*
+        A pointer, not news. Whether a recommendation exists is the second
+        answer at the top of the page; repeating it here would be the page
+        saying the same thing twice at two different weights, which is how the
+        verdict came to be invisible in the first place.
+      */}
+      {version ? (
+        <>
+          <h2>
+            <span className="term">The argued case<i>Recommendation</i></span>
+          </h2>
+          <div className="card">
+            <p style={{ margin: 0 }}>
+              <Link href={`/program/${programId}/category/${categoryId}/recommendation` as never}>
+                Version {version.n}
+              </Link>{' '}
+              <span className={`badge ${version.evaluatorOutcome === 'passed' ? 'good' : 'warn'}`}>
+                {version.evaluatorOutcome.replace(/_/g, ' ')}
+              </span>{' '}
+              {version.humanMark ? (
+                <span className="badge">marked {version.humanMark.replace(/_/g, ' ')} by a person</span>
+              ) : null}
+            </p>
+          </div>
+        </>
+      ) : null}
+
+      {/* ── The working: the apparatus the ranking was produced with ── */}
+      <h2>The working</h2>
+      <p className="note" style={{ margin: '-0.4rem 0 0.8rem', maxWidth: '56rem' }}>
+        The duty the tariff criterion scores, and the weights the ranking above was computed
+        with. Move a weight and the order re-reads live.
+      </p>
+      {/*
+        The full Actions card, which still owns Discover — only the Recommend
+        button moved up into the answer that names it. Both write to the same
+        server action; neither is a second copy of the other.
+      */}
+      <CategoryActions
+        programId={programId}
+        categoryId={categoryId}
+        shortlistSize={shortlist.ranked.length}
+      />
+
+      <div className="grid two" style={{ marginTop: '1rem' }}>
+        <section className="card">
+          <h3 style={{ marginTop: 0 }}>
+            <span className="term">What it costs to bring in<i>Tariff</i></span>
+          </h3>
+          <table>
+            <tbody>
+              {category.hsLines.map((line) => (
+                <tr key={line.id}>
+                  <td className="mono">{line.hsCode}</td>
+                  <td>{line.label}</td>
+                  <td className="num">{Number(line.rate)}%</td>
+                  <td>{line.isDefault ? <span className="badge">scored</span> : <span className="badge mute">candidate</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {/*
+            The mandatory caveat, rendered with every rate. Trade-action flags
+            are AUTHORED and never computed — they key on facts this app does
+            not have — so they ride beside the number rather than inside it.
+          */}
+          <p className="note" style={{ marginTop: '0.6rem' }}>
+            {scoredLine ? `${Number(scoredLine.rate)}% is the general (MFN) rate for ${scoredLine.hsCode} into ${program.importingCountry}. ` : ''}
+            Trade-action surcharges are not folded into it: they key on melt-and-pour origin, regional
+            value content and declared end-use, which are facts this application does not hold.
           </p>
-        ) : (
-          <p className="note" style={{ margin: 0 }}>
-            No recommendation has been written for this category yet. A recommendation always runs
-            against the <strong>unfiltered</strong> shortlist — a filtered set would exclude suppliers
-            with no sentence saying why.
-          </p>
-        )}
+          {category.flags.length > 0 ? (
+            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+              {category.flags.map((f) => (
+                <span key={f.flagKey} className="badge warn" title={f.flag.whyNotARate}>
+                  {f.flag.label}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </section>
+
+        <WeightRail programDefault={programDefault} live />
       </div>
       <ChatDock programId={programId} />
     </main>
