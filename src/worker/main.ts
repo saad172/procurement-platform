@@ -5,6 +5,9 @@ import { closeDirectDb, getDirectDb, type Database } from '@/db/client';
 import { createUpstream } from '@/upstream';
 import { discoverLeads } from '@/jobs/discover';
 import { enrichSupplier } from '@/jobs/enrich-supplier';
+import { storeRelationships } from '@/jobs/enrich';
+import { parseRelationships } from '@/domain/parse-relationships';
+import { upsertEntity } from '@/jobs/resolve';
 import { runResolveJob } from '@/jobs/resolve-job';
 import { enqueueJob } from '@/jobs/runs';
 import { assessSupplier } from '@/jobs/assess';
@@ -133,9 +136,10 @@ async function main(): Promise<void> {
             sayariClientSecret: env.SAYARI_CLIENT_SECRET,
             nominatimUserAgent: env.NOMINATIM_USER_AGENT,
           },
+          toolCallCap: job.toolCallCap,
         });
         await enrichSupplier(
-          { db: database, upstream, jobId: job.id },
+          { db: database, upstream, jobId: job.id, runId: job.runId },
           { supplierId: supplier.id, programId: supplier.programId },
         );
 
@@ -154,6 +158,43 @@ async function main(): Promise<void> {
         await chainNext(database, job, 'assess');
         return { state: 'done' };
       },
+      /**
+       * One company's own record.
+       *
+       * Queued the first time this app meets a company nested inside somebody
+       * else's payload. Until it runs, that company has attributes copied out
+       * of another company's response, no relationships of its own, and nothing
+       * a reader can check it against — of 14,491 entities, 288 had a record of
+       * their own.
+       *
+       * Deterministic, like `enrich`: one call, no model, and the upstream
+       * ceiling is what bounds it.
+       */
+      fetch_entity: async (job, database) => {
+        const upstream = createUpstream({
+          db: database,
+          runId: job.runId,
+          jobId: job.id,
+          credentials: upstreamCredentials,
+          toolCallCap: job.toolCallCap,
+        });
+
+        const fetched = await upstream.sayari.getEntity({ id: job.subjectId });
+        await upsertEntity(database, fetched.data, fetched.upstreamResponseId);
+
+        /**
+         * Its graph, now that we hold a payload that is actually its own.
+         * No `runId` is passed, so this does **not** queue a fetch for every
+         * company it in turn names — one hop of fan-out per Job, or the first
+         * roster would walk the whole Sayari graph.
+         */
+        const { edges } = parseRelationships(fetched.data, job.subjectId);
+        const written = await storeRelationships(database, edges, job.id);
+
+        console.log(`  fetch_entity ${fetched.data.label ?? job.subjectId}: ${written} edge(s)`);
+        return { state: 'done' };
+      },
+
       /**
        * Discover: one trade call plus up to 25 classifications, and the
        * classifier costs no additional Sayari calls because a trade result is
@@ -174,6 +215,7 @@ async function main(): Promise<void> {
             sayariClientSecret: env.SAYARI_CLIENT_SECRET,
             nominatimUserAgent: env.NOMINATIM_USER_AGENT,
           },
+          toolCallCap: job.toolCallCap,
         });
         const toolCtx = {
           db: database,
@@ -215,6 +257,8 @@ async function main(): Promise<void> {
           runId: job.runId,
           jobId: job.id,
           credentials: upstreamCredentials,
+          // The ceiling this Job carries, so a deterministic Job is bounded too.
+          toolCallCap: job.toolCallCap,
         });
 
         const outcome = await runResolveJob(
@@ -267,6 +311,8 @@ async function main(): Promise<void> {
           runId: job.runId,
           jobId: job.id,
           credentials: upstreamCredentials,
+          // The ceiling this Job carries, so a deterministic Job is bounded too.
+          toolCallCap: job.toolCallCap,
         });
         const outcome = await assessSupplier(
           {
@@ -294,6 +340,8 @@ async function main(): Promise<void> {
           runId: job.runId,
           jobId: job.id,
           credentials: upstreamCredentials,
+          // The ceiling this Job carries, so a deterministic Job is bounded too.
+          toolCallCap: job.toolCallCap,
         });
         const outcome = await recommendCategory(
           {

@@ -27,7 +27,12 @@ import { PROGRAM } from '@/db/seed-data/program';
  */
 
 /** Suppliers are named; Categories are coded. The kind says which to look up. */
-const SUBJECT_BY_KIND: Record<JobKind, 'supplier' | 'category'> = {
+/**
+ * `fetch_entity` is absent on purpose: its subject is an entity id, not a name
+ * a person types, and the system queues it the first time it meets a company
+ * nested in somebody else's payload. The guard below rejects it by name.
+ */
+const SUBJECT_BY_KIND: Partial<Record<JobKind, 'supplier' | 'category'>> = {
   resolve: 'supplier',
   enrich: 'supplier',
   assess: 'supplier',
@@ -37,7 +42,7 @@ const SUBJECT_BY_KIND: Record<JobKind, 'supplier' | 'category'> = {
   dossier: 'supplier',
 };
 
-const TRIGGER_BY_KIND: Record<JobKind, Parameters<typeof openRun>[1]['trigger']> = {
+const TRIGGER_BY_KIND: Partial<Record<JobKind, Parameters<typeof openRun>[1]['trigger']>> = {
   resolve: 'full',
   enrich: 'full',
   assess: 'reassess',
@@ -70,6 +75,14 @@ async function main(): Promise<void> {
     return;
   }
 
+  /**
+   * Narrowed once. The guard above rejects any kind the two tables do not
+   * carry, so from here both lookups are known to be present — and a kind the
+   * system queues for itself, like `fetch_entity`, never reaches this line.
+   */
+  const subjectType = SUBJECT_BY_KIND[kind]!;
+  const trigger = TRIGGER_BY_KIND[kind]!;
+
   const db = getDirectDb();
   try {
     /**
@@ -88,7 +101,6 @@ async function main(): Promise<void> {
       return;
     }
 
-    const subjectType = SUBJECT_BY_KIND[kind];
     // Scoped to the Programme, so two Programmes may hold the same name.
     const row =
       subjectType === 'supplier'
@@ -107,7 +119,7 @@ async function main(): Promise<void> {
 
     const runId = await openRun(db, {
       programId: program.id,
-      trigger: TRIGGER_BY_KIND[kind],
+      trigger,
       subjectLabel: `${kind} ${subject}`,
       // One subject, so the Run's budget is one Supplier's worth. A Run opened
       // with no count carries no budget at all, which is right for chat and

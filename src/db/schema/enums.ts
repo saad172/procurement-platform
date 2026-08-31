@@ -250,6 +250,19 @@ export const rubricItem = pgEnum('rubric_item', [
 export const jobKind = pgEnum('job_kind', [
   'resolve',
   'enrich',
+  /**
+   * Fetches one company's own record.
+   *
+   * Most entities are never fetched on their own — they arrive nested inside
+   * somebody else's traversal or search result, so nothing has read their
+   * relationships and no payload belongs to them. This Job gives one of them a
+   * record of its own.
+   *
+   * It is **not** a Deep Traversal: `traverse` extends a Profile beyond one hop
+   * within a hop and node cap, on demand and by a person's decision. This is one
+   * call about one company, queued by the system the first time it sees it.
+   */
+  'fetch_entity',
   'traverse',
   'assess',
   'recommend',
