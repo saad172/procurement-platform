@@ -9,3 +9,6 @@ dist/
 coverage/
 .turbo/
 tsconfig.tsbuildinfo
+
+# A tool cache keyed by session id and absolute path — machine-local.
+.impeccable/hook.cache.json
