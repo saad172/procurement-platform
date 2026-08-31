@@ -14,13 +14,28 @@ import { ChatDock } from '@/components/chat-dock';
  * resolve to a **live local row**, and a record id seen inside an entity's
  * attributes has no local row until something fetched it. Without this page
  * there would be nothing at the bottom of the hop.
+ *
+ * ## A catch-all segment, because a record id contains slashes
+ *
+ * A Sayari record id is a three-part path:
+ * `66dfefb726ae…/{93635462-94C0-…}/1672531200000` — source, record, timestamp.
+ * A single `[recordId]` segment cannot hold it: percent-encoding the slashes
+ * produces a URL that Next decodes back into extra path segments, and the route
+ * 404s. Encoding harder does not help, because the decoding happens before the
+ * route matches.
+ *
+ * `[...recordId]` takes the parts and rejoins them, which is what the id
+ * actually is — a path. The braces are left percent-encoded by `encodeURI`,
+ * which is correct: they are part of the record's own name, not structure.
  */
 export default async function RecordPage({
   params,
 }: {
-  params: Promise<{ programId: string; recordId: string }>;
+  params: Promise<{ programId: string; recordId: string[] }>;
 }) {
-  const { programId, recordId } = await params;
+  const { programId, recordId: segments } = await params;
+  // The id IS the path — rejoin exactly what the URL carried.
+  const recordId = segments.map(decodeURIComponent).join('/');
   const db = getPooledDb();
 
   const record = await db.query.record.findFirst({ where: eq(t.record.id, recordId) });

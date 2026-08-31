@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import * as t from '@/db/schema';
 import { matchStrengthValue } from '@/upstream/projections/sayari';
 import { toEntityView } from '@/domain/entity-view';
 import { defineTool, type Estimate, type ToolContext } from '../define';
@@ -183,6 +184,13 @@ export const joinLei = defineTool({
  * Deliberately: that family's content is *which upstream did we just pay for*,
  * and a single widget type makes the cache-hit line impossible to omit.
  */
+/** A date Sayari may or may not have supplied, and may have supplied unparseably. */
+const parseDate = (value: string | null | undefined): Date | null => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const sourceResult = (source: string, cacheHit: boolean, payload: unknown) => ({
   data: payload,
   widget: {
@@ -275,6 +283,60 @@ export const sayariGetRecord = defineTool({
   confirm: spendOneSayariCall('Fetch this source record from Sayari.'),
   handler: async (input, ctx) => {
     const r = await ctx.upstream.sayari.getRecord({ id: input.recordId });
+
+    /**
+     * **Stored, because this tool's whole reason for existing is that it
+     * stores.**
+     *
+     * Its description says a record id *"has no local row until something
+     * fetches it"* — and nothing wrote to `record`, anywhere in the codebase.
+     * So a Citation carrying `recordId` could never resolve: `resolveCitations`
+     * looks the row up, finds nothing, and objects. The one tool that exists to
+     * make a record citable did not make it citable.
+     *
+     * Upserted rather than inserted, and `first_seen_at` is left alone on
+     * conflict — the staleness rule attaches evidence **by subject**, so
+     * re-fetching the same record is a refresh and not new evidence
+     * (SPEC §12.1).
+     */
+    const row = r.data;
+
+    /**
+     * **Keyed by the id we asked for, not the one echoed back.**
+     *
+     * The same record has two spellings. Inside an entity's attributes it is a
+     * plain path — `66dfe…/{93635462-…}/1672531200000` — and that is the one a
+     * model can see and therefore the one a Citation will carry. `getRecord`
+     * returns it **percent-encoded**: `66dfe…%2F%7B93635462-…%7D%2F1672531200000`.
+     *
+     * Storing the echoed form would key the row by a string no Citation ever
+     * mentions, so `resolveCitations` would find nothing and object — the tool
+     * would fetch the record and still leave it uncitable, which is the exact
+     * failure it exists to prevent.
+     */
+    await ctx.db
+      .insert(t.record)
+      .values({
+        id: input.recordId,
+        source: row.source ?? null,
+        sourceLabel: row.label ?? null,
+        publishedAt: parseDate(row.publication_date),
+        collectedAt: parseDate(row.acquisition_date),
+        fields: row as never,
+        fetchedAt: r.fetchedAt,
+      })
+      .onConflictDoUpdate({
+        target: t.record.id,
+        set: {
+          source: row.source ?? null,
+          sourceLabel: row.label ?? null,
+          publishedAt: parseDate(row.publication_date),
+          collectedAt: parseDate(row.acquisition_date),
+          fields: row as never,
+          fetchedAt: r.fetchedAt,
+        },
+      });
+
     return { ok: true, data: sourceResult('Sayari record', r.cacheHit, r.data) };
   },
 });
