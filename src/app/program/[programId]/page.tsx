@@ -6,7 +6,9 @@ import * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatDock } from '@/components/chat-dock';
 import { parseViewState } from '@/lib/view-state';
+import { workerSeemsUp } from '@/db/queries/runs';
 import { CountryBreakdown, MatchOutcomes, SharedOwnership, SupplierMap } from './charts';
+import { RunPanel } from './run-panel';
 import { SupplierTable } from './supplier-table';
 
 /**
@@ -45,6 +47,17 @@ export default async function ProgramPage({
     .innerJoin(t.supplier, eq(t.supplier.id, t.match.supplierId))
     .where(eq(t.supplier.programId, programId));
   const matchBySupplier = new Map(matches.map((m) => [m.supplierId, m]));
+
+  /**
+   * What a Run would actually do, and whether anything is listening.
+   *
+   * The worker check is a **liveness** question, not a health one: a Job queued
+   * with no worker running sits in `queued` for ever and the page would
+   * otherwise look like it had done something. Recent activity is the only
+   * signal available from here — the worker holds no inbound port by design.
+   */
+  const unresolvedCount = suppliers.filter((s) => !matchBySupplier.has(s.id)).length;
+  const workerUp = await workerSeemsUp(db);
 
   const assessed = await db
     .select({ supplierId: t.assessment.supplierId })
@@ -111,6 +124,8 @@ export default async function ProgramPage({
           </span>
         </div>
       </section>
+
+      <RunPanel programId={programId} unresolved={unresolvedCount} workerUp={workerUp} />
 
       {/*
         Four charts, and the charts ARE the filter control. Clicking a bar

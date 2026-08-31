@@ -11,6 +11,7 @@ import { loadEnrichments } from '@/db/queries/enrichments';
 import { loadSupplierSnapshots, scoreSnapshot } from '@/db/queries/shortlist';
 import { computeFamilyExposure, describeFamilyExposure, unionRiskFactors } from '@/domain/family';
 import { DEFAULT_WEIGHTS } from '@/domain/score';
+import { SupplierActions } from './supplier-actions';
 import { parseViewState } from '@/lib/view-state';
 
 /**
@@ -125,6 +126,13 @@ export default async function SupplierPage({
           'Not yet resolved'
         )}
       </p>
+
+      <SupplierActions
+        programId={programId}
+        supplierId={supplierId}
+        hasMatch={match?.status === 'accepted'}
+        hasScore={scored?.score != null}
+      />
 
       {/* ── Score breakdown ── */}
       <h2>Score</h2>

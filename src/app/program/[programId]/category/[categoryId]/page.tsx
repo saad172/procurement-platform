@@ -7,6 +7,7 @@ import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatDock } from '@/components/chat-dock';
 import { WeightRail } from '@/components/weight-rail';
 import { loadShortlist } from '@/db/queries/shortlist';
+import { CategoryActions } from './category-actions';
 import { parseViewState } from '@/lib/view-state';
 import { DEFAULT_WEIGHTS } from '@/domain/score';
 import { LeadsTable } from './leads';
@@ -85,6 +86,12 @@ export default async function CategoryPage({
         {shortlist.totalCount} bidder{shortlist.totalCount === 1 ? '' : 's'} ·{' '}
         {shortlist.excluded.length} excluded from the ranking
       </p>
+
+      <CategoryActions
+        programId={programId}
+        categoryId={categoryId}
+        shortlistSize={shortlist.ranked.length}
+      />
 
       <div className="grid two">
         <section className="card">

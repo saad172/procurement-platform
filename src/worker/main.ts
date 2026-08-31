@@ -6,6 +6,7 @@ import { createUpstream } from '@/upstream';
 import { discoverLeads } from '@/jobs/discover';
 import { enrichSupplier } from '@/jobs/enrich-supplier';
 import { runResolveJob } from '@/jobs/resolve-job';
+import { enqueueJob } from '@/jobs/runs';
 import { assessSupplier } from '@/jobs/assess';
 import { recommendCategory } from '@/jobs/recommend';
 import { runWorker } from './poll';
@@ -183,6 +184,27 @@ async function main(): Promise<void> {
           },
           { supplierId: job.subjectId },
         );
+
+        /**
+         * **An accepted Match unblocks enrichment, so the Run queues it.**
+         *
+         * Enrichment cannot be queued up front: it needs a settled Match, and a
+         * Job queued alongside the resolve would dequeue before its Supplier
+         * had one. Chaining here means a row that parks at `needs_review`
+         * correctly never gets an enrichment — the follow-on is a consequence
+         * of the outcome, not of the request.
+         *
+         * It joins the **same Run**, because it is the spend that Run was
+         * opened for. Only a decision a person makes later starts a new one.
+         */
+        if (outcome.status === 'accepted') {
+          await enqueueJob(database, {
+            runId: job.runId,
+            kind: 'enrich',
+            subjectType: 'supplier',
+            subjectId: job.subjectId,
+          });
+        }
 
         /**
          * **Needs Review is not a failure.** The Job did exactly what it exists

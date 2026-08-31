@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from 'drizzle-orm';
+import { desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { MODEL_PRICE_USD_PER_MTOK } from '@/config/constants';
@@ -95,4 +95,28 @@ export async function loadRunInsights(db: Database, programId: string): Promise<
       codeRejections: rounds.filter((r) => r.role === 'evaluator' && r.source === 'code').length,
     },
   };
+}
+
+/**
+ * Whether a worker has picked anything up recently.
+ *
+ * A **liveness** question, not a health one: a Job queued with no worker
+ * running sits in `queued` for ever, and the Run panel would otherwise look as
+ * though it had done something. Recent activity is the only signal available —
+ * the worker holds no inbound port, by design (SPEC §2.2).
+ *
+ * The clock is read **here** and not in the component. React's purity rule
+ * rejects `Date.now()` during render, and it is right beyond the letter:
+ * a page that re-rendered would answer differently for the same rows. One read
+ * per request (finding 29).
+ */
+export async function workerSeemsUp(db: Database, withinMs = 5 * 60 * 1000): Promise<boolean> {
+  const [recent] = await db
+    .select({ startedAt: t.job.startedAt })
+    .from(t.job)
+    .where(isNotNull(t.job.startedAt))
+    .orderBy(desc(t.job.startedAt))
+    .limit(1);
+
+  return recent?.startedAt != null && Date.now() - recent.startedAt.getTime() < withinMs;
 }

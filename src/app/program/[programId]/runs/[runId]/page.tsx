@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { eq } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
 import * as t from '@/db/schema';
+import { RUN_BUDGET_USD_PER_SUPPLIER } from '@/config/constants';
+import { resumeRun } from '../../run-actions';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { runSpendUsd } from '@/jobs/runs';
 
@@ -25,6 +27,9 @@ export default async function RunPage({
   if (!run || !program) notFound();
 
   const jobs = await db.select().from(t.job).where(eq(t.job.runId, runId)).orderBy(t.job.createdAt);
+
+  // What resuming would actually pay for: the jobs that never finished.
+  const unfinished = jobs.filter((job) => job.state === 'queued' || job.state === 'paused_on_budget').length;
   const actualUsd = await runSpendUsd(db, runId);
 
   return (
@@ -61,6 +66,20 @@ export default async function RunPage({
             resuming is one act on the run rather than one per job. The increment comes from the same
             $3.00 × N formula applied to the suppliers still unfinished.
           </p>
+
+          {/*
+            One click, and the increment is derived rather than chosen. A flat
+            step would be arbitrary and a free-text box would hole the
+            code-constant discipline (SPEC §18.4).
+          */}
+          <form action={resumeRun} style={{ marginTop: '0.7rem' }}>
+            <input type="hidden" name="programId" value={programId} />
+            <input type="hidden" name="runId" value={runId} />
+            <button type="submit" className="badge" style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}>
+              Continue · adds ${(RUN_BUDGET_USD_PER_SUPPLIER * unfinished).toFixed(2)} for the{' '}
+              {unfinished} job{unfinished === 1 ? '' : 's'} left
+            </button>
+          </form>
         </section>
       ) : null}
 
