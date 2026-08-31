@@ -1,6 +1,8 @@
 import type { Database } from '@/db/client';
 import type * as t from '@/db/schema';
 import { checkRunBudget, dequeueJob, finishJob, settleRunState } from '@/jobs/runs';
+import { describeError } from '@/jobs/describe-error';
+import { UnpublishableDraftError } from '@/jobs/rounds';
 
 /**
  * The worker's dequeue loop (SPEC §2.2, §18.2).
@@ -83,12 +85,29 @@ async function runOneJob(
       await finishJob(db, job.id, await handler(job, db));
     }
   } catch (error) {
-    // A thrown handler is `failed` — something broke — never `terminated`,
-    // which names a number someone set.
-    await finishJob(db, job.id, {
-      state: 'failed',
-      error: error instanceof Error ? error.message : String(error),
-    });
+    /**
+     * **`terminated` names a number you set; `failed` names something that
+     * broke** (SPEC §18.4) — and three Rounds is a number someone set.
+     *
+     * `UnpublishableDraftError` exists precisely so a worker can tell the two
+     * apart; its own doc says *"the Job did everything it was asked and the
+     * answer is that there is nothing publishable — which is a result, not a
+     * malfunction."* Nothing read it. Every throw became `failed`, so a draft
+     * correctly refused by the citation rules produced a red row reading
+     * *something broke*, next to a Run whose whole claim is that it does not
+     * publish sentences it cannot support. It is amber, and it says why.
+     */
+    if (error instanceof UnpublishableDraftError) {
+      await finishJob(db, job.id, {
+        state: 'terminated',
+        reason: describeError(error),
+      });
+    } else {
+      // What gets stored is the *cause*: an ORM's own message is the SQL it
+      // attempted, and a page that printed that told the reader the statement
+      // and never the reason (see describeError).
+      await finishJob(db, job.id, { state: 'failed', error: describeError(error) });
+    }
   } finally {
     await settleRunState(db, job.runId);
   }
