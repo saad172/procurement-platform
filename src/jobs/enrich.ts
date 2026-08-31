@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { derivedId } from '@/db/derived-id';
@@ -9,7 +9,6 @@ import { unionRiskFactors, type FamilyMemberRisk } from '@/domain/family';
 import { nearestPlant, type PlantPoint } from '@/domain/geo';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
 import { upsertEntity } from './resolve';
-import { enqueueJob } from './runs';
 import type { Upstream, UpstreamResult } from '@/upstream';
 import type { SayariEntity } from '@/upstream/projections/sayari';
 
@@ -37,8 +36,6 @@ export type EnrichContext = {
   db: Database;
   upstream: Upstream;
   jobId?: string | undefined;
-  /** The Run to queue follow-on work into. Absent for a page read. */
-  runId?: string | undefined;
 };
 
 /** Records one dated call as an `enrichment` row — the Citation target. */
@@ -482,7 +479,7 @@ export async function readOwnerEdges(
     );
   }
 
-  await storeRelationships(ctx.db, edges, ctx.jobId, ctx.runId);
+  await storeRelationships(ctx.db, edges, ctx.jobId);
 
   const owners: {
     entityId: string;
@@ -518,18 +515,12 @@ export async function storeRelationships(
   db: Database,
   edges: readonly ParsedEdge[],
   jobId?: string | undefined,
-  /**
-   * The Run to queue follow-on fetches into. Omitted by the backfill script,
-   * which is repairing history and must not start new work or new spend.
-   */
-  runId?: string | undefined,
 ): Promise<number> {
   let written = 0;
 
   for (const edge of edges) {
     if (!edge.targetEntity) continue;
     await upsertEntity(db, edge.targetEntity as unknown as SayariEntity);
-    if (runId) await queueOwnRecordFetch(db, runId, edge);
 
     await db
       .insert(t.entityRelationship)
@@ -554,58 +545,6 @@ export async function storeRelationships(
   }
 
   return written;
-}
-
-/**
- * Queues one company's own record, the first time this app sees it nested.
- *
- * **Companies only.** Of the edges measured, 5,321 point at a company and the
- * rest point at 4,178 shipments, 2,162 people, 1,768 trademarks and so on. A
- * shipment has no ownership graph and no Profile, so fetching one would spend a
- * credit to store a row nothing reads.
- *
- * **A Job rather than a call.** Fetching inline would put the whole fan-out
- * inside the enriching Job's ceiling — a family traversal can return fifty
- * companies against a ceiling of twenty-five — so the enrichment would
- * terminate part-way through its own work. As its own Job it carries its own
- * ceiling, retries by itself, and appears as its own phase on the Run.
- *
- * Skipped when the company already has a record of its own, and skipped when a
- * Job for it is already queued, so a company four Suppliers all touch is
- * fetched once rather than four times.
- */
-async function queueOwnRecordFetch(
-  db: Database,
-  runId: string,
-  edge: ParsedEdge,
-): Promise<void> {
-  if (edge.targetType !== 'company') return;
-
-  const existing = await db.query.entity.findFirst({
-    where: eq(t.entity.id, edge.targetId),
-    columns: { id: true, upstreamResponseId: true },
-  });
-  if (existing?.upstreamResponseId) return;
-
-  const queued = await db
-    .select({ id: t.job.id })
-    .from(t.job)
-    .where(
-      and(
-        eq(t.job.kind, 'fetch_entity'),
-        eq(t.job.subjectId, edge.targetId),
-        inArray(t.job.state, ['queued', 'running']),
-      ),
-    )
-    .limit(1);
-  if (queued.length > 0) return;
-
-  await enqueueJob(db, {
-    runId,
-    kind: 'fetch_entity',
-    subjectType: 'entity',
-    subjectId: edge.targetId,
-  });
 }
 
 /** The Plants a Supplier's proximity is measured against. */

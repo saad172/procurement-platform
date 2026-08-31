@@ -139,7 +139,7 @@ async function main(): Promise<void> {
           toolCallCap: job.toolCallCap,
         });
         await enrichSupplier(
-          { db: database, upstream, jobId: job.id, runId: job.runId },
+          { db: database, upstream, jobId: job.id },
           { supplierId: supplier.id, programId: supplier.programId },
         );
 

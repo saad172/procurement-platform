@@ -25,6 +25,14 @@ export type RunTrigger =
    * the reviewer did not ask.
    */
   | 'pipeline'
+  /**
+   * One company's own record, fetched because a person asked for it.
+   *
+   * Its own trigger rather than `full`, because the Runs list is read to answer
+   * *what did this cost and why*, and "fetch record" is a different answer from
+   * "a roster ran".
+   */
+  | 'fetch_record'
   | 'full'
   | 'settlement'
   | 'traverse'

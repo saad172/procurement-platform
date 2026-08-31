@@ -7,6 +7,7 @@ import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatDock } from '@/components/chat-dock';
 import { parseRiskObject, effectiveLevel, isCountryDerived, isTwinFactor, variantOf } from '@/domain/scoring/risk-factors';
 import { directionOf } from '@/domain/relationships';
+import { fetchOwnRecord } from './entity-actions';
 
 /**
  * The Sayari entity page (SPEC §13.1, §13.7) — level four of the spine.
@@ -337,15 +338,34 @@ export default async function EntityPage({
             </details>
           </>
         ) : (
-          <p className="note" style={{ margin: 0 }}>
-            {/*
-              Null is the common case and it means something specific, so it is
-              written out rather than shown as an empty panel.
-            */}
-            This company was never fetched on its own — it was seen inside another company&rsquo;s
-            response, so there is no payload that belongs to it. What is stored above came from that
-            other response.
-          </p>
+          <>
+            <p className="note" style={{ marginTop: 0 }}>
+              {/*
+                Null is the common case and it means something specific, so it is
+                written out rather than shown as an empty panel.
+              */}
+              This company was never fetched on its own — it was seen inside another company&rsquo;s
+              response, so there is no payload that belongs to it. What is stored above came from
+              that other response, and its relationships have never been read.
+            </p>
+            <form action={fetchOwnRecord}>
+              <input type="hidden" name="programId" value={programId} />
+              <input type="hidden" name="entityId" value={entityId} />
+              <button type="submit" className="badge" style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}>
+                Fetch this company&rsquo;s own record
+              </button>
+              <span className="note" style={{ marginLeft: '0.6rem' }}>
+                {/*
+                  One company, because a person asked. Queueing these
+                  automatically the moment one was seen would have cost 4,448
+                  calls — about seven times every Sayari call this project has
+                  made — mostly for companies nobody opens.
+                */}
+                One Sayari call, and it runs no model. It reads this
+                company&rsquo;s relationships too.
+              </span>
+            </form>
+          </>
         )}
       </div>
 
