@@ -82,4 +82,32 @@ export const TEST_SUPPLIERS = [
     country: 'RUS',
     categories: ['ARR'],
   },
+  /**
+   * **`needs_review`, arranged by genuine ambiguity.**
+   *
+   * The Bosch decoy — Syntegon outranking Robert Bosch GmbH on a legal-name
+   * query — does not reach the agents at all: the roster row carries an address
+   * and a country, the pre-pass uses both, and the auto-accept gate settles it
+   * at Round 0 (finding 80). The decoy is real and the gate is simply stronger
+   * than it.
+   *
+   * So the ambiguity has to be in the row. "Sumitomo" alone names at least four
+   * large Japanese companies — Electric, Corporation, Chemical, Heavy
+   * Industries — and the address below is the Tokyo district several of them
+   * share, so it separates none of them. That ambiguity is **a fact about the
+   * world**, not a rigged input.
+   *
+   * What this cannot arrange is *disagreement*. Two agents reading the same
+   * ambiguous evidence may still converge, and if they do that is the honest
+   * outcome and there is no fixture. `needs_review` is reachable either by the
+   * agents failing to converge or by the gate declining with candidates
+   * in-country; neither can be compelled.
+   */
+  {
+    index: 3,
+    name: 'Sumitomo',
+    address: 'Marunouchi, Chiyoda-ku, Tokyo',
+    country: 'JPN',
+    categories: ['ARR'],
+  },
 ] as const;

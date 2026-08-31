@@ -1,0 +1,71 @@
+# CI (SPEC §19.7).
+#
+# It is worth building because **the whole suite runs with no secrets**. Every
+# model turn comes from a recorded fixture and every upstream body from an
+# exported cache row, so a green run here is something anyone can reproduce —
+# which makes it evidence rather than a paragraph claiming to be evidence.
+#
+# The one thing it cannot check is live upstream behaviour: a Sayari schema
+# change surfaces at runtime and never here. That is the direct, accepted cost
+# of a keyless suite (SPEC §19.8).
+
+name: CI
+
+on:
+  push:
+    branches: [main, build]
+  pull_request:
+  # So a Sayari or Anthropic change that breaks nothing today is still noticed
+  # before someone needs the suite in a hurry.
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # The same Postgres the app runs against — 17, and a real one. Half the
+    # guarantees this build relies on are CHECK constraints and foreign keys,
+    # and a stand-in would not have them.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: procurement
+          POSTGRES_PASSWORD: procurement
+          POSTGRES_DB: procurement_test
+        ports: ['5545:5432']
+        options: >-
+          --health-cmd "pg_isready -U procurement -d procurement_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+
+    env:
+      # The suite's own database. There is no DATABASE_URL and no API key of any
+      # kind, which is the point: a test that needed one would fail here rather
+      # than pass quietly on someone's machine.
+      TEST_DATABASE_URL: postgres://procurement:procurement@localhost:5545/procurement_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # `check` is typecheck && lint && test, chained — a green line here means
+      # all three passed, which it did not always (an early commit landed with a
+      # failing suite because the steps were separated by `;`).
+      - run: pnpm check

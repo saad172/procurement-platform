@@ -7,6 +7,7 @@ import { replayFetch } from '@/fixtures/replay-fetch';
 import { loadFixture } from '@/fixtures/load';
 import { seedUpstream } from '@/fixtures/replay-upstream';
 import { getTestDb, testDatabaseIsUp } from '../support/test-db';
+import { seededProgram } from '../support/seeded-program';
 import { resetDerived } from '../support/reset';
 
 /**
@@ -44,7 +45,7 @@ describe('chat/one-turn replays', () => {
     // failure this prevents.
     await resetDerived(db);
 
-    const [program] = await db.select().from(t.program).limit(1);
+    const program = await seededProgram(db);
     if (!program) return;
 
     await seedUpstream(db, fixture);

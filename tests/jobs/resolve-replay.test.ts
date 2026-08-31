@@ -7,6 +7,7 @@ import { replayFetch } from '@/fixtures/replay-fetch';
 import { loadFixture } from '@/fixtures/load';
 import { seedUpstream, replayUpstream } from '@/fixtures/replay-upstream';
 import { getTestDb, testDatabaseIsUp } from '../support/test-db';
+import { seededProgram } from '../support/seeded-program';
 import { resetDerived } from '../support/reset';
 import { JOB_CAPS } from '@/config/constants';
 
@@ -54,7 +55,7 @@ describe('resolve/agree-r1 replays', () => {
     await seedUpstream(db, fixture);
     resetAnthropicClients();
 
-    const [program] = await db.select().from(t.program).limit(1);
+    const program = await seededProgram(db);
     const [run] = await db
       .insert(t.run)
       .values({ programId: program!.id, state: 'running', trigger: 'full', subjectLabel: 'replay' })

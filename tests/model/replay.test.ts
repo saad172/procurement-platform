@@ -9,6 +9,7 @@ import { resetAnthropicClients } from '@/model/client';
 import { ReplayMissError, UnhashableFixtureError, replayFetch } from '@/fixtures/replay-fetch';
 import type { Fixture } from '@/fixtures/types';
 import { getTestDb, testDatabaseIsUp } from '../support/test-db';
+import { seededProgram } from '../support/seeded-program';
 import * as t from '@/db/schema';
 import { JOB_CAPS } from '@/config/constants';
 
@@ -87,7 +88,7 @@ describe('replayFetch', () => {
     if (!(await testDatabaseIsUp())) return;
     const db = await getTestDb();
 
-    const [program] = await db.select().from(t.program).limit(1);
+    const program = await seededProgram(db);
     if (!program) return;
 
     const [run] = await db
@@ -145,7 +146,7 @@ describe('replayFetch', () => {
     if (!(await testDatabaseIsUp())) return;
     const db = await getTestDb();
 
-    const [program] = await db.select().from(t.program).limit(1);
+    const program = await seededProgram(db);
     if (!program) return;
 
     const [run] = await db

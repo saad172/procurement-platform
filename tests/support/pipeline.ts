@@ -6,6 +6,7 @@ import { replayFetch } from '@/fixtures/replay-fetch';
 import { loadFixture } from '@/fixtures/load';
 import { replayUpstream, seedUpstream } from '@/fixtures/replay-upstream';
 import type { TestDb } from './test-db';
+import { seededProgram } from './seeded-program';
 
 /**
  * Builds the state a later Job reads, by **running the earlier Jobs**.
@@ -47,7 +48,7 @@ export type PipelineResult = { supplierId: string; programId: string; runId: str
  * carries is the ten upstream bodies the fan-out read.
  */
 export async function buildAssessableSupplier(db: TestDb, rosterName: string): Promise<PipelineResult> {
-  const [program] = await db.select().from(t.program).limit(1);
+  const program = await seededProgram(db);
   const supplier = await db.query.supplier.findFirst({
     where: (row, { eq }) => eq(row.rosterName, rosterName),
   });
