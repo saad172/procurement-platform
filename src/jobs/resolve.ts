@@ -396,15 +396,30 @@ function sawCandidateInCountry(roster: RosterRow, candidates: readonly Candidate
 /**
  * Projects an entity into the local table, preserving `first_seen_at`.
  *
- * `upstreamResponseId` names **the body this projection came out of**, and it
- * is optional because most entities have none of their own: they arrive nested
- * inside somebody else's traversal or search result, and the body that carried
- * them is that other company's, not theirs. Passing it only where it is truly
- * this entity's own payload is what keeps the Profile page's provenance line
- * honest — see the column's own note.
+ * **Most sightings are partial, and this is called once per sighting.** Only
+ * 313 of the 14,816 entities in the local database were ever fetched with a
+ * `getEntity` of their own; the rest arrived nested inside somebody else's
+ * traversal, trade row or search result, carrying whatever that endpoint chose
+ * to include. A traversal terminal has its full `risk` block inline and no
+ * `psa_count`; a search hit has neither.
  *
- * On conflict it is written only when supplied, so a later nested sighting
- * never blanks a link an earlier direct fetch established.
+ * So **a column moves only when the incoming sighting actually states it.**
+ * Anything else loses data in one of two directions, and both were measured
+ * happening before this was written:
+ *
+ * - Writing every column on conflict **blanks** what a fuller sighting had
+ *   established: 73 entities held `psaCount` — values 0 through 21 — and
+ *   `relationshipCount` in their own stored payload while the row said null.
+ * - Writing them only on insert **strands** a column null for ever after a
+ *   first partial sighting, even once the entity's own payload arrives: 11
+ *   entities had `sourceCount` stranded that way.
+ *
+ * `upstreamResponseId` names **the body this projection came out of**, and it
+ * is optional because most entities have none of their own — the body that
+ * carried them is that other company's, not theirs. Passing it only where it
+ * is truly this entity's own payload is what keeps the Profile page's
+ * provenance line honest — see the column's own note. It was the one column
+ * already guarded this way; everything below generalises that note.
  */
 export async function upsertEntity(
   db: Database,
@@ -414,39 +429,61 @@ export async function upsertEntity(
   const address = entity.attributes?.address?.data?.[0];
   const properties = address?.properties;
   const sourceCount = entity.source_count ?? null;
+  const lei = findLei(entity);
+
+  /**
+   * What this sighting states, with `undefined` for everything it is silent
+   * about. **`false` is a statement**, so a boolean is dropped only when the
+   * payload omits the field entirely — not when it says `false`.
+   *
+   * `relationshipsTruncated` rides with `relationship_count` because it is
+   * derived from it: without those counts it computes `0 > 0` and would report
+   * a complete relationship set for a sighting that carried none.
+   */
+  const stated = {
+    label: entity.label,
+    entityType: entity.type ?? undefined,
+    country: properties?.country ?? entity.countries?.[0] ?? undefined,
+    addressLine: entity.addresses?.[0] ?? undefined,
+    city: properties?.city ?? undefined,
+    postcode: properties?.postcode ?? undefined,
+    lat: properties?.y ?? undefined,
+    lon: properties?.x ?? undefined,
+    lei: lei ?? undefined,
+    sourceCount: (sourceCount ?? undefined) as never,
+    distinctSourceCount: sourceCount ? Object.keys(sourceCount).length : undefined,
+    sanctioned: entity.sanctioned ?? undefined,
+    pep: entity.pep ?? undefined,
+    closed: entity.closed ?? undefined,
+    risk: (entity.risk ?? undefined) as never,
+    psaCount: entity.psa_count ?? undefined,
+    ...(entity.relationship_count
+      ? {
+          relationshipCount: entity.relationship_count as never,
+          relationshipsTruncated: relationshipsTruncated(entity),
+        }
+      : {}),
+  };
+
+  const said = Object.fromEntries(
+    Object.entries(stated).filter(([, value]) => value !== undefined),
+  ) as typeof stated;
 
   await db
     .insert(t.entity)
     .values({
       id: entity.id,
-      label: entity.label,
-      entityType: entity.type ?? null,
-      country: properties?.country ?? entity.countries?.[0] ?? null,
-      addressLine: entity.addresses?.[0] ?? null,
-      city: properties?.city ?? null,
-      postcode: properties?.postcode ?? null,
-      lat: properties?.y ?? null,
-      lon: properties?.x ?? null,
-      lei: findLei(entity),
-      sourceCount: sourceCount as never,
-      distinctSourceCount: sourceCount ? Object.keys(sourceCount).length : null,
-      sanctioned: entity.sanctioned ?? false,
-      pep: entity.pep ?? false,
-      closed: entity.closed ?? false,
-      risk: (entity.risk ?? null) as never,
-      psaCount: entity.psa_count ?? null,
-      relationshipCount: (entity.relationship_count ?? null) as never,
-      relationshipsTruncated: relationshipsTruncated(entity),
+      // Only what was stated. The four booleans and `relationships_truncated`
+      // are `not null default false`, so a sighting silent about them inserts
+      // the column default rather than a claim it did not make.
+      ...said,
       upstreamResponseId: upstreamResponseId ?? null,
       fetchedAt: new Date(),
     })
     .onConflictDoUpdate({
       target: t.entity.id,
       set: {
-        label: entity.label,
-        risk: (entity.risk ?? null) as never,
-        psaCount: entity.psa_count ?? null,
-        relationshipCount: (entity.relationship_count ?? null) as never,
+        ...said,
         // Only when we have one. A nested sighting carries no body of this
         // entity's own, and letting it write null would erase the provenance a
         // direct fetch had already recorded.

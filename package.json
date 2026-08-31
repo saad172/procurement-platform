@@ -36,6 +36,7 @@
     "enqueue": "tsx scripts/enqueue.ts",
     "fixtures:rehash": "tsx scripts/rehash-fixture.ts",
     "reproject:relationships": "tsx scripts/reproject-relationships.ts",
+    "reproject:entities": "tsx scripts/reproject-entities.ts",
     "remeasure:discriminators": "tsx scripts/remeasure-discriminators.ts"
   },
   "dependencies": {
