@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { derivedId } from '@/db/derived-id';
+import { ownersOf, parseRelationships, type ParsedEdge } from '@/domain/parse-relationships';
 import { FAMILY_TRAVERSAL_LIMIT } from '@/config/constants';
 import { COUNTRY_INDICATORS } from '@/domain/scoring/anchors';
 import { unionRiskFactors, type FamilyMemberRisk } from '@/domain/family';
@@ -458,40 +459,88 @@ export async function readOwnerEdges(
   ctx: EnrichContext,
   args: { entityId: string; entity: SayariEntity },
 ): Promise<{ entityId: string; label: string; riskFactors: ReturnType<typeof parseRiskObject>; isStateOwned: boolean }[]> {
-  const owners: { entityId: string; label: string; riskFactors: ReturnType<typeof parseRiskObject>; isStateOwned: boolean }[] = [];
+  const { edges, unclassified } = parseRelationships(args.entity, args.entityId);
 
-  for (const raw of args.entity.relationships?.data ?? []) {
-    if (!raw || typeof raw !== 'object') continue;
-    const edge = raw as { type?: unknown; former?: unknown; entity?: unknown; target?: unknown };
-    const type = typeof edge.type === 'string' ? edge.type : '';
-    // Only CURRENT owner edges are scored: a former owner is not an owner.
-    if (!/owner|shareholder|parent/i.test(type) || edge.former === true) continue;
+  if (unclassified.length > 0) {
+    /**
+     * Loud, and not fatal. A relationship type nobody has classified is stored
+     * and shown like any other; what it may not do is reach Ownership exposure,
+     * because the safe reading of an edge we cannot orient is *not an owner*.
+     * Failing the Job instead would let Sayari's vocabulary growth stop an
+     * enrichment that is otherwise complete.
+     */
+    console.warn(
+      `  unclassified relationship type(s) on ${args.entityId}: ${unclassified.join(', ')}` +
+        ' — stored, shown, and excluded from ownership scoring',
+    );
+  }
 
-    const target = (edge.target ?? edge.entity) as SayariEntity | string | undefined;
-    if (!target || typeof target === 'string') continue;
+  await storeRelationships(ctx.db, edges, ctx.jobId);
 
-    await upsertEntity(ctx.db, target);
-    const factors = parseRiskObject(target.risk);
+  const owners: {
+    entityId: string;
+    label: string;
+    riskFactors: ReturnType<typeof parseRiskObject>;
+    isStateOwned: boolean;
+  }[] = [];
+
+  for (const edge of ownersOf(edges)) {
+    const target = edge.targetEntity as SayariEntity | null;
+    const factors = parseRiskObject(target?.risk);
     owners.push({
-      entityId: target.id,
-      label: target.label,
+      entityId: edge.targetId,
+      label: edge.targetLabel ?? edge.targetId,
       riskFactors: factors,
       isStateOwned: factors.some((f) => /soe|state_owned|government/i.test(f.name)),
     });
-
-    await ctx.db
-      .insert(t.entityRelationship)
-      .values({
-        fromEntityId: target.id,
-        toEntityId: args.entityId,
-        relationshipType: type,
-        former: false,
-        hopDepth: 1,
-        sourceRecordId: null,
-      })
-      .onConflictDoNothing();
   }
   return owners;
+}
+
+/**
+ * Writes edges, and the companies on the far end of them.
+ *
+ * **The entity rows come first, and that is a foreign key, not a preference:**
+ * `entity_relationship` references `entity` on both ends, so an edge to a
+ * company nobody has stored is rejected by the database. A target that arrived
+ * as a bare id therefore has no row to write — it is skipped rather than
+ * invented, which is the same rule the rest of this app follows about evidence
+ * it does not hold.
+ */
+export async function storeRelationships(
+  db: Database,
+  edges: readonly ParsedEdge[],
+  jobId?: string | undefined,
+): Promise<number> {
+  let written = 0;
+
+  for (const edge of edges) {
+    if (!edge.targetEntity) continue;
+    await upsertEntity(db, edge.targetEntity as unknown as SayariEntity);
+
+    await db
+      .insert(t.entityRelationship)
+      .values({
+        // Stored as the payload states it: subject first, target second, type
+        // verbatim. Direction is resolved on read, so nothing inverts on write.
+        fromEntityId: edge.subjectId,
+        toEntityId: edge.targetId,
+        relationshipType: edge.relationshipType,
+        former: edge.former,
+        startDate: edge.startDate,
+        endDate: edge.endDate,
+        sourceRecordId: edge.sourceRecordId,
+        hopDepth: 1,
+        discoveredByJob: jobId ?? null,
+        attributes: edge.attributes as never,
+      })
+      // The unique key is (from, to, type, source_record_id); seeing the same
+      // edge twice is the normal case on a warm cache, not a conflict to fix.
+      .onConflictDoNothing();
+    written += 1;
+  }
+
+  return written;
 }
 
 /** The Plants a Supplier's proximity is measured against. */
