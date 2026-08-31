@@ -58,10 +58,37 @@ async function recordEnrichment(
       ),
     )) as [{ generation: number }];
 
+  const id = derivedId(
+    'enrichment',
+    `${args.source}:${args.subjectKind}:${args.subjectKey}`,
+    generation,
+  );
+
+  /**
+   * **Two Jobs enriching the same shared subject race here, and one of them
+   * loses.** Country and tariff Enrichments are shared across Suppliers by
+   * design, the id is derived from the subject plus a counted generation, and
+   * the worker runs four Jobs at once — so two Suppliers in the same country
+   * both read generation 0, both derive the same id, and the second insert
+   * violates the primary key. That threw, and a throw is `failed`: the whole
+   * enrichment of an unrelated Supplier died on a row another Supplier had
+   * already written correctly.
+   *
+   * A conflict here is not a collision of two different facts. The id encodes
+   * source, subject and generation, so the row that beat us is **the row we
+   * were about to write** — same subject, same generation, and (because
+   * `upstream_response` is a cache) overwhelmingly the same fetched body. Its
+   * id is the right Citation target, so we take it and carry on.
+   *
+   * `onConflictDoNothing` rather than a transaction or a lock: serialising
+   * every shared-subject write would put a queue in front of the one thing
+   * concurrency 4 exists to speed up, to prevent something that is already a
+   * no-op when it happens.
+   */
   const [row] = await ctx.db
     .insert(t.enrichment)
     .values({
-      id: derivedId('enrichment', `${args.source}:${args.subjectKind}:${args.subjectKey}`, generation),
+      id,
       source: args.source,
       subjectKind: args.subjectKind,
       subjectKey: args.subjectKey,
@@ -70,8 +97,10 @@ async function recordEnrichment(
       fetchedAt: args.result.fetchedAt,
       jobId: ctx.jobId ?? null,
     })
+    .onConflictDoNothing({ target: t.enrichment.id })
     .returning({ id: t.enrichment.id });
-  return row!.id;
+
+  return row?.id ?? id;
 }
 
 // ── 1. Negative news ─────────────────────────────────────────────────────────
