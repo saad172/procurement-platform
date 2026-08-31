@@ -24,6 +24,7 @@ const frozen = (overrides: Partial<FrozenInputs> = {}): FrozenInputs => ({
   shortlistOrder: ['supplier-a', 'supplier-b'],
   supplierVerdicts: { 'supplier-a': { verdict: 'recommend', evaluatorOutcome: 'passed' } },
 
+  tariffFlags: [],
   rosterRows: {},
   ...overrides,
 });

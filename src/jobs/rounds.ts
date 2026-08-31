@@ -38,7 +38,18 @@ export type ProposalResult<TDraft> =
   /** The model produced a well-shaped draft. */
   | { kind: 'draft'; draft: TDraft; text: string }
   /** Our zod refinements rejected it. Free retry; the counter does not advance. */
-  | { kind: 'refinement_failure'; message: string };
+  | { kind: 'refinement_failure'; message: string }
+  /**
+   * The **loop** failed — a transport error, a refusal, a cap. Not the model
+   * mis-shaping its output.
+   *
+   * It retries on the same budget, because a connection error is worth another
+   * go, but it is reported separately: three `Connection error`s once exhausted
+   * the retries and the Job announced *"the proposer could not produce a
+   * well-shaped draft in 3 attempts"* — blaming the model for a network fault,
+   * in the one sentence a person would read to find out what happened.
+   */
+  | { kind: 'loop_failure'; message: string };
 
 export type EvaluationResult =
   | { kind: 'pass'; rubric: unknown; text: string }
@@ -131,29 +142,36 @@ export async function runProposerEvaluatorLoop<TDraft>(
       // draft at all, and the `round` rows that would have explained why are
       // never persisted, because persisting them is `publishVersion`'s job and
       // there is nothing to publish.
-      console.error(
-        `[loop] round ${roundN}, free retry ${retry + 1}/${MAX_FREE_RETRIES_PER_ROUND}: ${proposal.message}`,
-      );
+      // `attempt N of M`, not `retry N of M`: the first try is not a retry, and
+      // a log line reading "free retry 3/2" makes a reader doubt the counter
+      // rather than read the message.
+      const attempt = `attempt ${retry + 1} of ${MAX_FREE_RETRIES_PER_ROUND + 1}`;
+      const what = proposal.kind === 'loop_failure' ? 'the loop failed' : 'output shape rejected';
+      console.error(`[loop] round ${roundN}, ${attempt}, ${what}: ${proposal.message}`);
       rounds.push({
         n: roundN,
         role: 'proposer',
         source: 'code',
-        objection: `Output shape rejected (free retry ${retry + 1} of ${MAX_FREE_RETRIES_PER_ROUND}): ${proposal.message}`,
+        objection: `${what} (${attempt}): ${proposal.message}`,
       });
     }
 
     if (!proposal || proposal.kind !== 'draft') {
-      // Out of free retries. This is a broken loop, not a disagreement.
+      /**
+       * Out of attempts. A broken loop, not a disagreement — and **which** kind
+       * of broken is the whole value of the message.
+       */
+      const attempts = MAX_FREE_RETRIES_PER_ROUND + 1;
+      const objection =
+        proposal?.kind === 'loop_failure'
+          ? `The model loop failed on all ${attempts} attempts. The last failure was: ${proposal.message}`
+          : `The proposer could not produce a well-shaped draft in ${attempts} attempts.`;
+
       return {
         draft: lastDraft,
         evaluatorOutcome: 'published_with_objections',
         rounds,
-        dissent: [
-          {
-            objection: `The proposer could not produce a well-shaped draft in ${MAX_FREE_RETRIES_PER_ROUND + 1} attempts.`,
-            reply: undefined,
-          },
-        ],
+        dissent: [{ objection, reply: undefined }],
         roundsUsed: roundN,
       };
     }

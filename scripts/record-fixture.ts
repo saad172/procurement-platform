@@ -2,7 +2,7 @@
 import 'dotenv/config';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, ne } from 'drizzle-orm';
 import { closeDirectDb, getDirectDb } from '@/db/client';
 import * as t from '@/db/schema';
 import { fixtureDigest, recordFixture, serializeFixture } from '@/fixtures/record';
@@ -43,10 +43,23 @@ async function main(): Promise<void> {
     let jobId = process.argv[3];
     if (!jobId) {
       const kind = jobKindOf(name);
+      /**
+       * The latest Job of this kind, **excluding smoke probes**.
+       *
+       * `smoke:model` opens a Job with `kind: 'assess'` — it exercises the
+       * model chokepoint and assess is simply the loop it borrows. Auto-select
+       * happily picked it, and `assess/passes-at-round-1` was recorded as a
+       * two-turn toy conversation about roster countries. It passed the
+       * recorder's checks, because it *is* a well-formed replayable Job.
+       *
+       * The Run's `trigger` is what separates them: a real Job is triggered by
+       * `full`, `reassess`, `discover` and so on; a probe is `smoke`.
+       */
       const [latest] = await db
         .select({ id: t.job.id, state: t.job.state, createdAt: t.job.createdAt })
         .from(t.job)
-        .where(eq(t.job.kind, kind as never))
+        .innerJoin(t.run, eq(t.run.id, t.job.runId))
+        .where(and(eq(t.job.kind, kind as never), ne(t.run.trigger, 'smoke')))
         .orderBy(desc(t.job.createdAt))
         .limit(1);
       if (!latest) {

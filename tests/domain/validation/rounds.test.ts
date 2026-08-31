@@ -61,7 +61,9 @@ describe('a refinement failure retries FREE, and the counter does not advance', 
       validate: async () => [],
       evaluate: async () => ({ kind: 'pass', rubric: {}, text: 'ok' }),
     });
-    const retries = outcome.rounds.filter((r) => r.objection?.includes('free retry'));
+    // `attempt N of 3`, not `free retry N of 2` — the first try is not a retry,
+    // and the old wording printed "free retry 3/2" (finding 72).
+    const retries = outcome.rounds.filter((r) => r.objection?.includes('attempt'));
     expect(retries).toHaveLength(1);
   });
 });

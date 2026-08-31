@@ -12,7 +12,7 @@ import {
   settleRunState,
 } from '@/jobs/runs';
 import { runWorker } from '@/worker/poll';
-import { MAX_ROUNDS, RUN_BUDGET_USD_PER_SUPPLIER } from '@/config/constants';
+import { MAX_FREE_RETRIES_PER_ROUND, MAX_ROUNDS, RUN_BUDGET_USD_PER_SUPPLIER } from '@/config/constants';
 import { runProposerEvaluatorLoop } from '@/jobs/rounds';
 import {
   START_TEST_DB_HINT,
@@ -306,5 +306,57 @@ describe('a draft that never passes the code checks', () => {
 
     expect(outcome.evaluatorOutcome).toBe('published_with_objections');
     expect(outcome.draft).toBeDefined();
+  });
+});
+
+/**
+ * A transport failure is not the model mis-shaping its output, and the message
+ * a person reads has to say which happened.
+ *
+ * Three `Connection error`s once exhausted the free retries and the Job
+ * announced "the proposer could not produce a well-shaped draft in 3 attempts"
+ * — blaming the model for a network fault, in the one sentence anyone would
+ * read to find out what went wrong.
+ */
+describe('a loop failure is reported as itself', () => {
+  it('names the transport error rather than blaming the draft', async () => {
+    const outcome = await runProposerEvaluatorLoop<{ text: string }>({
+      propose: async () => ({ kind: 'loop_failure', message: 'Connection error.' }),
+      validate: async () => [],
+      evaluate: async () => {
+        throw new Error('the evaluator must not run when no draft was produced');
+      },
+    });
+
+    const said = outcome.dissent.map((d) => d.objection).join(' ');
+    expect(said).toContain('Connection error.');
+    expect(said).not.toContain('well-shaped');
+  });
+
+  it('still blames the draft when the draft really was mis-shaped', async () => {
+    const outcome = await runProposerEvaluatorLoop<{ text: string }>({
+      propose: async () => ({ kind: 'refinement_failure', message: 'sentences: expected at least 1' }),
+      validate: async () => [],
+      evaluate: async () => {
+        throw new Error('the evaluator must not run when no draft was produced');
+      },
+    });
+
+    expect(outcome.dissent.map((d) => d.objection).join(' ')).toContain('well-shaped');
+  });
+
+  it('spends the same budget on either kind', async () => {
+    // A connection error is worth another go; what changes is the reporting,
+    // not the number of attempts.
+    let attempts = 0;
+    await runProposerEvaluatorLoop<{ text: string }>({
+      propose: async () => {
+        attempts += 1;
+        return { kind: 'loop_failure', message: 'Connection error.' };
+      },
+      validate: async () => [],
+      evaluate: async () => ({ kind: 'pass', rubric: {}, text: '' }),
+    });
+    expect(attempts).toBe(MAX_FREE_RETRIES_PER_ROUND + 1);
   });
 });

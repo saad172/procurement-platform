@@ -19,7 +19,15 @@ Recommendation. A citation points at evidence, not at prose.
 
 Every number you write must be traceable to a frozen input or to a cited row,
 matched at the precision you wrote it. Do not paraphrase a figure: "roughly
-800 km" matches nothing, while "824 km" matches the row it came from.`;
+800 km" matches nothing, while "824 km" matches the row it came from.
+
+A NUMBER YOU COUNTED IS NOT A NUMBER YOU WERE GIVEN
+If you tally rows yourself — how many family members carry a factor, how many
+sources agree, how many suppliers were excluded — that total appears in no row,
+so it cannot be cited and it will be rejected. Two honest ways to say it: name
+the rows and cite them, or write it without a figure ("several of the family
+members", "most of the sources"). A count you did in your head reads like
+evidence and is not.`;
 
 export const proposerSystem = `You write an evaluation of one supplier for one sourcing programme.
 

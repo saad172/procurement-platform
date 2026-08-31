@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
+import { isDatabaseId } from '@/tools/ids';
 import type { RoundRecord } from './rounds';
 import type { SubmittedPick, SubmittedSentence } from '@/domain/validation/submit-checks';
 
@@ -47,18 +48,47 @@ export async function resolveCitations(
     } else if (citation.recordId) {
       resolved.set(key, await first(db.select().from(t.record).where(eq(t.record.id, citation.recordId))));
     } else if (citation.enrichmentId) {
-      resolved.set(key, await first(db.select().from(t.enrichment).where(eq(t.enrichment.id, citation.enrichmentId))));
+      // Every id below is a uuid column, so a malformed value THROWS rather
+      // than missing — see the shortlist branch for why that matters.
+      resolved.set(
+        key,
+        isDatabaseId(citation.enrichmentId)
+          ? await first(db.select().from(t.enrichment).where(eq(t.enrichment.id, citation.enrichmentId)))
+          : undefined,
+      );
     } else if (citation.criterionValueId) {
       resolved.set(
         key,
-        await first(db.select().from(t.criterionValue).where(eq(t.criterionValue.id, citation.criterionValueId))),
+        isDatabaseId(citation.criterionValueId)
+          ? await first(db.select().from(t.criterionValue).where(eq(t.criterionValue.id, citation.criterionValueId)))
+          : undefined,
       );
     } else if (citation.matchId) {
-      resolved.set(key, await first(db.select().from(t.match).where(eq(t.match.id, citation.matchId))));
+      resolved.set(
+        key,
+        isDatabaseId(citation.matchId)
+          ? await first(db.select().from(t.match).where(eq(t.match.id, citation.matchId)))
+          : undefined,
+      );
     } else if (citation.shortlist) {
-      // The Shortlist reference is a PAIR, and both halves must exist. A
-      // Shortlist is computed rather than stored, so what resolves here is the
-      // (programme, category) it is a shortlist OF.
+      /**
+       * The Shortlist reference is a PAIR, and both halves must exist. A
+       * Shortlist is computed rather than stored, so what resolves here is the
+       * (programme, category) it is a shortlist OF.
+       *
+       * **Shape-checked before querying**, because Postgres answers a non-uuid
+       * with a thrown type error rather than an empty result — and a throw here
+       * escapes the validator entirely, failing the Job on a database error
+       * where an objection would have told the model what to send. It happened:
+       * a recommendation cited `programId: "MY2029-CROSSOVER-BEV-NA"`, a slug
+       * the model invented because the field said what it was FOR and not where
+       * it comes FROM.
+       */
+      if (!isDatabaseId(citation.shortlist.programId) || !isDatabaseId(citation.shortlist.categoryId)) {
+        resolved.set(key, undefined);
+        continue;
+      }
+
       const category = await first(
         db
           .select()

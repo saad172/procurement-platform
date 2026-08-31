@@ -31,22 +31,7 @@ import { buildAssessableSupplier, openJob } from '../support/pipeline';
 
 const FIXTURE = 'recommend/one-category';
 
-/**
- * **Skipped: the fixture does not exist yet, and it cannot be faked.**
- *
- * `recommend` currently cannot publish for the seeded Programme. Its drafts are
- * rejected by our own number check in all three Rounds — the model writes a
- * derived count (`15` family members) rather than a stored one, and repeats the
- * mistake after being told. That is the check doing its job on a real prose
- * fault, and SPEC §19.3 is explicit that a result a real run will not produce is
- * **arranged in the inputs, never edited into a fixture**.
- *
- * So there is nothing honest to record here yet. The test is written and
- * skipped rather than deleted, because the assertions are the specification of
- * what the fixture must show once `recommend` can produce one — see
- * BUILD-NOTES finding 68 for what is owed.
- */
-describe.skip('recommend/one-category replays', () => {
+describe('recommend/one-category replays', () => {
   it('publishes typed picks a person could act on', async () => {
     if (!(await testDatabaseIsUp())) return;
     const db = await getTestDb();

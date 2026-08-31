@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { JOB_CAPS } from '@/config/constants';
@@ -61,6 +61,7 @@ export async function buildFrozenInputs(
   const scores: Record<string, number | null> = {};
   const supplierVerdicts: FrozenInputs['supplierVerdicts'] = {};
   const rosterRows: FrozenInputs['rosterRows'] = {};
+  const categoryIds = new Set<string>();
 
   for (const supplierId of args.supplierIds) {
     const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.id, supplierId) });
@@ -80,6 +81,14 @@ export async function buildFrozenInputs(
       .orderBy(asc(t.criterionValue.criterionKey));
     for (const value of values) {
       criterionValues[`${supplierId}:${value.criterionKey}`] = value.value;
+    }
+
+    for (const row of await db
+      .select({ categoryId: t.supplierCategory.categoryId })
+      .from(t.supplierCategory)
+      .where(eq(t.supplierCategory.supplierId, supplierId))
+      .orderBy(asc(t.supplierCategory.categoryId))) {
+      categoryIds.add(row.categoryId);
     }
 
     const assessment = await db.query.assessment.findFirst({
@@ -102,7 +111,27 @@ export async function buildFrozenInputs(
     shortlistOrder: args.supplierIds,
     supplierVerdicts,
     rosterRows,
+    tariffFlags: await tariffFlagsFor(db, [...categoryIds].sort()),
   };
+}
+
+/**
+ * The tariff flags on a set of Categories, ordered so the frozen inputs are
+ * byte-identical between two runs over the same data.
+ */
+async function tariffFlagsFor(db: Database, categoryIds: string[]): Promise<FrozenInputs['tariffFlags']> {
+  if (categoryIds.length === 0) return [];
+  return db
+    .select({
+      categoryId: t.categoryFlag.categoryId,
+      key: t.tariffFlag.key,
+      label: t.tariffFlag.label,
+      whyNotARate: t.tariffFlag.whyNotARate,
+    })
+    .from(t.categoryFlag)
+    .innerJoin(t.tariffFlag, eq(t.tariffFlag.key, t.categoryFlag.flagKey))
+    .where(inArray(t.categoryFlag.categoryId, categoryIds))
+    .orderBy(asc(t.categoryFlag.categoryId), asc(t.tariffFlag.key));
 }
 
 /** Assembles what the eight checks need to know, from rows rather than prose. */
@@ -254,8 +283,10 @@ export async function assessSupplier(
       );
 
       if (result.status !== 'done') {
+        // The LOOP failed — transport, refusal, a cap. Distinct from our zod
+        // refinements rejecting a well-formed request's answer.
         return {
-          kind: 'refinement_failure',
+          kind: 'loop_failure',
           message:
             `the loop ended as ${result.status}` +
             ('error' in result ? `: ${result.error}` : '') +
@@ -304,7 +335,28 @@ export async function assessSupplier(
         {
           loop: 'assess',
           system: assessPrompts.evaluatorSystem,
-          tools: toRunnableTools([registry.byName.get('get_assessment_brief')!], deps.toolCtx),
+          /**
+           * **The evaluator reads what the proposer read.**
+           *
+           * It used to hold `get_assessment_brief` alone, while the proposer
+           * had four read tools — so it was asked to verify claims against
+           * evidence it could not see, and it said so: *"the cited rows are
+           * real and resolvable, but they carry only a key and a value.
+           * Nothing in the row supports the sub-structure the draft attributes
+           * to it."* That objection was **correct**, it survived three Rounds,
+           * and no draft could ever have answered it.
+           *
+           * A verifier weaker than the thing it verifies does not measure
+           * accuracy, it measures what fits through its own window.
+           *
+           * It still cannot **write** — no `submit_assessment` — so the
+           * asymmetry that matters is preserved: the proposer proposes, the
+           * evaluator judges, and neither can do the other's job.
+           */
+          tools: toRunnableTools(
+            proposerTools.filter((tool) => tool.name !== 'submit_assessment'),
+            deps.toolCtx,
+          ),
           messages: [
             {
               role: 'user',

@@ -128,7 +128,14 @@ const citedSentence = z.object({
           .optional()
           .describe("The `matchId` from get_assessment_brief, or the match's `id` from get_supplier."),
         shortlist: z
-          .object({ programId: z.string(), categoryId: z.string() })
+          .object({
+            programId: z
+              .string()
+              .describe("The programme's `id` from get_program or get_shortlist — a uuid, never its name."),
+            categoryId: z
+              .string()
+              .describe("The category's `id` — a uuid, never its code like 'HAR'."),
+          })
           .optional()
           .describe('Both halves, for a claim about the shortlist itself rather than about one supplier.'),
       }),

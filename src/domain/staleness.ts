@@ -49,6 +49,20 @@ export type FrozenInputs = {
    * notice.
    */
   rosterRows: Record<string, { index: number | null; name: string | null; address: string | null; country: string | null }>;
+  /**
+   * The tariff flags on every Category these Suppliers bid in.
+   *
+   * Finding 67 put them on the Tariff criterion, which made them citable by a
+   * sentence *about the rate*. It was not enough: a headline naming Section 232
+   * cites the shortlist, not the criterion, and the check saw nothing again.
+   *
+   * Frozen inputs are candidates for **every** sentence regardless of what it
+   * cites, which is the right home for text the app shows and any sentence may
+   * quote. They belong in the frozen set on their own merits too — a flag added
+   * to a Category changes what the Recommendation was written against, and the
+   * staleness hash should notice.
+   */
+  tariffFlags: { categoryId: string; key: string; label: string; whyNotARate: string | null }[];
 };
 
 /** A citable row, for the *new evidence* residual. */

@@ -117,8 +117,10 @@ export async function recommendCategory(
       );
 
       if (result.status !== 'done') {
+        // The LOOP failed — transport, refusal, a cap. Distinct from our zod
+        // refinements rejecting a well-formed request's answer.
         return {
-          kind: 'refinement_failure',
+          kind: 'loop_failure',
           message:
             `the loop ended as ${result.status}` +
             ('error' in result ? `: ${result.error}` : '') +
@@ -167,7 +169,22 @@ export async function recommendCategory(
         {
           loop: 'recommend',
           system: recommendPrompts.evaluatorSystem,
-          tools: [],
+          /**
+           * **The evaluator reads what the lead read.**
+           *
+           * It had no tools at all — asked to judge whether a Recommendation's
+           * claims are supported, with no way to look at a single row. The
+           * assess evaluator had the same fault in milder form and said so
+           * across three Rounds; see `assess.ts` for the objection it raised.
+           *
+           * It still cannot **write**: no `submit_recommendation`. The
+           * asymmetry that matters is that one proposes and the other judges,
+           * not that one can see and the other cannot.
+           */
+          tools: toRunnableTools(
+            leadTools.filter((tool) => tool.name !== 'submit_recommendation'),
+            deps.toolCtx,
+          ),
           messages: [
             {
               role: 'user',
