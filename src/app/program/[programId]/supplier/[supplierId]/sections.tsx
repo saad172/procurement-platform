@@ -71,7 +71,19 @@ export function Heading({ data, programId }: { data: Data; programId: string }) 
               <>we found this one by searching, not from the roster</>
             ) : match.status === 'accepted' ? (
               <>
-                we believe this is <strong>{match.entity?.label}</strong>
+                we believe this is{' '}
+                {/*
+                  A settled Match is a hop, not only a sentence: the Profile's
+                  own page carries the ownership, the risk factors and the
+                  Twins this line only summarises.
+                */}
+                {match.entityId ? (
+                  <Link href={`/program/${programId}/entity/${match.entityId}` as never}>
+                    <strong>{match.entity?.label}</strong>
+                  </Link>
+                ) : (
+                  <strong>{match.entity?.label}</strong>
+                )}
                 {match.entity?.city ? `, ${match.entity.city}` : ''}{' '}
                 {/*
                   Each of the three says something different about who decided,
@@ -191,14 +203,24 @@ export function WhereItStands({ data }: { data: Data }) {
     </>
   );
 }
-export function WhoItIs({ data }: { data: Data }) {
+export function WhoItIs({ data, programId }: { data: Data; programId: string }) {
   const { match, described } = data;
   return (
     <>
       {/* ── Who it is ── */}
       {described && (described.headline || described.figures.length > 0) ? (
         <>
-          <h2>Who {match?.entity?.label ?? 'this company'} is</h2>
+          <h2>
+            Who{' '}
+            {match?.entityId ? (
+              <Link href={`/program/${programId}/entity/${match.entityId}` as never}>
+                {match.entity?.label}
+              </Link>
+            ) : (
+              (match?.entity?.label ?? 'this company')
+            )}{' '}
+            is
+          </h2>
           <div className="card">
             {described.headline ? (
               <p style={{ margin: '0 0 0.8rem', fontSize: '1.02rem', maxWidth: '60rem' }}>

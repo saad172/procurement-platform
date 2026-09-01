@@ -41,7 +41,7 @@ export default async function SupplierPage({
       <Heading data={data} programId={programId} />
       <Answer data={data} />
       <WhereItStands data={data} />
-      <WhoItIs data={data} />
+      <WhoItIs data={data} programId={programId} />
       <WhatWasConcluded data={data} programId={programId} />
       <TheWorking data={data} programId={programId} supplierId={supplierId} />
       <CorporateFamily data={data} programId={programId} />

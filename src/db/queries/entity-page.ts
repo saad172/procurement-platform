@@ -1,8 +1,8 @@
-import { eq, or } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
-import { deriveEdgeGroups } from '@/domain/derive-entity-page';
+import { deriveEdgeGroups, deriveKnownAs } from '@/domain/derive-entity-page';
 
 /**
  * Everything this page renders, in one read (SPEC §13.1).
@@ -43,6 +43,7 @@ export async function loadEntityPage(db: Database, args: { programId: string; en
   // Grouped here, not in the Relationships section — a section receives
   // already-derived props; it does not derive.
   const edgeGroups = deriveEdgeGroups(edges, entityId);
+  const knownAs = deriveKnownAs(await readKnownAsRows(db, programId, entityId));
 
   return {
     entity,
@@ -52,7 +53,53 @@ export async function loadEntityPage(db: Database, args: { programId: string; en
     source,
     sources,
     factors,
+    knownAs,
   };
+}
+
+/**
+ * The three ways this entity meets a Supplier of this Program — a settled
+ * Match, a Corporate family's membership, or a still-open Candidacy — read
+ * for `deriveKnownAs()` rather than derived here, so the shaping stays
+ * unit-testable apart from Postgres.
+ *
+ * Every one of the three is scoped to `programId`: `match.entity_id` carries
+ * no unique constraint, so a Sayari entity id can belong to a Supplier of the
+ * arranged-fixtures Program as readily as to one of this Program, and the
+ * Supplier itself is what says which Program it belongs to.
+ */
+async function readKnownAsRows(db: Database, programId: string, entityId: string) {
+  const supplierColumns = {
+    id: t.supplier.id,
+    rosterName: t.supplier.rosterName,
+    rosterIndex: t.supplier.rosterIndex,
+    programId: t.supplier.programId,
+  };
+
+  const profileMatches = await db
+    .select({ status: t.match.status, supplier: supplierColumns })
+    .from(t.match)
+    .innerJoin(t.supplier, eq(t.supplier.id, t.match.supplierId))
+    .where(and(eq(t.match.entityId, entityId), eq(t.supplier.programId, programId)));
+
+  const familyMemberships = await db
+    .select({ hopDepth: t.familyMember.hopDepth, supplier: supplierColumns })
+    .from(t.familyMember)
+    // Rooted at the Supplier's Profile (or a Twin standing in for it), never
+    // at the family member directly — the root is what carries the Match.
+    .innerJoin(t.match, eq(t.match.entityId, t.familyMember.rootEntityId))
+    .innerJoin(t.supplier, eq(t.supplier.id, t.match.supplierId))
+    .where(and(eq(t.familyMember.memberEntityId, entityId), eq(t.supplier.programId, programId)));
+
+  const candidacies = await db
+    .select({ status: t.match.status, supplier: supplierColumns })
+    .from(t.matchCandidate)
+    .innerJoin(t.matchAttempt, eq(t.matchAttempt.id, t.matchCandidate.matchAttemptId))
+    .innerJoin(t.match, eq(t.match.id, t.matchAttempt.matchId))
+    .innerJoin(t.supplier, eq(t.supplier.id, t.match.supplierId))
+    .where(and(eq(t.matchCandidate.entityId, entityId), eq(t.supplier.programId, programId)));
+
+  return { profileMatches, familyMemberships, candidacies };
 }
 
 /** Reads Sayari's `source_count` blob. A projection of a payload, so it belongs beside the read. */

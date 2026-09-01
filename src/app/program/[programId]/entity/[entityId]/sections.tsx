@@ -1,5 +1,7 @@
+import Link from 'next/link';
 import { Breadcrumb } from '@/components/breadcrumb';
 import type { loadEntityPage } from '@/db/queries/entity-page';
+import type { KnownAsCase } from '@/domain/derive-entity-page';
 import {
   effectiveLevel,
   isCountryDerived,
@@ -22,22 +24,91 @@ type Data = NonNullable<Awaited<ReturnType<typeof loadEntityPage>>>;
  * somewhere you can stand.
  */
 export function Heading({ data, programId }: { data: Data; programId: string }) {
-  const { entity, program } = data;
-  return (
-    <>
-      <Breadcrumb
-        trail={[
+  const { entity, program, knownAs } = data;
+  const profiles = knownAs.filter((c) => c.kind === 'profile');
+  // Not the Category: a Supplier bids on one or more of them, so there is no
+  // single parent to name here — the same reason the Supplier page's own
+  // breadcrumb stops at the Program (SPEC §13.1).
+  const trail =
+    profiles.length === 1
+      ? [
+          { label: program?.name ?? 'Program', href: `/program/${programId}` },
+          {
+            label: profiles[0]!.supplier.rosterName ?? '(promoted lead)',
+            href: `/program/${programId}/supplier/${profiles[0]!.supplier.id}`,
+          },
+          { label: entity.label },
+        ]
+      : [
           { label: program?.name ?? 'Program', href: `/program/${programId}` },
           { label: entity.label },
-        ]}
-      />
+        ];
+  return (
+    <>
+      <Breadcrumb trail={trail} />
       <h1>{entity.label}</h1>
       <p className="sub">
         <span className="mono">{entity.id}</span>
         {entity.country ? ` · ${entity.country}` : ''}
         {entity.lei ? ` · LEI ${entity.lei}` : ' · no LEI'}
       </p>
+      <p className="sub">
+        {knownAs.length === 0
+          ? 'not attached to any Supplier in this Program'
+          : knownAs.map((item, i) => (
+              <span key={`${item.kind}-${item.supplier.id}`}>
+                {i > 0 ? ' · ' : ''}
+                <KnownAsClause item={item} programId={programId} />
+              </span>
+            ))}
+      </p>
     </>
+  );
+}
+
+/**
+ * One clause of the "known as" line: the buyer's sentence on the surface, the
+ * canonical term underneath it the way the Supplier page's own Heading writes
+ * `settled by {match.settledBy}` (see `.term` in `globals.css`).
+ */
+function KnownAsClause({ item, programId }: { item: KnownAsCase; programId: string }) {
+  const name = item.supplier.rosterName ?? '(promoted lead)';
+  const parked = item.kind === 'candidate' && item.parked;
+  // A parked Candidate has no settled home yet, so its link is the queue a
+  // person works from rather than a Supplier page whose "who it is" answer
+  // does not exist.
+  const href = parked
+    ? `/program/${programId}/needs-review/${item.supplier.id}`
+    : `/program/${programId}/supplier/${item.supplier.id}`;
+  const supplierLink = (
+    <Link href={href as never}>
+      <strong>{name}</strong>
+    </Link>
+  );
+
+  if (item.kind === 'profile') {
+    return (
+      <span className="term">
+        the Profile of {supplierLink}
+        {item.supplier.rosterIndex != null ? `, roster row ${item.supplier.rosterIndex}` : ''}
+        <i>profile</i>
+      </span>
+    );
+  }
+  if (item.kind === 'family') {
+    const hops = item.hopDepth === 1 ? 'hop' : 'hops';
+    return (
+      <span className="term">
+        a Family member of {supplierLink}&rsquo;s Profile, {item.hopDepth} {hops} down
+        <i>family member · hop {item.hopDepth}</i>
+      </span>
+    );
+  }
+  return (
+    <span className="term">
+      a Candidate for {supplierLink}&rsquo;s Match{parked ? ' — still waiting on a person' : ''}
+      <i>candidate</i>
+    </span>
   );
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveEdgeGroups } from '@/domain/derive-entity-page';
+import { deriveEdgeGroups, deriveKnownAs, type KnownAsSupplier } from '@/domain/derive-entity-page';
 
 /**
  * Rows are stored as the payload states them — subject first, target second —
@@ -88,5 +88,118 @@ describe('deriveEdgeGroups', () => {
     const groups = deriveEdgeGroups(edges as never, 'SUBJECT');
     expect(groups[0]!.relationshipType).toBe('owner_of');
     expect(groups[0]!.total).toBe(2);
+  });
+});
+
+/**
+ * `deriveKnownAs` reads the entity end of the spine backward: every Supplier
+ * of this Program the entity is already known to, as a Profile, a Family
+ * member or a Candidate. The de-dup rules and the ordering are the point —
+ * the kinds themselves are a thin wrapper over the query's own rows.
+ */
+const knownAsSupplier = (overrides: Partial<KnownAsSupplier> = {}): KnownAsSupplier => ({
+  id: overrides.id ?? 'SUP1',
+  rosterName: overrides.rosterName ?? 'Aptiv',
+  rosterIndex: overrides.rosterIndex ?? 11,
+  programId: overrides.programId ?? 'PROGRAM1',
+});
+
+describe('deriveKnownAs', () => {
+  it('reads a settled Match as the profile case', () => {
+    const cases = deriveKnownAs({
+      profileMatches: [{ status: 'accepted', supplier: knownAsSupplier() }],
+      familyMemberships: [],
+      candidacies: [],
+    });
+    expect(cases).toEqual([{ kind: 'profile', supplier: knownAsSupplier() }]);
+  });
+
+  it('reads a family_member row as the family case, carrying its hop depth', () => {
+    const bosch = knownAsSupplier({ id: 'SUP2', rosterName: 'Bosch', rosterIndex: 4 });
+    const cases = deriveKnownAs({
+      profileMatches: [],
+      familyMemberships: [{ hopDepth: 2, supplier: bosch }],
+      candidacies: [],
+    });
+    expect(cases).toEqual([{ kind: 'family', supplier: bosch, hopDepth: 2 }]);
+  });
+
+  it('reads an open Candidacy as the candidate case, parked when its Match is needs_review', () => {
+    const nsk = knownAsSupplier({ id: 'SUP3', rosterName: 'NSK', rosterIndex: 9 });
+    const cases = deriveKnownAs({
+      profileMatches: [],
+      familyMemberships: [],
+      candidacies: [{ status: 'needs_review', supplier: nsk }],
+    });
+    expect(cases).toEqual([{ kind: 'candidate', supplier: nsk, parked: true }]);
+  });
+
+  it('reads a settled Candidacy (status accepted) as not parked', () => {
+    const cases = deriveKnownAs({
+      profileMatches: [],
+      familyMemberships: [],
+      candidacies: [{ status: 'accepted', supplier: knownAsSupplier() }],
+    });
+    expect(cases[0]).toMatchObject({ parked: false });
+  });
+
+  it('returns the empty list for an entity attached to no Supplier in this Program', () => {
+    expect(deriveKnownAs({ profileMatches: [], familyMemberships: [], candidacies: [] })).toEqual(
+      [],
+    );
+  });
+
+  it('drops a Candidate that the same Supplier’s Match went on to accept — it is only the Profile', () => {
+    const supplier = knownAsSupplier();
+    const cases = deriveKnownAs({
+      profileMatches: [{ status: 'accepted', supplier }],
+      familyMemberships: [],
+      candidacies: [{ status: 'accepted', supplier }],
+    });
+    expect(cases).toHaveLength(1);
+    expect(cases[0]).toMatchObject({ kind: 'profile' });
+  });
+
+  it('collapses repeat Candidacy rows for one Supplier (a later Round proposing it again)', () => {
+    const supplier = knownAsSupplier();
+    const cases = deriveKnownAs({
+      profileMatches: [],
+      familyMemberships: [],
+      candidacies: [
+        { status: 'needs_review', supplier },
+        { status: 'needs_review', supplier },
+      ],
+    });
+    expect(cases).toHaveLength(1);
+  });
+
+  it('keeps a Family member listed once per root Profile when two Suppliers share it', () => {
+    const bosch = knownAsSupplier({ id: 'SUP2', rosterName: 'Bosch' });
+    const magna = knownAsSupplier({ id: 'SUP4', rosterName: 'Magna' });
+    const cases = deriveKnownAs({
+      profileMatches: [],
+      familyMemberships: [
+        { hopDepth: 1, supplier: bosch },
+        { hopDepth: 3, supplier: magna },
+      ],
+      candidacies: [],
+    });
+    expect(cases.map((c) => c.supplier.rosterName)).toEqual(['Bosch', 'Magna']);
+  });
+
+  it('orders Profiles first, then Family by hop depth ascending, then Candidates', () => {
+    const profile = knownAsSupplier({ id: 'SUP1', rosterName: 'Aptiv' });
+    const deepFamily = knownAsSupplier({ id: 'SUP2', rosterName: 'Deep' });
+    const shallowFamily = knownAsSupplier({ id: 'SUP3', rosterName: 'Shallow' });
+    const candidate = knownAsSupplier({ id: 'SUP4', rosterName: 'NSK' });
+    const cases = deriveKnownAs({
+      profileMatches: [{ status: 'accepted', supplier: profile }],
+      familyMemberships: [
+        { hopDepth: 3, supplier: deepFamily },
+        { hopDepth: 1, supplier: shallowFamily },
+      ],
+      candidacies: [{ status: 'needs_review', supplier: candidate }],
+    });
+    expect(cases.map((c) => c.supplier.rosterName)).toEqual(['Aptiv', 'Shallow', 'Deep', 'NSK']);
   });
 });

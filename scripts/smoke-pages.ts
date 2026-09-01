@@ -226,8 +226,19 @@ async function supplierMarkers(db: Database, programId: string, supplierId: stri
   ].filter((m): m is string => !!m);
 }
 
-/** The Entity page's section markers — a Source, a Risk factor, a Relationship, the fetched payload. */
-async function entityMarkers(db: Database, programId: string, entityId: string) {
+/**
+ * The Entity page's section markers — a Source, a Risk factor, a
+ * Relationship, the fetched payload, and the roster name of the Supplier this
+ * entity is known to. `rosterName` comes from the assessed Supplier the
+ * subject was already chosen through in `findSubjects`, so no extra query is
+ * needed to have it in hand.
+ */
+async function entityMarkers(
+  db: Database,
+  programId: string,
+  entityId: string,
+  rosterName: string | null | undefined,
+) {
   const data = await loadEntityPage(db, { programId, entityId });
   if (!data) return [];
   return [
@@ -235,6 +246,7 @@ async function entityMarkers(db: Database, programId: string, entityId: string) 
     data.factors[0]?.name,
     data.edgeGroups[0] ? data.edgeGroups[0].relationshipType.replace(/_/g, ' ') : undefined,
     data.source?.endpoint,
+    rosterName ?? undefined,
   ].filter((m): m is string => !!m);
 }
 
@@ -294,7 +306,9 @@ async function sectionMarkers(db: Database, programId: string, s: Subjects) {
   return {
     category: categoryForPage ? await categoryMarkers(db, programId, categoryForPage) : [],
     supplier: supplierId ? await supplierMarkers(db, programId, supplierId) : [],
-    entity: s.richEntity ? await entityMarkers(db, programId, s.richEntity.id) : [],
+    entity: s.richEntity
+      ? await entityMarkers(db, programId, s.richEntity.id, s.assessedSupplier?.rosterName)
+      : [],
     recommendation:
       s.recommendation && s.recommendedCategory
         ? await recommendationMarkers(db, programId, s.recommendedCategory.id)
