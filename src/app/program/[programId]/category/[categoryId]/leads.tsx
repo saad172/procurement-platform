@@ -60,78 +60,14 @@ export function LeadsTable({
             </thead>
             <tbody>
               {visible.map(({ lead, entity }) => (
-                <tr key={lead.id} className={lead.dismissed ? 'hidden-by-filter' : undefined}>
-                  <td>
-                    <Link href={`/program/${programId}/entity/${entity.id}` as never}>
-                      {entity.label}
-                    </Link>
-                    <div className="note">{entity.country ?? 'country unknown'}</div>
-                  </td>
-                  <td>
-                    <ClassificationBadge value={lead.classification} />
-                    {lead.classificationReasoning ? (
-                      <div className="note" title={lead.classificationReasoning}>
-                        {lead.classificationReasoning.slice(0, 70)}…
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="num">{lead.shipmentCount?.toLocaleString('en-US') ?? '—'}</td>
-                  <td className="note">
-                    {/* Displayed, never filtered — absent on most rows. */}
-                    {lead.latestShipmentDate ?? 'not recorded'}
-                  </td>
-                  <td>
-                    {lead.relationVerified ? (
-                      <span className="badge good" title="Found in an accepted supplier's ownership family">
-                        related by ownership · verified
-                      </span>
-                    ) : lead.relatedSupplierId ? (
-                      <span className="badge warn">possibly related · name match, unverified</span>
-                    ) : (
-                      <span className="note">—</span>
-                    )}
-                  </td>
-                  <td>
-                    {lead.promotedSupplierId ? (
-                      <Link href={`/program/${programId}/supplier/${lead.promotedSupplierId}` as never}>
-                        promoted
-                      </Link>
-                    ) : lead.dismissed ? (
-                      <form action={dismiss}>
-                        <input type="hidden" name="leadId" value={lead.id} />
-                        <input type="hidden" name="programId" value={programId} />
-                        <input type="hidden" name="categoryId" value={categoryId} />
-                        <input type="hidden" name="undo" value="true" />
-                        <button type="submit" className="badge mute" style={{ cursor: 'pointer' }}>
-                          undismiss
-                        </button>
-                      </form>
-                    ) : (
-                      <div style={{ display: 'flex', gap: '0.3rem' }}>
-                        <form action={promote}>
-                          <input type="hidden" name="leadId" value={lead.id} />
-                          <input type="hidden" name="programId" value={programId} />
-                          <input type="hidden" name="categoryId" value={categoryId} />
-                          {/* The seeding Category is pre-checked and confirmed
-                              by a person, which keeps supplier_category
-                              hand-authored in the sense the seed cared about. */}
-                          <input type="hidden" name="categoryIds" value={categoryId} />
-                          <button type="submit" className="badge good" style={{ cursor: 'pointer' }}>
-                            promote to {categoryCode}
-                          </button>
-                        </form>
-                        <form action={dismiss}>
-                          <input type="hidden" name="leadId" value={lead.id} />
-                          <input type="hidden" name="programId" value={programId} />
-                          <input type="hidden" name="categoryId" value={categoryId} />
-                          <button type="submit" className="badge mute" style={{ cursor: 'pointer' }}>
-                            dismiss
-                          </button>
-                        </form>
-                      </div>
-                    )}
-                  </td>
-                </tr>
+                <LeadRow
+                  key={lead.id}
+                  lead={lead}
+                  entity={entity}
+                  programId={programId}
+                  categoryId={categoryId}
+                  categoryCode={categoryCode}
+                />
               ))}
             </tbody>
           </table>
@@ -149,6 +85,113 @@ export function LeadsTable({
         matching happened for it to be strong or weak at.
       </p>
     </>
+  );
+}
+
+/** One Lead, as a row. */
+function LeadRow({
+  lead,
+  entity,
+  programId,
+  categoryId,
+  categoryCode,
+}: {
+  lead: typeof t.lead.$inferSelect;
+  entity: typeof t.entity.$inferSelect;
+  programId: string;
+  categoryId: string;
+  categoryCode: string;
+}) {
+  return (
+    <tr className={lead.dismissed ? 'hidden-by-filter' : undefined}>
+      <td>
+        <Link href={`/program/${programId}/entity/${entity.id}` as never}>{entity.label}</Link>
+        <div className="note">{entity.country ?? 'country unknown'}</div>
+      </td>
+      <td>
+        <ClassificationBadge value={lead.classification} />
+        {lead.classificationReasoning ? (
+          <div className="note" title={lead.classificationReasoning}>
+            {lead.classificationReasoning.slice(0, 70)}…
+          </div>
+        ) : null}
+      </td>
+      <td className="num">{lead.shipmentCount?.toLocaleString('en-US') ?? '—'}</td>
+      <td className="note">
+        {/* Displayed, never filtered — absent on most rows. */}
+        {lead.latestShipmentDate ?? 'not recorded'}
+      </td>
+      <td>
+        {lead.relationVerified ? (
+          <span className="badge good" title="Found in an accepted supplier's ownership family">
+            related by ownership · verified
+          </span>
+        ) : lead.relatedSupplierId ? (
+          <span className="badge warn">possibly related · name match, unverified</span>
+        ) : (
+          <span className="note">—</span>
+        )}
+      </td>
+      <td>
+        <LeadActions lead={lead} programId={programId} categoryId={categoryId} categoryCode={categoryCode} />
+      </td>
+    </tr>
+  );
+}
+
+/** What can still be done with a Lead — promoted, dismissed, or already settled either way. */
+function LeadActions({
+  lead,
+  programId,
+  categoryId,
+  categoryCode,
+}: {
+  lead: typeof t.lead.$inferSelect;
+  programId: string;
+  categoryId: string;
+  categoryCode: string;
+}) {
+  if (lead.promotedSupplierId) {
+    return (
+      <Link href={`/program/${programId}/supplier/${lead.promotedSupplierId}` as never}>promoted</Link>
+    );
+  }
+  if (lead.dismissed) {
+    return (
+      <form action={dismiss}>
+        <input type="hidden" name="leadId" value={lead.id} />
+        <input type="hidden" name="programId" value={programId} />
+        <input type="hidden" name="categoryId" value={categoryId} />
+        <input type="hidden" name="undo" value="true" />
+        <button type="submit" className="badge mute" style={{ cursor: 'pointer' }}>
+          undismiss
+        </button>
+      </form>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', gap: '0.3rem' }}>
+      <form action={promote}>
+        <input type="hidden" name="leadId" value={lead.id} />
+        <input type="hidden" name="programId" value={programId} />
+        <input type="hidden" name="categoryId" value={categoryId} />
+        {/* The seeding Category is pre-checked and confirmed by a person,
+            which keeps supplier_category hand-authored in the sense the seed
+            cared about. */}
+        <input type="hidden" name="categoryIds" value={categoryId} />
+        <button type="submit" className="badge good" style={{ cursor: 'pointer' }}>
+          promote to {categoryCode}
+        </button>
+      </form>
+      <form action={dismiss}>
+        <input type="hidden" name="leadId" value={lead.id} />
+        <input type="hidden" name="programId" value={programId} />
+        <input type="hidden" name="categoryId" value={categoryId} />
+        <button type="submit" className="badge mute" style={{ cursor: 'pointer' }}>
+          dismiss
+        </button>
+      </form>
+    </div>
   );
 }
 

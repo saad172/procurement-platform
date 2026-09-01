@@ -2,6 +2,7 @@ import { eq, or } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
+import { deriveEdgeGroups } from '@/domain/derive-entity-page';
 
 /**
  * Everything this page renders, in one read (SPEC §13.1).
@@ -37,11 +38,15 @@ export async function loadEntityPage(
 
   const sources = readSources(entity.sourceCount);
   const factors = parseRiskObject(entity.risk);
+  // Grouped here, not in the Relationships section — a section receives
+  // already-derived props; it does not derive.
+  const edgeGroups = deriveEdgeGroups(edges, entityId);
 
   return {
     entity,
     program,
     edges,
+    edgeGroups,
     source,
     sources,
     factors,

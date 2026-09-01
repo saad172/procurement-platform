@@ -58,82 +58,9 @@ export function RunPanel({
         </p>
       ) : null}
 
-      {stages.resolve > 0 ? (
-        <Stage
-          programId={programId}
-          action={startRun}
-          remaining={work.unresolved}
-          verb="Run"
-          lede={
-            <>
-              {work.unresolved} supplier{work.unresolved === 1 ? ' has' : 's have'} no settled match yet.
-              A run takes them in roster order through all three phases — <strong>resolve</strong>,
-              then <strong>enrich</strong>, then <strong>assess</strong> — each queued as the one
-              before it succeeds, because every phase reads what the last one wrote. A row that parks
-              for review stops there, which is the point of parking it.
-            </>
-          }
-          costNote={
-            <>
-              The estimate is {`$${RUN_BUDGET_USD_PER_SUPPLIER.toFixed(2)}`} per supplier from a
-              committed constant, not a bill. What it actually cost is on the Runs page when it
-              finishes.
-            </>
-          }
-          priced
-        />
-      ) : null}
-
-      {stages.enrich > 0 ? (
-        <Stage
-          programId={programId}
-          action={enrichRoster}
-          remaining={work.unenriched}
-          verb="Enrich"
-          lede={
-            <>
-              {work.unenriched} supplier{work.unenriched === 1 ? ' has' : 's have'} a settled match but
-              no criterion values, so nothing about them can be scored or argued from yet. This picks
-              the pipeline up where it stopped and carries it to the end —{' '}
-              <strong>enrich</strong>, then <strong>assess</strong>.
-            </>
-          }
-          costNote={
-            <>
-              Enrichment itself runs no model; the assessment it chains into does. The estimate is{' '}
-              {`$${RUN_BUDGET_USD_PER_SUPPLIER.toFixed(2)}`} per supplier from the committed
-              constant — a ceiling for all three phases, so two of them will come in under it.
-            </>
-          }
-          priced
-        />
-      ) : null}
-
-      {stages.assess > 0 ? (
-        <Stage
-          programId={programId}
-          action={assessRoster}
-          remaining={work.unassessed}
-          verb="Assess"
-          lede={
-            <>
-              {work.unassessed} supplier{work.unassessed === 1 ? ' has' : 's have'} criterion values but
-              no assessment. Nothing queues an assessment on your behalf — not the worker, not a
-              run — so this is the only control that moves the <em>assessed</em> figure on the strip
-              above for more than one company at a time.
-            </>
-          }
-          costNote={
-            <>
-              An assessment is the one stage here that argues, so it is the one that spends model
-              tokens. The estimate is {`$${RUN_BUDGET_USD_PER_SUPPLIER.toFixed(2)}`} per supplier
-              from the committed constant — a ceiling for the whole pipeline, so this will come in
-              under it.
-            </>
-          }
-          priced
-        />
-      ) : null}
+      {stages.resolve > 0 ? <ResolveStage programId={programId} remaining={work.unresolved} /> : null}
+      {stages.enrich > 0 ? <EnrichStage programId={programId} remaining={work.unenriched} /> : null}
+      {stages.assess > 0 ? <AssessStage programId={programId} remaining={work.unassessed} /> : null}
 
       {!workerUp && !idle ? (
         <p className="note warn" style={{ marginTop: '0.6rem' }}>
@@ -142,6 +69,91 @@ export function RunPanel({
         </p>
       ) : null}
     </section>
+  );
+}
+
+/** The resolve stage: no settled match yet. First hop of the pipeline, so it names all three. */
+function ResolveStage({ programId, remaining }: { programId: string; remaining: number }) {
+  return (
+    <Stage
+      programId={programId}
+      action={startRun}
+      remaining={remaining}
+      verb="Run"
+      lede={
+        <>
+          {remaining} supplier{remaining === 1 ? ' has' : 's have'} no settled match yet. A run
+          takes them in roster order through all three phases — <strong>resolve</strong>, then{' '}
+          <strong>enrich</strong>, then <strong>assess</strong> — each queued as the one before it
+          succeeds, because every phase reads what the last one wrote. A row that parks for review
+          stops there, which is the point of parking it.
+        </>
+      }
+      costNote={
+        <>
+          The estimate is {`$${RUN_BUDGET_USD_PER_SUPPLIER.toFixed(2)}`} per supplier from a
+          committed constant, not a bill. What it actually cost is on the Runs page when it
+          finishes.
+        </>
+      }
+      priced
+    />
+  );
+}
+
+/** The enrich stage: a settled match but no criterion values — picks the pipeline up where it stopped. */
+function EnrichStage({ programId, remaining }: { programId: string; remaining: number }) {
+  return (
+    <Stage
+      programId={programId}
+      action={enrichRoster}
+      remaining={remaining}
+      verb="Enrich"
+      lede={
+        <>
+          {remaining} supplier{remaining === 1 ? ' has' : 's have'} a settled match but no
+          criterion values, so nothing about them can be scored or argued from yet. This picks the
+          pipeline up where it stopped and carries it to the end — <strong>enrich</strong>, then{' '}
+          <strong>assess</strong>.
+        </>
+      }
+      costNote={
+        <>
+          Enrichment itself runs no model; the assessment it chains into does. The estimate is{' '}
+          {`$${RUN_BUDGET_USD_PER_SUPPLIER.toFixed(2)}`} per supplier from the committed
+          constant — a ceiling for all three phases, so two of them will come in under it.
+        </>
+      }
+      priced
+    />
+  );
+}
+
+/** The assess stage: criterion values but no assessment — the only control that moves "assessed" for many at once. */
+function AssessStage({ programId, remaining }: { programId: string; remaining: number }) {
+  return (
+    <Stage
+      programId={programId}
+      action={assessRoster}
+      remaining={remaining}
+      verb="Assess"
+      lede={
+        <>
+          {remaining} supplier{remaining === 1 ? ' has' : 's have'} criterion values but no
+          assessment. Nothing queues an assessment on your behalf — not the worker, not a run — so
+          this is the only control that moves the <em>assessed</em> figure on the strip above for
+          more than one company at a time.
+        </>
+      }
+      costNote={
+        <>
+          An assessment is the one stage here that argues, so it is the one that spends model
+          tokens. The estimate is {`$${RUN_BUDGET_USD_PER_SUPPLIER.toFixed(2)}`} per supplier from
+          the committed constant — a ceiling for the whole pipeline, so this will come in under it.
+        </>
+      }
+      priced
+    />
   );
 }
 

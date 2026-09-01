@@ -2,9 +2,9 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getPooledDb } from '@/db/client';
 import { loadRecommendationPage } from '@/db/queries/recommendation-page';
-import type * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatDock } from '@/components/chat-dock';
+import { Argument, Dissent, Picks } from './sections';
 
 /**
  * The published Recommendation for one Category (SPEC §10).
@@ -13,16 +13,6 @@ import { ChatDock } from '@/components/chat-dock';
  * one having been published — and none ever had, so the link had never been
  * followed and the route had never been written. It would have 404'd on the
  * first Recommendation anybody produced, which is the worst moment to find out.
- *
- * ## What it shows, and in what order
- *
- * The **picks first**, because a Recommendation exists to say who to award to
- * and who to keep as a second source. The prose that argues for them comes
- * under it, headline first.
- *
- * Every sentence carries the same `❡` hop as an Assessment's, into the same
- * evidence page — a Recommendation's sentences are `sentence` rows with
- * Citations exactly like an Assessment's, so they get that for free.
  *
  * ## `human_mark` is recorded and never acted on
  *
@@ -41,14 +31,8 @@ export default async function RecommendationPage({
   const data = await loadRecommendationPage(getPooledDb(), { programId, categoryId });
   if (!data) notFound();
 
-  const {
-    category,
-    program,
-    version,
-    picks,
-    sentences,
-    dissent,
-  } = data;
+  const { category, program, version } = data;
+
   return (
     <main>
       <Breadcrumb
@@ -83,87 +67,9 @@ export default async function RecommendationPage({
             ) : null}
           </p>
 
-          <h2>Picks</h2>
-          <div className="card">
-            {picks.length === 0 ? (
-              <p className="empty" style={{ margin: 0 }}>
-                This recommendation names no supplier.
-              </p>
-            ) : (
-              <table>
-                <caption className="note">
-                  Ranked as the recommendation ranked them, against the unfiltered shortlist.
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Rank</th>
-                    <th scope="col">Role</th>
-                    <th scope="col">Supplier</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {picks.map((pick) => (
-                    <tr key={pick.supplierId}>
-                      <td>{pick.rank}</td>
-                      <td>
-                        <span className="badge">{pick.role.replace(/_/g, ' ')}</span>
-                      </td>
-                      <td>
-                        <Link href={`/program/${programId}/supplier/${pick.supplierId}` as never}>
-                          {pick.rosterName ?? pick.entityLabel ?? 'Supplier'}
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          <h2>The argument</h2>
-          <div className="card">
-            {sentences.length === 0 ? (
-              <p className="empty" style={{ margin: 0 }}>This version published no prose.</p>
-            ) : (
-              groupBySection(sentences).map(([section, rows]) => (
-                <section key={section} style={{ marginTop: '1rem' }}>
-                  <h3 style={{ marginTop: 0 }}>{section.replace(/_/g, ' ')}</h3>
-                  {rows.map((sentence) => (
-                    <p key={sentence.id} style={{ margin: '0 0 0.5rem' }}>
-                      {sentence.text}{' '}
-                      {/* The same hop as an Assessment's, into the same page. */}
-                      <Link
-                        href={`/program/${programId}/citation/${sentence.id}` as never}
-                        title="Go to the evidence"
-                        style={{ textDecoration: 'none' }}
-                      >
-                        ❡
-                      </Link>
-                    </p>
-                  ))}
-                </section>
-              ))
-            )}
-          </div>
-
-          {dissent.some((round) => round.objection) ? (
-            <>
-              <h2>Dissent</h2>
-              <div className="card">
-                <p className="note">
-                  Nobody writes this section. It is what the disagreement left behind — the
-                  objections this version published without resolving.
-                </p>
-                {dissent
-                  .filter((round) => round.objection)
-                  .map((round) => (
-                    <p key={round.id} style={{ margin: '0 0 0.5rem' }}>
-                      {round.objection}
-                    </p>
-                  ))}
-              </div>
-            </>
-          ) : null}
+          <Picks data={data} programId={programId} />
+          <Argument data={data} programId={programId} />
+          <Dissent data={data} />
         </>
       )}
 
@@ -173,12 +79,4 @@ export default async function RecommendationPage({
       <ChatDock programId={programId} />
     </main>
   );
-}
-
-function groupBySection(sentences: (typeof t.sentence.$inferSelect)[]) {
-  const map = new Map<string, (typeof t.sentence.$inferSelect)[]>();
-  for (const sentence of sentences) {
-    map.set(sentence.section, [...(map.get(sentence.section) ?? []), sentence]);
-  }
-  return [...map.entries()];
 }

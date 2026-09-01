@@ -40,26 +40,6 @@ const NO_OUTBOUND_FETCH = [
 /** Raw count: comments and blank lines included. See chokepoint 7 below. */
 const BODY_CAP = { max: 120, skipBlankLines: false, skipComments: false };
 
-/**
- * Files still over the cap, pinned at their worst body's raw line count so
- * nothing can grow while the list shrinks. Bracketed route segments are
- * written `*` because `[programId]` is a character class to a glob.
- */
-const BODY_CAP_RATCHET = {
-  'src/app/program/*/entity/*/page.tsx': 339, // EntityPage
-  'src/app/program/*/page.tsx': 310, // ProgramPage
-  'src/db/queries/program-page.ts': 281, // loadProgramPage
-  'src/app/program/*/category/*/page.tsx': 281, // CategoryPage
-  'src/app/program/*/needs-review/*/page.tsx': 262, // SettleRowPage
-  'src/app/program/*/runs/*/page.tsx': 249, // RunPage
-  'src/db/queries/supplier-page.ts': 192, // loadSupplierPage
-  'src/app/program/*/runs/page.tsx': 166, // RunsPage
-  'scripts/smoke-pages.ts': 146, // main
-  'src/app/program/*/category/*/recommendation/page.tsx': 143, // RecommendationPage
-  'src/domain/supplier-answer.ts': 136, // supplierAnswer
-  'src/app/program/*/category/*/leads.tsx': 135, // LeadsTable
-  'src/app/program/*/run-panel.tsx': 123, // RunPanel
-};
 
 /**
  * One complete block per directory, rather than several partial blocks that
@@ -205,11 +185,14 @@ export default tseslint.config(
    * as a vocabulary rather than as a database — it emits no query and cannot
    * lose a `where` clause.
    *
-   * Server actions and route handlers are deliberately not covered: they write,
-   * and what they may write is the rule above this one.
+   * Every `.tsx` under `src/app` is covered, not only `page.tsx`: since the
+   * one-component-per-`<h2>` split, a page's sections live in a `sections.tsx`
+   * beside it, and a section that queried would be the same mistake one file
+   * over. Server actions and route handlers (`.ts`) are deliberately not
+   * covered: they write, and what they may write is the rule above this one.
    */
   {
-    files: ['src/app/**/page.tsx'],
+    files: ['src/app/**/*.tsx'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
         'error',
@@ -252,10 +235,10 @@ export default tseslint.config(
    * `src/db/seed-data/**`, which is flat data — `ROSTER` at 394 lines is a
    * table, and splitting a table buys files, not legibility.
    *
-   * The ratchet below is the list of files that still break it, each pinned at
-   * its worst body's raw count on 2026-09-01. A file may only leave the list or
-   * have its number go down; nothing in it may get longer. When the list is
-   * empty the rule is the rule.
+   * It landed as a ratchet, not a big bang: on 2026-09-01 thirty-two files were
+   * over the cap, and each was pinned here at its worst body's raw count so
+   * nothing could grow while the list shrank. Four commits later the list was
+   * empty (finding 101). There is no override; the rule is the rule.
    */
   {
     files: ['src/**/*.{ts,tsx}', 'scripts/**/*.ts'],
@@ -264,13 +247,6 @@ export default tseslint.config(
       'max-lines-per-function': ['error', BODY_CAP],
     },
   },
-  ...Object.entries(BODY_CAP_RATCHET).map(([file, max]) => ({
-    files: [file],
-    rules: {
-      'max-lines-per-function': ['error', { ...BODY_CAP, max }],
-    },
-  })),
-
   // The worker, the seed, the migrator and the scripts are processes whose log
   // output IS their user interface, so `console` is the right call there.
   {

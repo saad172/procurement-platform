@@ -1,14 +1,19 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
-import { computeFamilyExposure, unionRiskFactors } from '@/domain/family';
 import { DEFAULT_WEIGHTS } from '@/domain/score';
 import { supplierAnswer } from '@/domain/supplier-answer';
 import { describeSupplier } from '@/domain/supplier-description';
+import {
+  deriveFamilyCoverageAndExposure,
+  deriveFreshestAge,
+  deriveOwnRiskFactorCount,
+  deriveSupplierRank,
+} from '@/domain/derive-supplier-page';
 import { entitySchema, type SayariEntity } from '@/upstream/projections/sayari';
 import { parseViewState } from '@/lib/view-state';
 import { loadEnrichments } from './enrichments';
-import { loadShortlist, loadSupplierSnapshots, rankSentence, scoreSnapshot } from './shortlist';
+import { loadShortlist, loadSupplierSnapshots, scoreSnapshot } from './shortlist';
 
 /**
  * Everything the Supplier page renders, in one read (SPEC §13.1).
@@ -38,20 +43,17 @@ import { loadShortlist, loadSupplierSnapshots, rankSentence, scoreSnapshot } fro
  * `notFound()` is not called here. It is a Next.js control-flow throw and this
  * module knows nothing about routing, so a missing Program or Supplier comes
  * back as `undefined` and the page decides.
+ *
+ * ## Read, then derive
+ *
+ * `readSupplierRows` below is only drizzle calls — no shaping. Everything a
+ * `derive*` function in `@/domain/derive-supplier-page` (or `supplier-answer.ts`,
+ * where that vocabulary already lives) can do without a database call lives
+ * there instead, so it can be unit-tested apart from Postgres.
  */
 export type SupplierPageData = Awaited<ReturnType<typeof loadSupplierPage>>;
 
-export async function loadSupplierPage(
-  db: Database,
-  args: {
-    programId: string;
-    supplierId: string;
-    /** The raw query string. The weight rail is view state, so it is read here. */
-    query: Record<string, string | string[] | undefined>;
-  },
-) {
-  const { programId, supplierId, query } = args;
-
+async function readSupplierRows(db: Database, programId: string, supplierId: string) {
   const program = await db.query.program.findFirst({
     where: eq(t.program.id, programId),
     with: { weights: true },
@@ -62,12 +64,6 @@ export async function loadSupplierPage(
   });
   if (!program || !supplier) return undefined;
 
-  const programDefault = {
-    ...DEFAULT_WEIGHTS,
-    ...Object.fromEntries(program.weights.map((w) => [w.criterionKey, Number(w.weight)])),
-  };
-  const view = parseViewState(query, programDefault);
-
   const match = await db.query.match.findFirst({
     where: eq(t.match.supplierId, supplierId),
     with: { entity: true, attempts: { orderBy: [desc(t.matchAttempt.attemptN)] } },
@@ -76,7 +72,6 @@ export async function loadSupplierPage(
   // Read the STORED criterion values, so the page renders what a Citation
   // points at rather than a recomputation that could differ from it.
   const [snapshot] = await loadSupplierSnapshots(db, { programId, supplierIds: [supplierId] });
-  const scored = snapshot ? scoreSnapshot(snapshot, view.weights, null) : undefined;
 
   const familyRows = match?.entityId
     ? await db
@@ -90,33 +85,6 @@ export async function loadSupplierPage(
         .innerJoin(t.entity, eq(t.entity.id, t.familyMember.memberEntityId))
         .where(eq(t.familyMember.rootEntityId, match.entityId))
     : [];
-
-  /**
-   * **The coverage figures are read, not counted.**
-   *
-   * `explored_count` is what the traversal itself reported, and counting rows
-   * instead answers a different question — how many rows we hold — which is
-   * only ever accidentally the same number. It was not: with the family stored
-   * twice for Bosch and Magna, the badge read *"28 of 100 explored"* against a
-   * truth of 14 of 50. The unique index added alongside this stops the rows
-   * doubling; reading the stored figure is what stops a future divergence from
-   * being invisible.
-   */
-  const coverage = {
-    explored: familyRows[0]?.exploredCount ?? familyRows.length,
-    reachable: familyRows[0]?.reachableCount ?? null,
-  };
-
-  const exposure = computeFamilyExposure(
-    familyRows.map((row) => ({
-      entityId: row.member.id,
-      label: row.member.label,
-      country: row.member.country,
-      factors: unionRiskFactors([{ source: 'getEntity', risk: row.member.risk }]).map((u) => u.factor),
-      fromDeepTraversal: false,
-    })),
-    coverage,
-  );
 
   // Ages are computed in the query, not during render: reading a clock while
   // rendering is not idempotent, and one read per request is the right number.
@@ -139,20 +107,65 @@ export async function loadSupplierPage(
     : [];
 
   /**
-   * **Who this company is**, out of its own stored payload.
-   *
-   * Every fact in the description has been on disk since the first enrichment
-   * ran and none of it reached a page: the attribute projection dropped it
-   * (BUILD-NOTES finding 90). It is projected here rather than stored flat
-   * because it is a *reading* of the payload — the ranking rule that decides
-   * which activity leads is one we may change, and re-deriving it from the
-   * cached body costs nothing and spends no credits.
+   * **Who this company is**, out of its own stored payload. Every fact in the
+   * description has been on disk since the first enrichment ran and none of it
+   * reached a page: the attribute projection dropped it (BUILD-NOTES finding
+   * 90). Read here rather than stored flat because it is a *reading* of the
+   * payload — the ranking rule that decides which activity leads is one we
+   * may change, and re-deriving it from the cached body costs nothing and
+   * spends no credits.
    */
   const ownPayload = match?.entity?.upstreamResponseId
     ? await db.query.upstreamResponse.findFirst({
         where: eq(t.upstreamResponse.id, match.entity.upstreamResponseId),
       })
     : undefined;
+
+  const firstCategory = supplier.categories[0]?.category;
+
+  return { program, supplier, match, snapshot, familyRows, enrichments, assessment, version, sentences, dissent, ownPayload, firstCategory };
+}
+
+/** The program's own weight vector, before any URL what-if is applied over it. */
+function parseSupplierWeights(program: { weights: { criterionKey: string; weight: string }[] }) {
+  return {
+    ...DEFAULT_WEIGHTS,
+    ...Object.fromEntries(program.weights.map((w) => [w.criterionKey, Number(w.weight)])),
+  };
+}
+
+export async function loadSupplierPage(
+  db: Database,
+  args: {
+    programId: string;
+    supplierId: string;
+    /** The raw query string. The weight rail is view state, so it is read here. */
+    query: Record<string, string | string[] | undefined>;
+  },
+) {
+  const { programId, supplierId, query } = args;
+
+  const rows = await readSupplierRows(db, programId, supplierId);
+  if (!rows) return undefined;
+  const { program, supplier, match, snapshot, familyRows, enrichments } = rows;
+  const { version, sentences, dissent, ownPayload, firstCategory } = rows;
+
+  const programDefault = parseSupplierWeights(program);
+  const view = parseViewState(query, programDefault);
+  const scored = snapshot ? scoreSnapshot(snapshot, view.weights, null) : undefined;
+
+  /**
+   * Fetched here rather than inside `readSupplierRows`, because it genuinely
+   * depends on `view` — the live weight rail — not only on the Supplier and
+   * Program rows. A Shortlist read that used the program's stored default
+   * instead would leave the rank frozen while the weight rail above it moved.
+   */
+  const shortlist = firstCategory
+    ? await loadShortlist(db, { programId, categoryId: firstCategory.id, weights: view.weights })
+    : undefined;
+
+  const { coverage, exposure } = deriveFamilyCoverageAndExposure(familyRows);
+
   let profile: SayariEntity | undefined;
   if (ownPayload) {
     const parsed = entitySchema.safeParse(ownPayload.body);
@@ -162,40 +175,14 @@ export async function loadSupplierPage(
   }
   const described = profile ? describeSupplier(profile) : undefined;
 
-  /**
-   * The rank, against the **unfiltered** Shortlist of the first category this
-   * Supplier bids on — a Supplier page always states it, whatever a filter is
-   * doing above it, because "6th of 9" is the figure that gives a score a scale.
-   */
-  const firstCategory = supplier.categories[0]?.category;
-  const shortlist = firstCategory
-    ? await loadShortlist(db, { programId, categoryId: firstCategory.id, weights: view.weights })
-    : undefined;
-  const rank = shortlist
-    ? rankSentence(
-        shortlist.ranked.find((row) => row.supplierId === supplierId),
-        shortlist.totalCount,
-      )
-    : 'not ranked';
-
-  /** Risk factors on the company itself, as against on its family. */
-  const ownRiskFactors = unionRiskFactors([
-    { source: 'getEntity', risk: match?.entity?.risk ?? null },
-  ]).length;
-
-  const freshest = enrichments.reduce<number | null>(
-    (best, e) => (best == null || e.ageDays < best ? e.ageDays : best),
-    null,
-  );
+  const rank = deriveSupplierRank(shortlist, supplierId);
+  const ownRiskFactors = deriveOwnRiskFactorCount(match?.entity?.risk ?? null);
+  const freshest = deriveFreshestAge(enrichments);
 
   const answer = supplierAnswer({
     name: supplier.rosterName ?? match?.entity?.label ?? 'This supplier',
     match: match
-      ? {
-          status: match.status,
-          settledBy: match.settledBy,
-          entityLabel: match.entity?.label ?? null,
-        }
+      ? { status: match.status, settledBy: match.settledBy, entityLabel: match.entity?.label ?? null }
       : undefined,
     assessment: version
       ? {
