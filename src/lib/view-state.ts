@@ -15,13 +15,19 @@ import { DEFAULT_WEIGHTS, WEIGHTED_CRITERIA, normaliseWeights, type WeightVector
  * navigation.
  */
 
-/** The five facets. A map region preset is a **camera, not a facet**. */
+/** The six facets. A map region preset is a **camera, not a facet**. */
 export type Facets = {
   country?: string[] | undefined;
   matchStatus?: string[] | undefined;
   riskFlag?: string[] | undefined;
   scoreBand?: string[] | undefined;
   ownershipGroup?: string[] | undefined;
+  /**
+   * Distance to the nearest Plant, in the three bands the roster actually
+   * falls into. A facet rather than a camera: it changes **which** Suppliers
+   * are being talked about, where `region` only changes what is on screen.
+   */
+  proximityBand?: string[] | undefined;
 };
 
 export type ViewState = {
@@ -33,7 +39,14 @@ export type ViewState = {
   mapRegion?: string | undefined;
 };
 
-const FACET_KEYS = ['country', 'matchStatus', 'riskFlag', 'scoreBand', 'ownershipGroup'] as const;
+const FACET_KEYS = [
+  'country',
+  'matchStatus',
+  'riskFlag',
+  'scoreBand',
+  'ownershipGroup',
+  'proximityBand',
+] as const;
 
 /**
  * The weight vector is **keyed, not positional**.

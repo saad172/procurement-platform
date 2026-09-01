@@ -31,6 +31,24 @@
   --bad: #b3261e;
   --amber: #8a6d1f;
 
+  /*
+   * The map's own greys, kept off --rule-2 because that token also draws every
+   * table border, where this much weight would be wrong.
+   *
+   * Measured, like --ink-3 above. Land on water was #f0f2f4 on #f7f8fa, which
+   * is **1.06:1** — a coastline nobody could see. --map-land is 1.29:1 against
+   * the water and --map-coast 1.35:1 against the land: enough to read the
+   * shape, far too little to compete with a supplier dot.
+   *
+   * The ceiling is the dots, not taste. WCAG 1.4.11 asks 3:1 of meaningful
+   * non-text, and --good — the weakest of the three band colours — still holds
+   * **3.67:1** against --map-land. A darker land would buy shape at the cost of
+   * the data drawn on it.
+   */
+  --map-water: #f2f4f7;
+  --map-land: #d7dde5;
+  --map-coast: #bcc4d0;
+
   --radius: 6px;
   --gap: 1rem;
 }
@@ -352,4 +370,248 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 3px;
+}
+
+/* ── The Plant map ──────────────────────────────────────────────────────────
+ *
+ * Full content width, no card. The aspect ratio is the world box's own
+ * (360° × 138°), so a degree of latitude and a degree of longitude occupy the
+ * same number of pixels at every camera and the map is never stretched to fill
+ * a container.
+ */
+.map-shell {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 360 / 138;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--map-water);
+  touch-action: none;
+}
+
+.map-svg { display: block; width: 100%; height: 100%; cursor: grab; }
+.map-svg:active { cursor: grabbing; }
+.map-svg a { cursor: pointer; }
+.map-svg circle { transition: fill-opacity 0.12s ease; }
+.map-svg a:hover circle { fill-opacity: 1; }
+
+.map-zoom {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: flex;
+  gap: 0.25rem;
+}
+
+.map-zoom button {
+  width: 1.7rem;
+  height: 1.7rem;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--ink-2);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+
+.map-zoom button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.map-zoom button:disabled { opacity: 0.4; cursor: default; }
+
+/* Follows the cursor, so it must never sit under it and swallow the hover. */
+.map-tip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 8px));
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--ink-2);
+  white-space: nowrap;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.09);
+}
+
+.map-tip .tip-name { font-weight: 600; color: var(--ink); }
+
+/* The selected dot keeps a ring, so the card always has a visible owner. */
+.map-dot-halo {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.9;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.85;
+}
+
+.map-dot-hit { cursor: pointer; outline: none; }
+.map-dot-hit:focus-visible .map-dot { stroke: var(--accent); stroke-opacity: 1; }
+
+/*
+ * The detail card. Anchored to the dot in percentages, so it stays on its mark
+ * through a pan; translated up and centred so it never sits under the cursor.
+ */
+.map-card {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 12px));
+  z-index: 2;
+  min-width: 13rem;
+  padding: 0.6rem 0.7rem 0.55rem;
+  font-size: 0.8rem;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.13);
+}
+
+.map-card-name {
+  margin: 0 1.1rem 0.4rem 0;
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.map-card-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.6rem;
+  margin: 0 0 0.5rem;
+}
+
+.map-card-facts dt { color: var(--ink-3); }
+.map-card-facts dd { margin: 0; color: var(--ink-2); }
+
+.map-card-open { font-weight: 600; }
+
+.map-card-close {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.35rem;
+  padding: 0 0.2rem;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--ink-3);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.map-card-close:hover { color: var(--ink); }
+
+/*
+ * Cameras and the band key sit ON the map rather than under it. The world box
+ * runs to 60°S, so its bottom strip is empty ocean on every roster this app
+ * will ever show — chrome there costs no data, and the alternative was two
+ * more rows of furniture between the picture and the roster it describes.
+ */
+.map-cameras,
+.map-legend {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+
+.map-cameras { top: 0.6rem; left: 0.6rem; }
+
+.map-legend {
+  bottom: 0.6rem;
+  left: 0.6rem;
+  padding: 0.3rem 0.55rem;
+  background: color-mix(in srgb, var(--paper) 86%, transparent);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.map-cameras .badge { background: color-mix(in srgb, var(--paper) 86%, transparent); }
+.map-key { display: inline-flex; align-items: center; gap: 0.25rem; color: inherit; text-decoration: none; }
+a.map-key:hover { color: var(--accent); }
+.map-note { margin: 0.4rem 0 1.6rem; }
+
+/*
+ * Marks hold their screen size at every camera. `--x`/`--y` are written by the
+ * server in world units; `--k` is the camera's scale, written by the viewport.
+ * Without the counter-scale a supplier dot grows with the zoom and a country
+ * disappears under one company.
+ */
+.map-mark {
+  transform: translate(var(--x), var(--y)) scale(var(--k, 1));
+}
+
+/*
+ * A Plant outranks a Supplier dot visually, because every distance on the map
+ * is measured from one. The shadow lifts it off the landmass without the wide
+ * white disc an earlier cut used, which merged into a blob wherever two Plants
+ * were close.
+ */
+.map-plant rect { filter: drop-shadow(0 0.35px 0.5px rgb(0 0 0 / 0.35)); }
+
+/* The label rides a halo so a supplier on the same city cannot bury it. */
+.map-plant text {
+  fill: var(--ink);
+  stroke: var(--paper);
+  stroke-width: 0.55;
+  paint-order: stroke;
+}
+
+/* Labels and near-band rings only on a camera close enough to hold them. */
+.map-shell[data-detail='off'] .map-plant text,
+.map-shell[data-detail='off'] .map-bands {
+  display: none;
+}
+
+/*
+ * The server's unclustered dots are the map until the client takes over. They
+ * are not a placeholder: with JavaScript off they are the whole data layer.
+ */
+.map-shell.js .map-fallback { display: none; }
+
+/*
+ * A dot is a target, so it answers to the cursor. The old hover moved fill
+ * opacity 0.8 → 1.0, which nobody could see; this lifts the mark instead.
+ */
+.map-dot {
+  transition: transform 0.1s ease, fill-opacity 0.1s ease;
+}
+
+.map-marks a:hover .map-dot {
+  transform: scale(1.35);
+  fill-opacity: 1;
+  stroke-opacity: 1;
+}
+
+.map-cluster { cursor: zoom-in; }
+/*
+ * The count's halo width is set INLINE, in proportion to the mark.
+ *
+ * Anything sized here would be in user units, and the clustered marks live in
+ * camera space — at the Europe camera a mark is ~0.19 units across, so a
+ * plausible-looking 0.5 halo rendered as a blob three times the size of the
+ * cluster it labelled. The counter-scaled `.map-mark` group can afford fixed
+ * widths; these marks cannot.
+ */
+.map-cluster-count {
+  fill: var(--ink);
+  paint-order: stroke;
+}
+
+.map-cluster:hover .map-cluster-count { fill: var(--accent); }
+.map-spider circle:last-child { cursor: zoom-out; }
+
+/*
+ * Painted last, hit-tested never. The Plant marker is an anchor to look at, not
+ * a control — and while it captured the pointer, a Supplier registered in the
+ * same city as a Plant could not be clicked at all. Its hover lives on an
+ * invisible twin below the marks (.map-plant-hits).
+ */
+.map-plant,
+.map-bands {
+  pointer-events: none;
 }

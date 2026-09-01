@@ -18,17 +18,28 @@ export function SupplierTable({
   matchBySupplier,
   assessedIds,
   facets,
+  bandBySupplier,
 }: {
   programId: string;
   suppliers: (typeof t.supplier.$inferSelect)[];
   matchBySupplier: Map<string, { status: string; entityId: string | null; settledBy: string }>;
   assessedIds: Set<string>;
   facets: Facets;
+  /**
+   * Distance band per Supplier, computed once by the page. A Supplier with no
+   * coordinate is absent from this map and therefore fails a band filter —
+   * which is correct: it is `unknown` on proximity, and unknown is not a band.
+   */
+  bandBySupplier: Map<string, string>;
 }) {
   const visible = (supplier: (typeof t.supplier.$inferSelect)) => {
     if (facets.country?.length && !facets.country.includes(supplier.rosterCountry ?? 'unknown')) return false;
     const status = matchBySupplier.get(supplier.id)?.status ?? 'unresolved';
     if (facets.matchStatus?.length && !facets.matchStatus.includes(status)) return false;
+    if (facets.proximityBand?.length) {
+      const band = bandBySupplier.get(supplier.id);
+      if (!band || !facets.proximityBand.includes(band)) return false;
+    }
     return true;
   };
 

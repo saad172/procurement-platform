@@ -12,6 +12,7 @@ import { CountryBreakdown, MatchOutcomes, SharedOwnership, SupplierMap } from '.
 import { RunPanel } from './run-panel';
 import { programmeAnswer } from '@/domain/programme-answer';
 import { loadRuns } from '@/db/queries/runs';
+import { nearestPlant, proximityBand } from '@/domain/geo';
 import { SupplierTable } from './supplier-table';
 
 /**
@@ -44,6 +45,16 @@ export default async function ProgramPage({
 
   const programDefault = Object.fromEntries(program.weights.map((w) => [w.criterionKey, Number(w.weight)]));
   const view = parseViewState(query, programDefault);
+  /**
+   * The page's own query string, threaded into every chart that builds a link.
+   * Without it a chart click discards the weight rail's what-if and the map's
+   * camera — see `facetHref`.
+   */
+  const search = new URLSearchParams(
+    Object.entries(query).flatMap(([key, value]) =>
+      value == null ? [] : Array.isArray(value) ? value.map((v) => [key, v] as [string, string]) : [[key, value] as [string, string]],
+    ),
+  ).toString();
 
   const suppliers = await db.select().from(t.supplier).where(eq(t.supplier.programId, programId));
   const matches = await db
@@ -83,6 +94,66 @@ export default async function ProgramPage({
     .from(t.supplier)
     .leftJoin(t.supplierCategory, eq(t.supplierCategory.supplierId, t.supplier.id))
     .where(and(eq(t.supplier.programId, programId), isNull(t.supplierCategory.categoryId)));
+
+  /**
+   * Where each Supplier sits, for the Plant map.
+   *
+   * The fallback order mirrors `enrich-supplier` exactly — Sayari's own
+   * coordinate on the resolved Profile, then the Nominatim `geocode` row keyed
+   * on the Supplier — because a dot the map draws somewhere the proximity
+   * Criterion measured from somewhere else is two answers to one question.
+   *
+   * A Supplier with neither is **left out rather than placed at a default**,
+   * and the map says how many that is. Proximity scores it `unknown`, which
+   * drops out of the Score; a stand-in coordinate would score it instead.
+   */
+  const profilePoints = await db
+    .select({ supplierId: t.match.supplierId, lat: t.entity.lat, lon: t.entity.lon })
+    .from(t.match)
+    .innerJoin(t.supplier, eq(t.supplier.id, t.match.supplierId))
+    .innerJoin(t.entity, eq(t.entity.id, t.match.entityId))
+    .where(and(eq(t.supplier.programId, programId), eq(t.match.status, 'accepted')));
+
+  const geocodePoints = await db
+    .select({ supplierKey: t.enrichment.subjectKey, lat: t.geocode.lat, lon: t.geocode.lon })
+    .from(t.geocode)
+    .innerJoin(t.enrichment, eq(t.enrichment.id, t.geocode.enrichmentId))
+    .where(eq(t.enrichment.subjectKind, 'address'));
+
+  const pointBySupplier = new Map<string, { lat: number; lon: number }>();
+  for (const row of geocodePoints) {
+    if (row.lat == null || row.lon == null) continue;
+    pointBySupplier.set(row.supplierKey, { lat: row.lat, lon: row.lon });
+  }
+  for (const row of profilePoints) {
+    if (row.lat == null || row.lon == null) continue;
+    pointBySupplier.set(row.supplierId, { lat: row.lat, lon: row.lon });
+  }
+
+  const plantPoints = program.plants.map((p) => ({ code: p.code, city: p.city, lat: p.lat, lon: p.lon }));
+  /**
+   * A Supplier's band, for the roster filter. Computed here rather than in the
+   * map so the table and the dots can never disagree about which band a
+   * company is in — one `nearestPlant` call, two readers.
+   */
+  const bandBySupplier = new Map<string, string>();
+
+  const supplierPoints = suppliers.flatMap((supplier) => {
+    const point = pointBySupplier.get(supplier.id);
+    if (!point) return [];
+    const nearest = nearestPlant(point, plantPoints);
+    if (nearest) bandBySupplier.set(supplier.id, proximityBand(nearest.km));
+    return [
+      {
+        id: supplier.id,
+        name: supplier.rosterName ?? 'a promoted lead',
+        country: supplier.rosterCountry ?? 'unknown',
+        status: matchBySupplier.get(supplier.id)?.status ?? 'not yet run',
+        assessed: assessedIds.has(supplier.id),
+        ...point,
+      },
+    ];
+  });
 
   const bidderCounts = await db
     .select({ categoryId: t.supplierCategory.categoryId })
@@ -242,19 +313,34 @@ export default async function ProgramPage({
         navigates — because view state lives in the URL, a filter is a link.
       */}
       <h3>Where this roster is, and whether resolution worked</h3>
+      {/*
+        The map opens the section at full content width; the other three keep
+        the grid beneath it. It is the only chart here that is a picture of the
+        world rather than of a column, and at a third of the width it was a
+        thumbnail of one.
+      */}
+      <SupplierMap
+        plants={program.plants}
+        suppliers={supplierPoints}
+        supplierTotal={suppliers.length}
+        region={view.mapRegion}
+        programId={programId}
+        activeBands={view.facets.proximityBand ?? []}
+      />
       <div className="grid two">
         <CountryBreakdown
           programId={programId}
           suppliers={suppliers}
           active={view.facets.country ?? []}
+          search={search}
         />
         <MatchOutcomes
           programId={programId}
           suppliers={suppliers}
           matchBySupplier={matchBySupplier}
           active={view.facets.matchStatus ?? []}
+          search={search}
         />
-        <SupplierMap plants={program.plants} region={view.mapRegion} programId={programId} />
         <SharedOwnership matchBySupplier={matchBySupplier} suppliers={suppliers} />
       </div>
 
@@ -303,6 +389,7 @@ export default async function ProgramPage({
         matchBySupplier={matchBySupplier}
         assessedIds={assessedIds}
         facets={view.facets}
+        bandBySupplier={bandBySupplier}
       />
       <ChatDock programId={programId} />
     </main>

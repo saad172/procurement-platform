@@ -6,6 +6,8 @@
  * along roads — it becomes more precise-looking, which is worse.
  */
 
+import { PROXIMITY_ANCHOR_MAX_KM } from './scoring/anchors';
+
 const EARTH_RADIUS_KM = 6371;
 
 export type Point = { lat: number; lon: number };
@@ -41,4 +43,42 @@ export function nearestPlant(
     if (!best || km < best.km) best = { code: plant.code, city: plant.city, km };
   }
   return best;
+}
+
+/**
+ * The three distance bands, and why there are exactly three.
+ *
+ * Not chosen — **measured**. `PROXIMITY_ANCHOR_MAX_KM`'s own note records the
+ * roster at 14 rows in 48–824 km, 20 in 6 082–7 039 km and 16 in
+ * 10 102–11 878 km, with **nothing at all between 824 km and 6 082 km**. Three
+ * clusters separated by a 5 000 km void is three bands; a continuous ramp would
+ * invent detail across a gap where the roster has no companies.
+ *
+ * The far edge is the anchor itself, because beyond it proximity scores 0 —
+ * the band boundary is where the Criterion stops discriminating rather than an
+ * arbitrary round number.
+ */
+export const NEAR_BAND_MAX_KM = 1_000;
+
+export type ProximityBand = 'near' | 'mid' | 'far';
+
+export const PROXIMITY_BANDS: readonly ProximityBand[] = ['near', 'mid', 'far'];
+
+export function proximityBand(km: number): ProximityBand {
+  if (km <= NEAR_BAND_MAX_KM) return 'near';
+  if (km <= PROXIMITY_ANCHOR_MAX_KM) return 'mid';
+  return 'far';
+}
+
+/**
+ * Band labels are ranges, never ceilings: "under 8 000 km" is equally true of
+ * the near band, and a legend whose entries are not disjoint is worse than no
+ * legend at all.
+ */
+export function proximityBandLabel(band: ProximityBand): string {
+  const near = NEAR_BAND_MAX_KM.toLocaleString('en-US');
+  const far = PROXIMITY_ANCHOR_MAX_KM.toLocaleString('en-US');
+  if (band === 'near') return `under ${near} km`;
+  if (band === 'mid') return `${near}–${far} km`;
+  return `beyond ${far} km`;
 }

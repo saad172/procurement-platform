@@ -1,5 +1,16 @@
 import Link from 'next/link';
 import type * as t from '@/db/schema';
+import {
+  NEAR_BAND_MAX_KM,
+  nearestPlant,
+  proximityBand,
+  proximityBandLabel,
+  PROXIMITY_BANDS,
+  type ProximityBand,
+} from '@/domain/geo';
+import { MapViewport, type Camera } from './map-viewport';
+import type { Mark } from './map-marks';
+import world from './world-110m.json';
 
 /**
  * The four Programme charts (SPEC §13.2).
@@ -24,11 +35,26 @@ import type * as t from '@/db/schema';
 type Supplier = typeof t.supplier.$inferSelect;
 type MatchRow = { supplierId: string; status: string; entityId: string | null; settledBy: string };
 
-/** A link that toggles one facet value, keeping every other parameter. */
-function facetHref(programId: string, facet: string, value: string, active: readonly string[]): string {
+/**
+ * A link that toggles one facet value, **keeping every other parameter**.
+ *
+ * `search` is the page's current query string, and it is not optional
+ * decoration: without it a chart click silently discarded the weight rail's
+ * what-if and the map's camera, so clicking a band would have thrown you back
+ * to the world view mid-investigation. The comment here claimed this behaviour
+ * before the parameter existed to deliver it.
+ */
+function facetHref(
+  programId: string,
+  facet: string,
+  value: string,
+  active: readonly string[],
+  search: string,
+): string {
   const next = active.includes(value) ? active.filter((v) => v !== value) : [...active, value];
-  const params = new URLSearchParams();
+  const params = new URLSearchParams(search);
   if (next.length > 0) params.set(facet, next.join(','));
+  else params.delete(facet);
   params.set('from', `${facet}_chart`);
   const query = params.toString();
   return `/program/${programId}${query ? `?${query}` : ''}`;
@@ -40,10 +66,12 @@ export function CountryBreakdown({
   programId,
   suppliers,
   active,
+  search,
 }: {
   programId: string;
   suppliers: Supplier[];
   active: string[];
+  search: string;
 }) {
   const counts = new Map<string, number>();
   for (const supplier of suppliers) {
@@ -59,7 +87,7 @@ export function CountryBreakdown({
       {rows.map(([country, count]) => (
         <Link
           key={country}
-          href={facetHref(programId, 'country', country, active) as never}
+          href={facetHref(programId, 'country', country, active, search) as never}
           style={{ display: 'block', color: 'inherit', textDecoration: 'none', marginBottom: '0.3rem' }}
         >
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.85rem' }}>
@@ -91,11 +119,13 @@ export function MatchOutcomes({
   suppliers,
   matchBySupplier,
   active,
+  search,
 }: {
   programId: string;
   suppliers: Supplier[];
   matchBySupplier: Map<string, MatchRow>;
   active: string[];
+  search: string;
 }) {
   const buckets: Record<string, number> = { accepted: 0, needs_review: 0, not_found: 0, unresolved: 0 };
   const settledBy: Record<string, number> = {};
@@ -118,7 +148,7 @@ export function MatchOutcomes({
       {Object.entries(buckets).map(([status, count]) => (
         <Link
           key={status}
-          href={facetHref(programId, 'matchStatus', status, active) as never}
+          href={facetHref(programId, 'matchStatus', status, active, search) as never}
           style={{ display: 'block', color: 'inherit', textDecoration: 'none', marginBottom: '0.3rem' }}
         >
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.85rem' }}>
@@ -154,73 +184,330 @@ export function MatchOutcomes({
 
 // ── 3. Suppliers vs Plants — how far from the Plants ─────────────────────────
 
+/**
+ * One fixed world coordinate space, and every camera is a rectangle inside it.
+ *
+ * The whole world is projected **once**, on the server, and the SVG `viewBox`
+ * does the framing. That is what lets a named camera work with JavaScript off,
+ * lets pan and zoom be arithmetic on four numbers rather than a re-projection,
+ * and keeps `world-110m.json` on the server — the browser is sent marks, never
+ * geometry.
+ */
+const WORLD_BOX = [-180, -60, 180, 78] as const;
+const WORLD_W = 100;
+const WORLD_H = ((WORLD_BOX[3] - WORLD_BOX[1]) / (WORLD_BOX[2] - WORLD_BOX[0])) * WORLD_W;
+
+/**
+ * The tightest camera, in degrees of longitude.
+ *
+ * A **precision** limit, not a rendering one. Every Supplier coordinate is a
+ * registered address and every Plant a city centroid ±5 km; below roughly this
+ * width a dot is drawn smaller than its own error bar and begins to assert a
+ * street corner. `geo.ts` refuses to route distances along roads for the same
+ * reason — it would be more precise-looking, which is worse.
+ */
+const MIN_CAMERA_DEG = 12;
+
+/** Degrees are square in this projection: 360° over 100 units, 138° over 38.3. */
+const UNITS_PER_DEGREE = WORLD_W / (WORLD_BOX[2] - WORLD_BOX[0]);
+const KM_PER_DEGREE = 111;
+
 const REGIONS = [
-  { key: 'world', label: 'World', box: [-180, -60, 180, 75] },
+  { key: 'world', label: 'World', box: WORLD_BOX },
   { key: 'north-america', label: 'N. America', box: [-130, 14, -60, 55] },
   { key: 'europe', label: 'Europe', box: [-12, 35, 32, 62] },
   { key: 'east-asia', label: 'E. Asia', box: [95, 18, 148, 48] },
 ] as const;
 
+const BAND_FILL: Record<ProximityBand, string> = {
+  near: 'var(--good)',
+  mid: 'var(--warn)',
+  far: 'var(--bad)',
+};
+
+const lonToWorld = (lon: number) => ((lon - WORLD_BOX[0]) / (WORLD_BOX[2] - WORLD_BOX[0])) * WORLD_W;
+const latToWorld = (lat: number) => ((WORLD_BOX[3] - lat) / (WORLD_BOX[3] - WORLD_BOX[1])) * WORLD_H;
+
+/** A region box as a camera in world units, with the world's aspect kept. */
+function cameraFor(box: readonly [number, number, number, number]): Camera {
+  const x = lonToWorld(box[0]);
+  const w = lonToWorld(box[2]) - x;
+  const h = w * (WORLD_H / WORLD_W);
+  // Centred on the box's own latitude span: a region's aspect rarely matches
+  // the world's, and letting the height follow the width keeps degrees square.
+  const midY = (latToWorld(box[1]) + latToWorld(box[3])) / 2;
+  return { x, y: Math.min(Math.max(midY - h / 2, 0), WORLD_H - h), w, h };
+}
+
+export type SupplierPoint = {
+  id: string;
+  name: string;
+  country: string;
+  status: string;
+  assessed: boolean;
+  lat: number;
+  lon: number;
+};
+
 export function SupplierMap({
   plants,
+  suppliers,
+  supplierTotal,
   region,
   programId,
+  activeBands,
 }: {
   plants: (typeof t.plant.$inferSelect)[];
+  suppliers: SupplierPoint[];
+  supplierTotal: number;
   region: string | undefined;
   programId: string;
+  activeBands: string[];
 }) {
   const active = REGIONS.find((r) => r.key === region) ?? REGIONS[0];
-  const [minLon, minLat, maxLon, maxLat] = active.box;
-  const project = (lon: number, lat: number) => ({
-    x: ((lon - minLon) / (maxLon - minLon)) * 100,
-    y: ((maxLat - lat) / (maxLat - minLat)) * 100,
+
+  // Every ring, every time. Clipping to the current camera would be cheaper by
+  // about a third, and would leave nothing to pan into.
+  const paths: string[] = [];
+  for (const country of world as { id: string; r: number[][] }[]) {
+    for (const ring of country.r) {
+      let d = '';
+      for (let i = 0; i < ring.length; i += 2) {
+        d += `${i === 0 ? 'M' : 'L'}${lonToWorld(ring[i]!).toFixed(2)} ${latToWorld(ring[i + 1]!).toFixed(2)}`;
+      }
+      paths.push(`${d}Z`);
+    }
+  }
+
+  const plantPoints = plants.map((p) => ({ code: p.code, city: p.city, lat: p.lat, lon: p.lon }));
+  const placed = suppliers.map((supplier) => {
+    const nearest = nearestPlant({ lat: supplier.lat, lon: supplier.lon }, plantPoints);
+    return { supplier, nearest, band: nearest ? proximityBand(nearest.km) : undefined };
   });
-  const inView = plants.filter(
-    (p) => p.lon >= minLon && p.lon <= maxLon && p.lat >= minLat && p.lat <= maxLat,
-  );
+
+  /**
+   * The mark payload: already projected, already measured. The browser is sent
+   * positions and numbers, never coordinates to re-project or geometry to
+   * re-draw — about 4 KB for 46 suppliers.
+   */
+  const marks: Mark[] = placed.map(({ supplier, nearest, band }) => ({
+    id: supplier.id,
+    name: supplier.name,
+    x: lonToWorld(supplier.lon),
+    y: latToWorld(supplier.lat),
+    band: band ?? null,
+    km: nearest ? Math.round(nearest.km) : null,
+    plant: nearest ? `${nearest.code} · ${nearest.city}` : null,
+    country: supplier.country,
+    status: supplier.status,
+    assessed: supplier.assessed,
+  }));
+
+  const unplaced = supplierTotal - suppliers.length;
+  const filtering = activeBands.length > 0;
 
   return (
-    <section className="card">
+    <>
       <h3>How far from the plants</h3>
-      <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.6rem', flexWrap: 'wrap' }}>
-        {REGIONS.map((r) => (
-          <Link
-            key={r.key}
-            href={`/program/${programId}?region=${r.key}` as never}
-            className="badge"
-            style={r.key === active.key ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
-          >
-            {r.label}
-          </Link>
-        ))}
-      </div>
-      <svg viewBox="0 0 100 60" style={{ width: '100%', background: 'var(--paper-2)', borderRadius: 4 }}>
-        {plants.map((plant) => {
-          const { x, y } = project(plant.lon, plant.lat);
-          const visible = x >= 0 && x <= 100 && y >= 0 && y <= 100;
-          if (!visible) return null;
-          return (
-            <g key={plant.id}>
-              <rect x={x - 1.2} y={(y * 0.6) - 1.2} width={2.4} height={2.4} fill="var(--accent)" rx={0.4} />
-              <text x={x + 2} y={(y * 0.6) + 1} fontSize={2.4} fill="var(--ink-2)">
-                {plant.code}
-              </text>
+      {/*
+        Keyed on the camera: picking a named region is a navigation, and a
+        navigation resets any pan/zoom drift rather than leaving you framed on
+        somewhere you did not ask for. A remount is the cheapest correct way to
+        say that — no effect re-syncing state after the fact.
+      */}
+      <MapViewport
+        key={active.key}
+        foreground={
+          <>
+            {/*
+              The near-band ring: 1 000 km of real ground, drawn in map units
+              and therefore NOT counter-scaled — it is a distance, so it must
+              grow when you zoom the way a distance does. An ellipse rather than
+              a circle because equirectangular stretches longitude by 1/cos(lat),
+              and a true circle drawn as one here would misstate where the band
+              falls. It answers the question the colours raise: a dot is green
+              *because it sits inside one of these*.
+            */}
+            <g
+              className="map-bands"
+              fill="none"
+              stroke="var(--accent)"
+              strokeOpacity={0.4}
+              strokeDasharray="1.2 1.2"
+            >
+              {plants.map((plant) => (
+                <ellipse
+                  key={plant.id}
+                  cx={lonToWorld(plant.lon)}
+                  cy={latToWorld(plant.lat)}
+                  rx={
+                    (NEAR_BAND_MAX_KM /
+                      (KM_PER_DEGREE * Math.cos((plant.lat * Math.PI) / 180))) *
+                    UNITS_PER_DEGREE
+                  }
+                  ry={(NEAR_BAND_MAX_KM / KM_PER_DEGREE) * UNITS_PER_DEGREE}
+                  strokeWidth={0.6}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ))}
             </g>
+
+            {/*
+              Plants last and largest. Four fixed points are what every distance
+              on this map is measured from, and they are drawn after the Supplier
+              marks so a cluster of bidders can never hide the anchor they are
+              measured against.
+            */}
+            {plants.map((plant) => (
+              <g
+                key={plant.id}
+                className="map-mark map-plant"
+                aria-hidden="true"
+                style={
+                  {
+                    '--x': `${lonToWorld(plant.lon)}px`,
+                    '--y': `${latToWorld(plant.lat)}px`,
+                  } as React.CSSProperties
+                }
+              >
+                <rect
+                  x={-1}
+                  y={-1}
+                  width={2}
+                  height={2}
+                  rx={0.36}
+                  fill="var(--accent)"
+                  stroke="var(--paper)"
+                  strokeWidth={0.4}
+                />
+                <text y={3.4} textAnchor="middle" fontSize={1.7} fontWeight={650}>
+                  {plant.code}
+                </text>
+              </g>
+            ))}
+          </>
+        }
+        initial={cameraFor(active.box)}
+        worldWidth={WORLD_W}
+        worldHeight={WORLD_H}
+        minWidth={(MIN_CAMERA_DEG / (WORLD_BOX[2] - WORLD_BOX[0])) * WORLD_W}
+        regions={REGIONS.map((r) => ({
+          key: r.key,
+          label: r.label,
+          camera: cameraFor(r.box),
+        }))}
+        activeRegion={active.key}
+        bands={PROXIMITY_BANDS.map((band) => ({
+          key: band,
+          label: proximityBandLabel(band),
+          fill: BAND_FILL[band],
+        }))}
+        marks={marks}
+        plantPoints={plants.map((plant) => ({
+          x: lonToWorld(plant.lon),
+          y: latToWorld(plant.lat),
+        }))}
+        programId={programId}
+        activeBands={activeBands}
+      >
+        <g fill="var(--map-land)" stroke="var(--map-coast)" strokeWidth={0.5} strokeLinejoin="round">
+          {paths.map((d, i) => (
+            <path key={i} d={d} vectorEffect="non-scaling-stroke" />
+          ))}
+        </g>
+
+        {/*
+          Dimming is decided on the SERVER, because a band selection is URL
+          state. The client is never told which band is chosen — it would only
+          be able to reproduce a decision already made.
+
+          The dimmed dots stay drawn rather than being removed: the map is the
+          control you would use to change your mind, and a band you cannot see
+          is a band you cannot click your way back out of (charts.tsx's rule for
+          the bars, applied to dots).
+        */}
+        <g className="map-fallback">
+        {placed.map(({ supplier, nearest, band }) => {
+          const dimmed = filtering && (!band || !activeBands.includes(band));
+          return (
+            <a key={supplier.id} href={`/program/${programId}/supplier/${supplier.id}`}>
+              {/*
+                Position is a CSS transform, not cx/cy, so the mark can be
+                counter-scaled by the camera. A radius in world units quadruples
+                on screen every time you halve the viewBox — at the Europe
+                camera the dots swallowed the continent.
+              */}
+              <circle
+                className="map-mark"
+                style={
+                  {
+                    '--x': `${lonToWorld(supplier.lon)}px`,
+                    '--y': `${latToWorld(supplier.lat)}px`,
+                  } as React.CSSProperties
+                }
+                r={0.62}
+                fill={band ? BAND_FILL[band] : 'var(--ink-3)'}
+                fillOpacity={dimmed ? 0.12 : 0.8}
+                data-tip={
+                  nearest
+                    ? `${supplier.name}|${Math.round(nearest.km).toLocaleString('en-US')} km to ${nearest.code} · ${nearest.city}`
+                    : supplier.name
+                }
+              />
+            </a>
           );
         })}
-      </svg>
+        </g>
+
+
+        {/*
+          Plant hit targets, drawn invisibly BELOW the Supplier marks.
+
+          The visible Plant markers sit on top of everything so the anchor is
+          never lost behind the bidders — but on top also meant they swallowed
+          the click: Nemak is registered in Ramos Arizpe, which is exactly where
+          P4 is, so its dot was unreachable. Splitting the marker from its hit
+          target gives both: the Plant is painted last, hit-tested first, and a
+          Supplier dot lying over one wins the pointer because it is nearer the
+          top of THIS layer.
+        */}
+        <g className="map-plant-hits">
+          {plants.map((plant) => (
+            <rect
+              key={plant.id}
+              className="map-mark"
+              style={
+                {
+                  '--x': `${lonToWorld(plant.lon)}px`,
+                  '--y': `${latToWorld(plant.lat)}px`,
+                } as React.CSSProperties
+              }
+              x={-1}
+              y={-1}
+              width={2}
+              height={2}
+              fill="transparent"
+              data-tip={`${plant.code} · ${plant.city}|${plant.role}|your plant · city centroid ±5 km`}
+              data-tip-x={lonToWorld(plant.lon)}
+              data-tip-y={latToWorld(plant.lat)}
+            />
+          ))}
+        </g>
+      </MapViewport>
+
       {/*
-        "N of 50 in view" is not decoration: a single world view letterboxes
-        badly and silently hides clusters, so the count is what tells you the
-        camera is cropping.
+        One line, not the paragraph it replaced. It survives because SPEC §1681
+        seeds every Plant at city precision "labelled as such, because a city
+        centroid is not a factory" — and because a map that draws 46 dots for a
+        50-row roster and never says so lets a reader conclude the roster is
+        fully mapped.
       */}
-      <p className="note" style={{ marginTop: '0.5rem' }}>
-        {inView.length} of {plants.length} plants in view. Every plant is a city centroid, ±5 km — a
-        centroid is not a factory, and proximity is measured from a registered address that is not one
-        either.
+      <p className="note map-note">
+        {suppliers.length} of {supplierTotal} placed
+        {unplaced > 0 ? ` · ${unplaced} without a coordinate, unknown on proximity rather than distant` : ''}{' '}
+        · city centroids, ±5 km
       </p>
-    </section>
+    </>
   );
 }
 
