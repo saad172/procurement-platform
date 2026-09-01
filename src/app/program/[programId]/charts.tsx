@@ -249,27 +249,16 @@ export type SupplierPoint = {
   lon: number;
 };
 
-export function SupplierMap({
-  plants,
-  suppliers,
-  supplierTotal,
-  region,
-  programId,
-  activeBands,
-}: {
-  plants: (typeof t.plant.$inferSelect)[];
-  suppliers: SupplierPoint[];
-  supplierTotal: number;
-  region: string | undefined;
-  programId: string;
-  activeBands: string[];
-}) {
-  const active = REGIONS.find((r) => r.key === region) ?? REGIONS[0];
-
-  // Every ring, every time. Clipping to the current camera would be cheaper by
-  // about a third, and would leave nothing to pan into.
+/**
+ * Every ring, every time. Clipping to the current camera would be cheaper by
+ * about a third, and would leave nothing to pan into.
+ *
+ * Pure: reads no component state, so `SupplierMap` can call it once per
+ * render without a `useMemo` to reason about.
+ */
+function projectCountryPaths(features: { id: string; r: number[][] }[]): string[] {
   const paths: string[] = [];
-  for (const country of world as { id: string; r: number[][] }[]) {
+  for (const country of features) {
     for (const ring of country.r) {
       let d = '';
       for (let i = 0; i < ring.length; i += 2) {
@@ -278,19 +267,27 @@ export function SupplierMap({
       paths.push(`${d}Z`);
     }
   }
+  return paths;
+}
 
-  const plantPoints = plants.map((p) => ({ code: p.code, city: p.city, lat: p.lat, lon: p.lon }));
-  const placed = suppliers.map((supplier) => {
+type PlantPoint = { code: string; city: string; lat: number; lon: number };
+type Placed = { supplier: SupplierPoint; nearest: ReturnType<typeof nearestPlant>; band: ProximityBand | undefined };
+
+/** Each Supplier matched to its nearest Plant and the band that distance falls in. */
+function placeSuppliers(suppliers: SupplierPoint[], plantPoints: PlantPoint[]): Placed[] {
+  return suppliers.map((supplier) => {
     const nearest = nearestPlant({ lat: supplier.lat, lon: supplier.lon }, plantPoints);
     return { supplier, nearest, band: nearest ? proximityBand(nearest.km) : undefined };
   });
+}
 
-  /**
-   * The mark payload: already projected, already measured. The browser is sent
-   * positions and numbers, never coordinates to re-project or geometry to
-   * re-draw — about 4 KB for 46 suppliers.
-   */
-  const marks: Mark[] = placed.map(({ supplier, nearest, band }) => ({
+/**
+ * The mark payload: already projected, already measured. The browser is sent
+ * positions and numbers, never coordinates to re-project or geometry to
+ * re-draw — about 4 KB for 46 suppliers.
+ */
+function toMarks(placed: Placed[]): Mark[] {
+  return placed.map(({ supplier, nearest, band }) => ({
     id: supplier.id,
     name: supplier.name,
     x: lonToWorld(supplier.lon),
@@ -302,6 +299,169 @@ export function SupplierMap({
     status: supplier.status,
     assessed: supplier.assessed,
   }));
+}
+
+/**
+ * The near-band ring: 1 000 km of real ground, drawn in map units and
+ * therefore NOT counter-scaled — it is a distance, so it must grow when you
+ * zoom the way a distance does. An ellipse rather than a circle because
+ * equirectangular stretches longitude by 1/cos(lat), and a true circle drawn
+ * as one here would misstate where the band falls. It answers the question
+ * the colours raise: a dot is green *because it sits inside one of these*.
+ */
+function ProximityRings({ plants }: { plants: (typeof t.plant.$inferSelect)[] }) {
+  return (
+    <g className="map-bands" fill="none" stroke="var(--accent)" strokeOpacity={0.4} strokeDasharray="1.2 1.2">
+      {plants.map((plant) => (
+        <ellipse
+          key={plant.id}
+          cx={lonToWorld(plant.lon)}
+          cy={latToWorld(plant.lat)}
+          rx={(NEAR_BAND_MAX_KM / (KM_PER_DEGREE * Math.cos((plant.lat * Math.PI) / 180))) * UNITS_PER_DEGREE}
+          ry={(NEAR_BAND_MAX_KM / KM_PER_DEGREE) * UNITS_PER_DEGREE}
+          strokeWidth={0.6}
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
+    </g>
+  );
+}
+
+/**
+ * Plants last and largest. Four fixed points are what every distance on this
+ * map is measured from, and they are drawn after the Supplier marks so a
+ * cluster of bidders can never hide the anchor they are measured against.
+ */
+function PlantMarkers({ plants }: { plants: (typeof t.plant.$inferSelect)[] }) {
+  return (
+    <>
+      {plants.map((plant) => (
+        <g
+          key={plant.id}
+          className="map-mark map-plant"
+          aria-hidden="true"
+          style={{ '--x': `${lonToWorld(plant.lon)}px`, '--y': `${latToWorld(plant.lat)}px` } as React.CSSProperties}
+        >
+          <rect x={-1} y={-1} width={2} height={2} rx={0.36} fill="var(--accent)" stroke="var(--paper)" strokeWidth={0.4} />
+          <text y={3.4} textAnchor="middle" fontSize={1.7} fontWeight={650}>
+            {plant.code}
+          </text>
+        </g>
+      ))}
+    </>
+  );
+}
+
+function Coastlines({ paths }: { paths: string[] }) {
+  return (
+    <g fill="var(--map-land)" stroke="var(--map-coast)" strokeWidth={0.5} strokeLinejoin="round">
+      {paths.map((d, i) => (
+        <path key={i} d={d} vectorEffect="non-scaling-stroke" />
+      ))}
+    </g>
+  );
+}
+
+/**
+ * Dimming is decided on the SERVER, because a band selection is URL state.
+ * The client is never told which band is chosen — it would only be able to
+ * reproduce a decision already made.
+ *
+ * The dimmed dots stay drawn rather than being removed: the map is the
+ * control you would use to change your mind, and a band you cannot see is a
+ * band you cannot click your way back out of (charts.tsx's rule for the
+ * bars, applied to dots).
+ */
+function SupplierFallbackDots({
+  placed,
+  filtering,
+  activeBands,
+  programId,
+}: {
+  placed: Placed[];
+  filtering: boolean;
+  activeBands: string[];
+  programId: string;
+}) {
+  return (
+    <g className="map-fallback">
+      {placed.map(({ supplier, nearest, band }) => {
+        const dimmed = filtering && (!band || !activeBands.includes(band));
+        return (
+          <a key={supplier.id} href={`/program/${programId}/supplier/${supplier.id}`}>
+            {/*
+              Position is a CSS transform, not cx/cy, so the mark can be
+              counter-scaled by the camera. A radius in world units quadruples
+              on screen every time you halve the viewBox — at the Europe
+              camera the dots swallowed the continent.
+            */}
+            <circle
+              className="map-mark"
+              style={{ '--x': `${lonToWorld(supplier.lon)}px`, '--y': `${latToWorld(supplier.lat)}px` } as React.CSSProperties}
+              r={0.62}
+              fill={band ? BAND_FILL[band] : 'var(--ink-3)'}
+              fillOpacity={dimmed ? 0.12 : 0.8}
+              data-tip={
+                nearest
+                  ? `${supplier.name}|${Math.round(nearest.km).toLocaleString('en-US')} km to ${nearest.code} · ${nearest.city}`
+                  : supplier.name
+              }
+            />
+          </a>
+        );
+      })}
+    </g>
+  );
+}
+
+/**
+ * Plant hit targets, drawn invisibly BELOW the Supplier marks.
+ *
+ * The visible Plant markers sit on top of everything so the anchor is never
+ * lost behind the bidders — but on top also meant they swallowed the click:
+ * Nemak is registered in Ramos Arizpe, which is exactly where P4 is, so its
+ * dot was unreachable. Splitting the marker from its hit target gives both:
+ * the Plant is painted last, hit-tested first, and a Supplier dot lying over
+ * one wins the pointer because it is nearer the top of THIS layer.
+ */
+function PlantHitTargets({ plants }: { plants: (typeof t.plant.$inferSelect)[] }) {
+  return (
+    <g className="map-plant-hits">
+      {plants.map((plant) => (
+        <rect
+          key={plant.id}
+          className="map-mark"
+          style={{ '--x': `${lonToWorld(plant.lon)}px`, '--y': `${latToWorld(plant.lat)}px` } as React.CSSProperties}
+          x={-1}
+          y={-1}
+          width={2}
+          height={2}
+          fill="transparent"
+          data-tip={`${plant.code} · ${plant.city}|${plant.role}|your plant · city centroid ±5 km`}
+          data-tip-x={lonToWorld(plant.lon)}
+          data-tip-y={latToWorld(plant.lat)}
+        />
+      ))}
+    </g>
+  );
+}
+
+type SupplierMapProps = {
+  plants: (typeof t.plant.$inferSelect)[];
+  suppliers: SupplierPoint[];
+  supplierTotal: number;
+  region: string | undefined;
+  programId: string;
+  activeBands: string[];
+};
+
+export function SupplierMap({ plants, suppliers, supplierTotal, region, programId, activeBands }: SupplierMapProps) {
+  const active = REGIONS.find((r) => r.key === region) ?? REGIONS[0];
+  const paths = projectCountryPaths(world as { id: string; r: number[][] }[]);
+
+  const plantPoints = plants.map((p) => ({ code: p.code, city: p.city, lat: p.lat, lon: p.lon }));
+  const placed = placeSuppliers(suppliers, plantPoints);
+  const marks = toMarks(placed);
 
   const unplaced = supplierTotal - suppliers.length;
   const filtering = activeBands.length > 0;
@@ -319,180 +479,25 @@ export function SupplierMap({
         key={active.key}
         foreground={
           <>
-            {/*
-              The near-band ring: 1 000 km of real ground, drawn in map units
-              and therefore NOT counter-scaled — it is a distance, so it must
-              grow when you zoom the way a distance does. An ellipse rather than
-              a circle because equirectangular stretches longitude by 1/cos(lat),
-              and a true circle drawn as one here would misstate where the band
-              falls. It answers the question the colours raise: a dot is green
-              *because it sits inside one of these*.
-            */}
-            <g
-              className="map-bands"
-              fill="none"
-              stroke="var(--accent)"
-              strokeOpacity={0.4}
-              strokeDasharray="1.2 1.2"
-            >
-              {plants.map((plant) => (
-                <ellipse
-                  key={plant.id}
-                  cx={lonToWorld(plant.lon)}
-                  cy={latToWorld(plant.lat)}
-                  rx={
-                    (NEAR_BAND_MAX_KM /
-                      (KM_PER_DEGREE * Math.cos((plant.lat * Math.PI) / 180))) *
-                    UNITS_PER_DEGREE
-                  }
-                  ry={(NEAR_BAND_MAX_KM / KM_PER_DEGREE) * UNITS_PER_DEGREE}
-                  strokeWidth={0.6}
-                  vectorEffect="non-scaling-stroke"
-                />
-              ))}
-            </g>
-
-            {/*
-              Plants last and largest. Four fixed points are what every distance
-              on this map is measured from, and they are drawn after the Supplier
-              marks so a cluster of bidders can never hide the anchor they are
-              measured against.
-            */}
-            {plants.map((plant) => (
-              <g
-                key={plant.id}
-                className="map-mark map-plant"
-                aria-hidden="true"
-                style={
-                  {
-                    '--x': `${lonToWorld(plant.lon)}px`,
-                    '--y': `${latToWorld(plant.lat)}px`,
-                  } as React.CSSProperties
-                }
-              >
-                <rect
-                  x={-1}
-                  y={-1}
-                  width={2}
-                  height={2}
-                  rx={0.36}
-                  fill="var(--accent)"
-                  stroke="var(--paper)"
-                  strokeWidth={0.4}
-                />
-                <text y={3.4} textAnchor="middle" fontSize={1.7} fontWeight={650}>
-                  {plant.code}
-                </text>
-              </g>
-            ))}
+            <ProximityRings plants={plants} />
+            <PlantMarkers plants={plants} />
           </>
         }
         initial={cameraFor(active.box)}
         worldWidth={WORLD_W}
         worldHeight={WORLD_H}
         minWidth={(MIN_CAMERA_DEG / (WORLD_BOX[2] - WORLD_BOX[0])) * WORLD_W}
-        regions={REGIONS.map((r) => ({
-          key: r.key,
-          label: r.label,
-          camera: cameraFor(r.box),
-        }))}
+        regions={REGIONS.map((r) => ({ key: r.key, label: r.label, camera: cameraFor(r.box) }))}
         activeRegion={active.key}
-        bands={PROXIMITY_BANDS.map((band) => ({
-          key: band,
-          label: proximityBandLabel(band),
-          fill: BAND_FILL[band],
-        }))}
+        bands={PROXIMITY_BANDS.map((band) => ({ key: band, label: proximityBandLabel(band), fill: BAND_FILL[band] }))}
         marks={marks}
-        plantPoints={plants.map((plant) => ({
-          x: lonToWorld(plant.lon),
-          y: latToWorld(plant.lat),
-        }))}
+        plantPoints={plants.map((plant) => ({ x: lonToWorld(plant.lon), y: latToWorld(plant.lat) }))}
         programId={programId}
         activeBands={activeBands}
       >
-        <g fill="var(--map-land)" stroke="var(--map-coast)" strokeWidth={0.5} strokeLinejoin="round">
-          {paths.map((d, i) => (
-            <path key={i} d={d} vectorEffect="non-scaling-stroke" />
-          ))}
-        </g>
-
-        {/*
-          Dimming is decided on the SERVER, because a band selection is URL
-          state. The client is never told which band is chosen — it would only
-          be able to reproduce a decision already made.
-
-          The dimmed dots stay drawn rather than being removed: the map is the
-          control you would use to change your mind, and a band you cannot see
-          is a band you cannot click your way back out of (charts.tsx's rule for
-          the bars, applied to dots).
-        */}
-        <g className="map-fallback">
-        {placed.map(({ supplier, nearest, band }) => {
-          const dimmed = filtering && (!band || !activeBands.includes(band));
-          return (
-            <a key={supplier.id} href={`/program/${programId}/supplier/${supplier.id}`}>
-              {/*
-                Position is a CSS transform, not cx/cy, so the mark can be
-                counter-scaled by the camera. A radius in world units quadruples
-                on screen every time you halve the viewBox — at the Europe
-                camera the dots swallowed the continent.
-              */}
-              <circle
-                className="map-mark"
-                style={
-                  {
-                    '--x': `${lonToWorld(supplier.lon)}px`,
-                    '--y': `${latToWorld(supplier.lat)}px`,
-                  } as React.CSSProperties
-                }
-                r={0.62}
-                fill={band ? BAND_FILL[band] : 'var(--ink-3)'}
-                fillOpacity={dimmed ? 0.12 : 0.8}
-                data-tip={
-                  nearest
-                    ? `${supplier.name}|${Math.round(nearest.km).toLocaleString('en-US')} km to ${nearest.code} · ${nearest.city}`
-                    : supplier.name
-                }
-              />
-            </a>
-          );
-        })}
-        </g>
-
-
-        {/*
-          Plant hit targets, drawn invisibly BELOW the Supplier marks.
-
-          The visible Plant markers sit on top of everything so the anchor is
-          never lost behind the bidders — but on top also meant they swallowed
-          the click: Nemak is registered in Ramos Arizpe, which is exactly where
-          P4 is, so its dot was unreachable. Splitting the marker from its hit
-          target gives both: the Plant is painted last, hit-tested first, and a
-          Supplier dot lying over one wins the pointer because it is nearer the
-          top of THIS layer.
-        */}
-        <g className="map-plant-hits">
-          {plants.map((plant) => (
-            <rect
-              key={plant.id}
-              className="map-mark"
-              style={
-                {
-                  '--x': `${lonToWorld(plant.lon)}px`,
-                  '--y': `${latToWorld(plant.lat)}px`,
-                } as React.CSSProperties
-              }
-              x={-1}
-              y={-1}
-              width={2}
-              height={2}
-              fill="transparent"
-              data-tip={`${plant.code} · ${plant.city}|${plant.role}|your plant · city centroid ±5 km`}
-              data-tip-x={lonToWorld(plant.lon)}
-              data-tip-y={latToWorld(plant.lat)}
-            />
-          ))}
-        </g>
+        <Coastlines paths={paths} />
+        <SupplierFallbackDots placed={placed} filtering={filtering} activeBands={activeBands} programId={programId} />
+        <PlantHitTargets plants={plants} />
       </MapViewport>
 
       {/*

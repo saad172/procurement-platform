@@ -46,38 +46,26 @@ const BODY_CAP = { max: 120, skipBlankLines: false, skipComments: false };
  * written `*` because `[programId]` is a character class to a glob.
  */
 const BODY_CAP_RATCHET = {
-  'src/app/program/*/map-viewport.tsx': 474, // MapViewport
   'src/app/program/*/entity/*/page.tsx': 339, // EntityPage
   'src/app/program/*/page.tsx': 310, // ProgramPage
   'src/worker/main.ts': 294, // main
   'src/db/queries/program-page.ts': 281, // loadProgramPage
   'src/app/program/*/category/*/page.tsx': 281, // CategoryPage
   'src/app/program/*/needs-review/*/page.tsx': 262, // SettleRowPage
-  'src/app/program/*/charts.tsx': 261, // SupplierMap
   'src/app/program/*/runs/*/page.tsx': 249, // RunPage
   'src/jobs/resolve.ts': 243, // resolveSupplier
   'src/jobs/enrich-supplier.ts': 239, // enrichSupplier
-  'src/app/program/*/map-marks.tsx': 228, // MapMarks; one arrow inside at 152
   'src/jobs/recommend.ts': 204, // recommendCategory
   'src/jobs/assess.ts': 198, // assessSupplier; buildFrozenInputs at 130
   'src/db/queries/supplier-page.ts': 192, // loadSupplierPage
-  'src/components/chat-dock.tsx': 179, // ChatDock
   'src/jobs/discover.ts': 176, // discoverLeads
   'src/app/program/*/runs/page.tsx': 166, // RunsPage
-  'src/chat/turn.ts': 157, // runChatTurn
-  'src/upstream/call.ts': 151, // call
-  'src/model/run-loop.ts': 151, // runLoop
-  'scripts/remeasure-discriminators.ts': 148, // main
   'scripts/smoke-pages.ts': 146, // main
   'src/app/program/*/category/*/recommendation/page.tsx': 143, // RecommendationPage
   'src/domain/supplier-answer.ts': 136, // supplierAnswer
   'src/app/program/*/category/*/leads.tsx': 135, // LeadsTable
-  'scripts/record-chat-fixture.ts': 135, // main
-  'src/fixtures/record.ts': 130, // recordFixture
   'src/jobs/rounds.ts': 129, // runProposerEvaluatorLoop
-  'src/components/weight-rail.tsx': 127, // WeightRail
   'src/app/program/*/run-panel.tsx': 123, // RunPanel
-  'src/tools/catalog/reads.ts': 121, // one tool handler
 };
 
 /**

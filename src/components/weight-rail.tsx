@@ -29,14 +29,20 @@ const LABELS: Record<string, string> = {
   media_signal: 'Media signal',
 };
 
-export function WeightRail({
-  programDefault,
-  live,
-}: {
+type WeightRailProps = {
   programDefault: Required<WeightVector>;
   /** False where no Score is on the page — then it renders read-only. */
   live: boolean;
-}) {
+};
+
+/**
+ * Reads the live weight vector out of the URL, and writes a change back to it.
+ *
+ * `write` is the one place a slider, a preset or the reset chip ends up: every
+ * gesture becomes a `Required<WeightVector>` plus its own name, and this is
+ * what turns that into a URL.
+ */
+function useWeightRail(programDefault: Required<WeightVector>) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -69,6 +75,12 @@ export function WeightRail({
     },
     [pathname, router, searchParams, programDefault],
   );
+
+  return { weights, isWhatIf, total, write };
+}
+
+export function WeightRail({ programDefault, live }: WeightRailProps) {
+  const { weights, isWhatIf, total, write } = useWeightRail(programDefault);
 
   if (!live) {
     return (

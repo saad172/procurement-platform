@@ -21,6 +21,11 @@ import { readServerSentEvents } from '@/lib/server-sent-events';
  *
  * **Honest cost for the write-up:** the app has exactly one surface where an
  * agent can state an unproven number, and it is the one the user talks to.
+ *
+ * `ChatDock` itself is the toggle and the shell; the Thread — its turns, its
+ * in-flight send, the SSE stream that fills it — lives in `useChatThread`
+ * below, so "where is a message sent" has one place to look regardless of
+ * which of the dock's two shapes (closed button, open panel) is on screen.
  */
 
 type Widget = { toolName: string; widget: { type: string; payload: unknown } };
@@ -43,15 +48,18 @@ type Turn = {
   proposals?: Proposal[];
 };
 
-export function ChatDock({ programId }: { programId: string }) {
+/**
+ * The Thread: its turns, and the one in-flight send.
+ *
+ * ONE IN-FLIGHT TURN PER THREAD: the input is disabled while `busy`, so there
+ * is no interleaving to reason about.
+ */
+function useChatThread(programId: string) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [open, setOpen] = useState(false);
   const [threadId, setThreadId] = useState<string | undefined>();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
-  // ONE IN-FLIGHT TURN PER THREAD: the input is disabled while it runs, so
-  // there is no interleaving to reason about.
   const [busy, setBusy] = useState(false);
 
   async function send() {
@@ -138,6 +146,94 @@ export function ChatDock({ programId }: { programId: string }) {
     }
   }
 
+  return { turns, input, setInput, busy, send };
+}
+
+/**
+ * THE PERMANENT DISCLOSURE. It is not a warning that appears when something
+ * goes wrong — it is a standing statement of what this surface is, because
+ * the exemption it describes is permanent.
+ */
+function ChatDisclosure() {
+  return (
+    <p className="note" style={{ margin: 0, padding: '0.5rem 1rem', background: '#fff7e6', borderBottom: '1px solid var(--rule)' }}>
+      Chat is not citation-checked. The record is the Assessment.
+    </p>
+  );
+}
+
+/** Widgets are FROZEN from the tool's return value, not typed by the model — which is why `render_table` is not a tool. */
+function TurnWidgets({ widgets }: { widgets: Widget[] }) {
+  return (
+    <>
+      {widgets.map((widget, widgetIndex) => (
+        <details key={widgetIndex} className="card" style={{ marginTop: '0.4rem', padding: '0.5rem 0.7rem' }} open>
+          <summary className="note">{widget.toolName} · {widget.widget.type}</summary>
+          <pre className="mono" style={{ margin: '0.4rem 0 0', whiteSpace: 'pre-wrap', maxHeight: '14rem', overflow: 'auto' }}>
+            {JSON.stringify(widget.widget.payload, null, 2).slice(0, 1800)}
+          </pre>
+        </details>
+      ))}
+    </>
+  );
+}
+
+function ChatTranscript({ turns }: { turns: Turn[] }) {
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
+      {turns.length === 0 ? (
+        <p className="note">
+          Ask about a supplier, a shortlist, or what a score is made of. Anything that spends or
+          writes is proposed with an estimate first, and nothing runs until you say so.
+        </p>
+      ) : null}
+
+      {turns.map((turn, index) => (
+        <div key={index} style={{ marginBottom: '1rem' }}>
+          <p className="note" style={{ margin: 0 }}>{turn.role}</p>
+          <p style={{ margin: '0.2rem 0', whiteSpace: 'pre-wrap' }}>{turn.text}</p>
+          {turn.widgets ? <TurnWidgets widgets={turn.widgets} /> : null}
+          {turn.proposals?.map((proposal, proposalIndex) => (
+            <ConfirmGate key={proposalIndex} proposal={proposal} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ChatComposer({
+  input,
+  onChange,
+  busy,
+  onSend,
+}: {
+  input: string;
+  onChange: (value: string) => void;
+  busy: boolean;
+  onSend: () => void;
+}) {
+  return (
+    <div style={{ borderTop: '1px solid var(--rule)', padding: '0.7rem 1rem', display: 'flex', gap: '0.5rem' }}>
+      <input
+        value={input}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => { if (event.key === 'Enter') onSend(); }}
+        disabled={busy}
+        placeholder={busy ? 'Thinking…' : 'Ask something'}
+        style={{ flex: 1, padding: '0.45rem', border: '1px solid var(--rule)', borderRadius: 4 }}
+      />
+      <button type="button" onClick={onSend} disabled={busy} className="badge" style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}>
+        Send
+      </button>
+    </div>
+  );
+}
+
+export function ChatDock({ programId }: { programId: string }) {
+  const [open, setOpen] = useState(false);
+  const { turns, input, setInput, busy, send } = useChatThread(programId);
+
   if (!open) {
     return (
       <button
@@ -166,59 +262,9 @@ export function ChatDock({ programId }: { programId: string }) {
         </button>
       </header>
 
-      {/*
-        THE PERMANENT DISCLOSURE. It is not a warning that appears when something
-        goes wrong — it is a standing statement of what this surface is, because
-        the exemption it describes is permanent.
-      */}
-      <p className="note" style={{ margin: 0, padding: '0.5rem 1rem', background: '#fff7e6', borderBottom: '1px solid var(--rule)' }}>
-        Chat is not citation-checked. The record is the Assessment.
-      </p>
-
-      <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
-        {turns.length === 0 ? (
-          <p className="note">
-            Ask about a supplier, a shortlist, or what a score is made of. Anything that spends or
-            writes is proposed with an estimate first, and nothing runs until you say so.
-          </p>
-        ) : null}
-
-        {turns.map((turn, index) => (
-          <div key={index} style={{ marginBottom: '1rem' }}>
-            <p className="note" style={{ margin: 0 }}>{turn.role}</p>
-            <p style={{ margin: '0.2rem 0', whiteSpace: 'pre-wrap' }}>{turn.text}</p>
-
-            {/* Widgets are FROZEN from the tool's return value, not typed by
-                the model — which is why `render_table` is not a tool. */}
-            {turn.widgets?.map((widget, widgetIndex) => (
-              <details key={widgetIndex} className="card" style={{ marginTop: '0.4rem', padding: '0.5rem 0.7rem' }} open>
-                <summary className="note">{widget.toolName} · {widget.widget.type}</summary>
-                <pre className="mono" style={{ margin: '0.4rem 0 0', whiteSpace: 'pre-wrap', maxHeight: '14rem', overflow: 'auto' }}>
-                  {JSON.stringify(widget.widget.payload, null, 2).slice(0, 1800)}
-                </pre>
-              </details>
-            ))}
-
-            {turn.proposals?.map((proposal, proposalIndex) => (
-              <ConfirmGate key={proposalIndex} proposal={proposal} />
-            ))}
-          </div>
-        ))}
-      </div>
-
-      <div style={{ borderTop: '1px solid var(--rule)', padding: '0.7rem 1rem', display: 'flex', gap: '0.5rem' }}>
-        <input
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => { if (event.key === 'Enter') void send(); }}
-          disabled={busy}
-          placeholder={busy ? 'Thinking…' : 'Ask something'}
-          style={{ flex: 1, padding: '0.45rem', border: '1px solid var(--rule)', borderRadius: 4 }}
-        />
-        <button type="button" onClick={() => void send()} disabled={busy} className="badge" style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}>
-          Send
-        </button>
-      </div>
+      <ChatDisclosure />
+      <ChatTranscript turns={turns} />
+      <ChatComposer input={input} onChange={setInput} busy={busy} onSend={() => void send()} />
     </aside>
   );
 }
