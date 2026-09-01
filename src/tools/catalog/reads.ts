@@ -31,7 +31,7 @@ const widget = <T>(type: WidgetType, data: T, payload: unknown = data): ReadWith
 
 // ── Family 1: page reads — thin wrappers over the query each page runs for SSR ─
 
-export const getProgram = defineTool({
+const getProgram = defineTool({
   name: 'get_program',
   description:
     'The sourcing program: its plants, categories, weight vector, and how many suppliers are resolved, assessed or waiting on a person.',
@@ -62,7 +62,7 @@ export const getProgram = defineTool({
   },
 });
 
-export const getCategory = defineTool({
+const getCategory = defineTool({
   name: 'get_category',
   description: 'One category of a sourcing program: its HS lines, its trade-action flags, and its bidders.',
   input: z.object({ categoryId: z.string() }),
@@ -80,7 +80,7 @@ export const getCategory = defineTool({
   },
 });
 
-export const getSupplier = defineTool({
+const getSupplier = defineTool({
   name: 'get_supplier',
   description:
     'One supplier: its roster row, its match and how it was settled, its resolved profile, its criterion values and its enrichments.',
@@ -220,7 +220,7 @@ export const getSupplier = defineTool({
  * or *exposure found*. Collapsing the first into the second would report an
  * empty ownership graph in the same ink as a genuinely clean family.
  */
-export const getSupplierFamily = defineTool({
+const getSupplierFamily = defineTool({
   name: 'get_supplier_family',
   description:
     "A supplier's corporate family: the companies reachable downward through ownership, what risk they carry, and how much of the family was explored.",
@@ -342,7 +342,7 @@ export const getRecord = defineTool({
  * legible rather than merely true: a person reading the widget can see which
  * ranking they are looking at.
  */
-export const getShortlist = defineTool({
+const getShortlist = defineTool({
   name: 'get_shortlist',
   description:
     'The suppliers of one program and category, ranked by score, with the weight vector that produced the ranking and the excluded block beneath it.',
@@ -462,7 +462,7 @@ export const getShortlist = defineTool({
  * catalog from pages alone left the `criterion_compare` widget with no tool
  * that could return it. This is that tool.
  */
-export const compareSuppliers = defineTool({
+const compareSuppliers = defineTool({
   name: 'compare_suppliers',
   description:
     'Two or more suppliers side by side on every criterion, with each raw input beside its value.',
@@ -486,7 +486,7 @@ export const compareSuppliers = defineTool({
   },
 });
 
-export const getTrace = defineTool({
+const getTrace = defineTool({
   name: 'get_trace',
   description: "One job's trace: its turns, its tool calls, and why it stopped.",
   input: z.object({ jobId: z.string() }),
@@ -504,7 +504,7 @@ export const getTrace = defineTool({
   },
 });
 
-export const listNeedsReview = defineTool({
+const listNeedsReview = defineTool({
   name: 'list_needs_review',
   description: 'The suppliers whose match the agents could not settle, and are waiting on a person.',
   input: z.object({ programId: z.string() }),
@@ -523,7 +523,7 @@ export const listNeedsReview = defineTool({
   },
 });
 
-export const listLeads = defineTool({
+const listLeads = defineTool({
   name: 'list_leads',
   description:
     'The companies Discover proposed for one category that are on no imported list, with their classification and shipment evidence.',
@@ -591,7 +591,7 @@ export const getUsage = defineTool({
 });
 
 /** Job-only: the brief the assess loop argues from. */
-export const getAssessmentBrief = defineTool({
+const getAssessmentBrief = defineTool({
   name: 'get_assessment_brief',
   description: "Everything one supplier's assessment is written from, as rows rather than prose.",
   input: z.object({ supplierId: z.string(), programId: z.string() }),
@@ -609,7 +609,7 @@ export const getAssessmentBrief = defineTool({
  * Recommendation may not cite an Assessment, and citing agent prose would let
  * an unproven claim be inherited by reference.
  */
-export const getRecommendationBrief = defineTool({
+const getRecommendationBrief = defineTool({
   name: 'get_recommendation_brief',
   description:
     'Everything one recommendation is written from: the shortlist, each supplier’s criterion values and verdict, as row ids rather than prose.',

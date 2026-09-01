@@ -41,7 +41,7 @@ const VERSIONING_CAVEAT =
 const FILTER_CAVEAT =
   'A recommendation is scoped by category and cannot be scoped by a filter, because a filtered set would exclude suppliers with no sentence saying why.';
 
-export const enqueueEnrichment = defineTool({
+const enqueueEnrichment = defineTool({
   name: 'enqueue_enrichment',
   description: 'Re-fetch the six enrichment sources for one supplier, and re-compute its criterion values.',
   input: z.object({ supplierId: z.string(), refresh: z.boolean().optional() }),
@@ -78,7 +78,7 @@ export const enqueueEnrichment = defineTool({
   },
 });
 
-export const enqueueReassess = defineTool({
+const enqueueReassess = defineTool({
   name: 'enqueue_reassess',
   description: 'Re-run the assessment for one supplier against the current numbers.',
   input: z.object({ supplierId: z.string() }),
@@ -106,7 +106,7 @@ export const enqueueReassess = defineTool({
   },
 });
 
-export const enqueueRerunRecommendation = defineTool({
+const enqueueRerunRecommendation = defineTool({
   name: 'enqueue_rerun_recommendation',
   description: 'Re-run the recommendation for one category against the current shortlist.',
   input: z.object({ programId: z.string(), categoryId: z.string() }),
@@ -146,7 +146,7 @@ export const enqueueRerunRecommendation = defineTool({
  *
  * Its caveat is the one that matters most: it **changes no number**.
  */
-export const enqueueDeepTraversal = defineTool({
+const enqueueDeepTraversal = defineTool({
   name: 'enqueue_deep_traversal',
   description: 'Expand one company’s ownership graph beyond the automatic single hop.',
   input: z.object({ entityId: z.string(), programId: z.string() }),
@@ -174,7 +174,7 @@ export const enqueueDeepTraversal = defineTool({
   },
 });
 
-export const enqueueDiscover = defineTool({
+const enqueueDiscover = defineTool({
   name: 'enqueue_discover',
   description: 'Search trade data for companies shipping this category’s HS lines that are on no imported list.',
   input: z.object({ programId: z.string(), categoryId: z.string() }),
@@ -214,7 +214,7 @@ export const enqueueDiscover = defineTool({
  * `DOSSIER_ENABLED` is off in both environments, so this refuses rather than
  * silently enqueuing something the worker will not run.
  */
-export const enqueueDossier = defineTool({
+const enqueueDossier = defineTool({
   name: 'enqueue_dossier',
   description: 'Commission an in-depth research write-up on one supplier, cited like an assessment.',
   input: z.object({ supplierId: z.string() }),
@@ -259,7 +259,7 @@ export const enqueueDossier = defineTool({
  * enqueuing the same Job the page's button does. The settlement writes a **new**
  * `match_attempt`, so an override after an agent accept shows both settlements.
  */
-export const enqueueMatchSettlement = defineTool({
+const enqueueMatchSettlement = defineTool({
   name: 'enqueue_match_settlement',
   description:
     'Settle a supplier’s match on a chosen company, or mark it not found. This enqueues the same job the Needs Review page’s button does.',
@@ -312,7 +312,7 @@ export const enqueueMatchSettlement = defineTool({
  * navigation — which is why there is no `set_weights` tool. Adding one would
  * blur the single line between a what-if and the record.
  */
-export const navigateTo = defineTool({
+const navigateTo = defineTool({
   name: 'navigate_to',
   description:
     'Offer the person a link to a page and view state — including a different weight vector. It renders a link; it never moves the page.',
@@ -334,7 +334,7 @@ export const navigateTo = defineTool({
 });
 
 /** Chat's own supplier lookup by name, so a person need not paste an id. */
-export const findSupplierByName = defineTool({
+const findSupplierByName = defineTool({
   name: 'find_supplier_by_name',
   description: 'Find a supplier of this program by its roster name or part of it.',
   input: z.object({ programId: z.string(), nameContains: z.string() }),

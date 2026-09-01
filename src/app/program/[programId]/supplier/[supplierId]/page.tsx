@@ -36,6 +36,8 @@ import { SupplierActions } from './supplier-actions';
  * The spine is still navigation rather than stacked columns: a column would cap
  * this pane at a column's width, and these are the widest things in the app.
  */
+type Data = NonNullable<Awaited<ReturnType<typeof loadSupplierPage>>>;
+
 export default async function SupplierPage({
   params,
   searchParams,
@@ -49,28 +51,25 @@ export default async function SupplierPage({
   const data = await loadSupplierPage(getPooledDb(), { programId, supplierId, query });
   if (!data) notFound();
 
-  const {
-    program,
-    supplier,
-    programDefault,
-    match,
-    scored,
-    coverage,
-    exposure,
-    enrichments,
-    version,
-    sentences,
-    dissent,
-    described,
-    firstCategory,
-    rank,
-    ownRiskFactors,
-    freshest,
-    answer,
-  } = data;
-
   return (
     <main>
+      <Heading data={data} programId={programId} />
+      <Answer data={data} />
+      <WhereItStands data={data} />
+      <WhoItIs data={data} />
+      <WhatWasConcluded data={data} programId={programId} />
+      <TheWorking data={data} programId={programId} supplierId={supplierId} />
+      <CorporateFamily data={data} programId={programId} />
+      <Enrichments data={data} />
+      <ChatDock programId={programId} />
+    </main>
+  );
+}
+
+function Heading({ data, programId }: { data: Data; programId: string }) {
+  const { program, supplier, match } = data;
+  return (
+    <>
       <Breadcrumb
         trail={[
           { label: program.name, href: `/program/${programId}` },
@@ -133,7 +132,13 @@ export default async function SupplierPage({
           'nothing has been run against this row yet'
         )}
       </p>
-
+    </>
+  );
+}
+function Answer({ data }: { data: Data }) {
+  const { answer } = data;
+  return (
+    <>
       {/* ── The answer, before any of the working ── */}
       <div className={`answer ${answer.tone === 'neutral' ? '' : answer.tone}`}>
         <p className="said">{answer.said}</p>
@@ -159,7 +164,13 @@ export default async function SupplierPage({
           </div>
         ) : null}
       </div>
-
+    </>
+  );
+}
+function WhereItStands({ data }: { data: Data }) {
+  const { supplier, scored, coverage, exposure, firstCategory, rank, ownRiskFactors, freshest } = data;
+  return (
+    <>
       {/* ── Where it stands ── */}
       <h2>Where {supplier.rosterName ?? 'this supplier'} stands</h2>
       <div className="where">
@@ -211,7 +222,13 @@ export default async function SupplierPage({
           criteria is not the same claim as one over six.
         </p>
       ) : null}
-
+    </>
+  );
+}
+function WhoItIs({ data }: { data: Data }) {
+  const { match, described } = data;
+  return (
+    <>
       {/* ── Who it is ── */}
       {described && (described.headline || described.figures.length > 0) ? (
         <>
@@ -273,7 +290,13 @@ export default async function SupplierPage({
           </div>
         </>
       ) : null}
-
+    </>
+  );
+}
+function WhatWasConcluded({ data, programId }: { data: Data; programId: string }) {
+  const { version, sentences, dissent } = data;
+  return (
+    <>
       {/* ── What was concluded ── */}
       <h2 id="assessment">
         <span className="term">What the analysis concluded<i>Assessment</i></span>
@@ -346,6 +369,13 @@ export default async function SupplierPage({
           </>
         )}
       </div>
+    </>
+  );
+}
+function TheWorking({ data, programId, supplierId }: { data: Data; programId: string; supplierId: string }) {
+  const { programDefault, match, scored } = data;
+  return (
+    <>
       {/* ── The working ── */}
       <h2>The working</h2>
       <p className="note" style={{ margin: '-0.4rem 0 0.8rem', maxWidth: '56rem' }}>
@@ -440,7 +470,13 @@ export default async function SupplierPage({
           </table>
         </div>
       ) : null}
-
+    </>
+  );
+}
+function CorporateFamily({ data, programId }: { data: Data; programId: string }) {
+  const { exposure } = data;
+  return (
+    <>
       {/* ── Corporate family ── */}
       <h3>
         <span className="term">Other companies in the group<i>Corporate family</i></span>
@@ -490,7 +526,13 @@ export default async function SupplierPage({
           </p>
         )}
       </div>
-
+    </>
+  );
+}
+function Enrichments({ data }: { data: Data }) {
+  const { enrichments } = data;
+  return (
+    <>
       {/* ── Enrichments ── */}
       <h3>
         <span className="term">What we fetched, and when<i>Enrichments</i></span>
@@ -523,9 +565,7 @@ export default async function SupplierPage({
           </table>
         )}
       </div>
-
-      <ChatDock programId={programId} />
-    </main>
+    </>
   );
 }
 

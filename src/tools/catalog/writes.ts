@@ -38,7 +38,7 @@ const discriminatorVerdict = z.object({
 });
 
 /** The resolver's proposal. It proposes; `settleMatch()` settles. */
-export const submitMatchProposal = defineTool({
+const submitMatchProposal = defineTool({
   name: 'submit_match_proposal',
   description:
     'Propose which company this roster row refers to, with a verdict for every discriminator. You are proposing, not deciding.',
@@ -56,7 +56,7 @@ export const submitMatchProposal = defineTool({
 });
 
 /** The blind evaluator's independent pick. Agreement is our code, not its word. */
-export const submitMatchVerdict = defineTool({
+const submitMatchVerdict = defineTool({
   name: 'submit_match_verdict',
   description:
     'Name which company this roster row refers to, from the candidates in front of you, with a verdict for every discriminator.',
@@ -147,7 +147,7 @@ const citedSentence = z.object({
   pickSupplierId: z.string().optional().describe('Only in the conditions section'),
 });
 
-export const submitAssessment = defineTool({
+const submitAssessment = defineTool({
   name: 'submit_assessment',
   description:
     'Submit the finished assessment. Every sentence must carry a citation to a stored row; the handler resolves every id before inserting anything.',
@@ -164,7 +164,7 @@ export const submitAssessment = defineTool({
   handler: async (input) => ({ ok: true, data: input }),
 });
 
-export const submitRecommendation = defineTool({
+const submitRecommendation = defineTool({
   name: 'submit_recommendation',
   description:
     'Submit the finished recommendation with its typed picks. Every sentence must carry a citation; picks are checked for legality before anything is inserted.',
@@ -193,7 +193,7 @@ export const submitRecommendation = defineTool({
  * (SPEC §11.1). No rationale sentence is written; the reasoning stays
  * inspectable in the Trace.
  */
-export const submitLeadClassification = defineTool({
+const submitLeadClassification = defineTool({
   name: 'submit_lead_classification',
   description: 'Classify this company into one closed category. "unclear" is a real answer and is often the right one.',
   input: z.object({
@@ -218,7 +218,7 @@ export const submitLeadClassification = defineTool({
  *
  * A Dossier is an `assessment` with `kind: 'dossier'`, not a table of its own.
  */
-export const submitDossier = defineTool({
+const submitDossier = defineTool({
   name: 'submit_dossier',
   description:
     'Submit an in-depth research write-up on one supplier. Cited like an assessment: every sentence carries a citation to a stored row.',

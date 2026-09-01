@@ -50,7 +50,7 @@ const spendOneFreeCall = (what: string, source: string) =>
  * Rung R2 (SPEC §6.5). Round 1 offers this and nothing else, so calling an R3
  * rung first is unrepresentable rather than tested for.
  */
-export const findCandidatesByNameTown = defineTool({
+const findCandidatesByNameTown = defineTool({
   name: 'find_candidates_by_name_town',
   description:
     'Search Sayari for companies matching this roster row by name and town, including legal-form and rename variants. Say why you are trying a variant.',
@@ -83,7 +83,7 @@ export const findCandidatesByNameTown = defineTool({
  * sits at the exact roster address of its parent, and matching on the building
  * picks the wrong company.
  */
-export const findCandidatesByAddress = defineTool({
+const findCandidatesByAddress = defineTool({
   name: 'find_candidates_by_address',
   description:
     'Search Sayari by address alone, to see which companies are registered at this building. Never sufficient on its own.',
@@ -111,7 +111,7 @@ export const findCandidatesByAddress = defineTool({
  * It hits only the native-script primary name, so several roster companies
  * return zero on an English search. A zero here is `unavailable`, never `fail`.
  */
-export const findLeiByName = defineTool({
+const findLeiByName = defineTool({
   name: 'find_lei_by_name',
   description:
     'Search GLEIF by legal name. It matches only the native-script primary name, so a zero result means "could not tell", never "no such company".',
@@ -372,7 +372,7 @@ export const sayariNegativeNews = defineTool({
 });
 
 /** 3.6–13.4 s measured. Slow WITHOUT fanning out — the case one enum missed. */
-export const sayariTradeSearch = defineTool({
+const sayariTradeSearch = defineTool({
   name: 'sayari_trade_search',
   description: 'Find companies shipping a given HS line into given arrival countries, from Sayari trade data.',
   input: z.object({
@@ -409,7 +409,7 @@ export const gleifJoinLei = defineTool({
   },
 });
 
-export const gleifSearchName = defineTool({
+const gleifSearchName = defineTool({
   name: 'gleif_search_name',
   description:
     'Search GLEIF by legal name. Matches only the native-script primary name, so a zero result means "could not tell".',
@@ -428,7 +428,7 @@ export const gleifSearchName = defineTool({
   },
 });
 
-export const worldbankIndicator = defineTool({
+const worldbankIndicator = defineTool({
   name: 'worldbank_indicator',
   description: 'One World Bank indicator for one country, at its most recent non-empty value.',
   input: z.object({ country: z.string(), indicator: z.string() }),
