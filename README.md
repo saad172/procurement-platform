@@ -71,7 +71,7 @@ what production runs: the dequeue, the caps, the Trace, the usage rows.
 pnpm enqueue resolve Yazaki          # queue it
 pnpm worker                          # in a second terminal, claim and run it
 pnpm enqueue recommend HAR
-pnpm enqueue resolve Rosoboronexport --test-program   # the arranged fixtures programme
+pnpm enqueue resolve Rosoboronexport --test-program   # the arranged fixtures program
 ```
 
 ### Re-recording a fixture
