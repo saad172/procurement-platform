@@ -12,7 +12,9 @@ type Data = NonNullable<Awaited<ReturnType<typeof loadEntityPage>>>;
 
 /**
  * **Reached from the Assessment, not only from a menu**: clicking a Citation's
- * `❡` navigates here, because a Citation is a hop rather than a tooltip.
+ * `❡` navigates here, because a Citation is a hop rather than a tooltip. A
+ * tooltip would make the evidence something you glance at; a page makes it
+ * somewhere you can stand.
  */
 export function Heading({ data, programId }: { data: Data; programId: string }) {
   const { entity, program } = data;

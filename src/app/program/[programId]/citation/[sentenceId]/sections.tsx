@@ -5,6 +5,22 @@ import type { loadCitationPage } from '@/db/queries/citation-page';
  * The Citation page's one section (SPEC §13.7). A one-`<h2>` page still gets
  * a `sections.tsx` with one component, applied uniformly with every other
  * page — the split is a rule, not a per-page judgment call.
+ *
+ * ## Why one route rather than one per owner
+ *
+ * A Citation belongs to a **sentence**, and a sentence knows what published it:
+ * `sentence_one_owner` guarantees exactly one of an Assessment version or a
+ * Recommendation version. So the trail back is derivable, and the route does
+ * not need the Supplier or the Category in its path to build one. The
+ * Recommendation's sentences get the same page for free, which they will need
+ * the moment one is published.
+ *
+ * ## Why it lists rather than redirects
+ *
+ * 115 of the 169 sentences cite exactly one thing and 54 cite between two and
+ * five, across two different target kinds. Redirecting through would have to
+ * pick one of them and drop the rest silently — and *what else this sentence
+ * rests on* is the question a reader following a citation is usually asking.
  */
 type Data = NonNullable<Awaited<ReturnType<typeof loadCitationPage>>>;
 
