@@ -135,6 +135,39 @@ export default tseslint.config(
     },
   },
 
+  /**
+   * ── One owner for run and job state ──────────────────────────────────────
+   *
+   * Not one of SPEC §2.4's four. It was added after the UI turned out to be a
+   * second owner of the Job state machine: `retryJob` and `retryRun` each
+   * carried the same eight-field requeue payload verbatim, and `run-actions.ts`
+   * had grown its own `resumeRun` that disagreed with the one in `jobs/runs.ts`
+   * about money — `remaining?.n ?? 1` added $3 for a Supplier that did not
+   * exist, at two decimals against the other's four.
+   *
+   * This is the `settleMatch()` argument applied to a Run: the agents propose
+   * and our code settles, and a page proposes rather than settles too.
+   *
+   * A syntax rule rather than an import boundary, because the schema is one
+   * module — `src/db/schema` — that every reader legitimately imports. What is
+   * restricted is the *write*, not the import.
+   */
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/jobs/runs.ts', 'src/db/seed.ts', 'src/db/seed-test-program.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.property.name=/^(update|insert|delete)$/][arguments.0.object.name='t'][arguments.0.property.name=/^(job|run)$/]",
+          message:
+            'Only src/jobs/runs.ts may write the job and run tables. openRun, enqueueJob, dequeueJob, finishJob, requeueJobs, cancelRun, resumeRun and settleRunState are the whole state machine; a second writer is how two retry paths came to hold the same payload and two resume paths came to disagree about money.',
+        },
+      ],
+    },
+  },
+
   // The worker, the seed, the migrator and the scripts are processes whose log
   // output IS their user interface, so `console` is the right call there.
   {

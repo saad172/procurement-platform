@@ -2,12 +2,18 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
 import * as t from '@/db/schema';
-import { enqueueJob, openRun, settleRunState } from '@/jobs/runs';
+import {
+  cancelRun as cancelRunState,
+  enqueueJob,
+  openRun,
+  requeueJobs,
+  resumeRun as resumeRunBudget,
+  settleRunState,
+} from '@/jobs/runs';
 import { loadWorkerHealth, retryableJobs, suppliersNeeding } from '@/db/queries/runs';
-import { RUN_BUDGET_USD_PER_SUPPLIER } from '@/config/constants';
 
 /**
  * The **Run affordance** (SPEC §4.3, §5.1).
@@ -23,11 +29,6 @@ import { RUN_BUDGET_USD_PER_SUPPLIER } from '@/config/constants';
  * fan-outs, and a reviewer who wants to see the shape of the thing should not
  * have to spend the whole budget to do it.
  */
-
-/** What a Run of this size will cost, from the committed constant. */
-function estimate(supplierCount: number): string {
-  return (RUN_BUDGET_USD_PER_SUPPLIER * supplierCount).toFixed(2);
-}
 
 /**
  * Where a click on Run should land.
@@ -179,18 +180,7 @@ export async function retryJob(formData: FormData): Promise<void> {
   const jobId = String(formData.get('jobId'));
 
   const db = getPooledDb();
-  await db
-    .update(t.job)
-    .set({
-      state: 'queued',
-      error: null,
-      terminatedReason: null,
-      startedAt: null,
-      finishedAt: null,
-      lockedAt: null,
-      attempt: sql`${t.job.attempt} + 1`,
-    })
-    .where(eq(t.job.id, jobId));
+  await requeueJobs(db, [jobId]);
 
   // The run is running again the moment one of its jobs is.
   await settleRunState(db, runId);
@@ -218,63 +208,26 @@ export async function retryRun(formData: FormData): Promise<void> {
   const stuck = retryableJobs(jobs, workerUp, nowMs);
   if (stuck.length === 0) return;
 
-  await db
-    .update(t.job)
-    .set({
-      state: 'queued',
-      error: null,
-      terminatedReason: null,
-      startedAt: null,
-      finishedAt: null,
-      lockedAt: null,
-      attempt: sql`${t.job.attempt} + 1`,
-    })
-    .where(
-      inArray(
-        t.job.id,
-        stuck.map((job) => job.id),
-      ),
-    );
+  await requeueJobs(
+    db,
+    stuck.map((job) => job.id),
+  );
 
   await settleRunState(db, runId);
   toRun(programId, runId);
 }
 
 /**
- * **Stop a Run.**
- *
- * Queued Jobs are cancelled so nothing else is ever dequeued for this Run, and
- * the Run itself is marked `cancelled` so the Runs list says what happened
- * rather than showing a run that simply stopped moving.
- *
- * **It does not interrupt a Job already in flight, and the button says so.**
- * The worker holds a claimed Job for the length of its Round and polls nothing;
- * stopping mid-Round would mean either a cancellation channel the worker checks
- * — which is a second control path through the dequeue loop — or killing the
- * process, which is not something a web page should do. What this buys is the
- * thing that actually matters: **the queue stops**. Four in-flight Rounds
- * finish; the forty-three behind them never start.
- *
- * That distinction is why the queued Jobs are cancelled rather than left
- * queued. A Run "stopped" by killing the worker looks identical to one waiting
- * for a worker, and starting a worker later for something else would silently
- * resume it — spending the rest of a budget somebody had decided not to spend.
+ * **Stop a Run**, and say so on the button: it does not interrupt a Job already
+ * in flight. What it buys is that the queue stops — the in-flight Rounds
+ * finish, the ones behind them never start. `cancelRun` in `jobs/runs.ts`
+ * carries the rest of the argument.
  */
 export async function cancelRun(formData: FormData): Promise<void> {
   const programId = String(formData.get('programId'));
   const runId = String(formData.get('runId'));
 
-  const db = getPooledDb();
-  await db
-    .update(t.job)
-    .set({ state: 'cancelled', finishedAt: new Date(), lockedAt: null })
-    .where(and(eq(t.job.runId, runId), eq(t.job.state, 'queued')));
-
-  await db
-    .update(t.run)
-    .set({ state: 'cancelled', finishedAt: new Date() })
-    .where(eq(t.run.id, runId));
-
+  await cancelRunState(getPooledDb(), runId);
   toRun(programId, runId);
 }
 
@@ -370,27 +323,14 @@ export async function resumeRun(formData: FormData): Promise<void> {
   const programId = String(formData.get('programId'));
   const runId = String(formData.get('runId'));
 
-  const db = getPooledDb();
-  const [remaining] = (await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(t.job)
-    .where(and(eq(t.job.runId, runId), inArray(t.job.state, ['queued', 'paused_on_budget'])))) as [
-    { n: number },
-  ];
-
-  await db
-    .update(t.run)
-    .set({
-      state: 'running',
-      budgetUsd: sql`coalesce(${t.run.budgetUsd}, 0) + ${estimate(remaining?.n ?? 1)}`,
-    })
-    .where(eq(t.run.id, runId));
-
-  // The Jobs it paused go back in the queue; the worker picks them up.
-  await db
-    .update(t.job)
-    .set({ state: 'queued' })
-    .where(and(eq(t.job.runId, runId), eq(t.job.state, 'paused_on_budget')));
-
+  /**
+   * `jobs/runs.ts` already had a `resumeRun`, and this file had written a second
+   * one. They were not the same: this one counted `remaining?.n ?? 1`, so
+   * resuming a Run with nothing left to do **added $3 for a Supplier that did
+   * not exist**, and rounded the increment to two decimals against the other's
+   * four. Two implementations of one act, disagreeing about money.
+   */
+  await resumeRunBudget(getPooledDb(), runId);
   toRun(programId, runId);
 }
+

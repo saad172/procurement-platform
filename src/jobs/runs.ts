@@ -219,6 +219,64 @@ export async function finishJob(
 }
 
 /**
+ * Puts stopped Jobs back in the queue.
+ *
+ * **The reset is eight fields, and it lived in two places.** `retryJob` and
+ * `retryRun` each carried their own copy of it, verbatim — so a column added to
+ * `job` tomorrow would have been cleared by one retry path and left stale by
+ * the other, and nothing would have said so. That is the class of mistake
+ * `settleMatch()` exists to prevent for a Match, and Runs never got it.
+ *
+ * `attempt` counts up rather than resetting, because *"this Job has been tried
+ * three times"* is the fact a person deciding whether to try again needs, and
+ * a requeue that erased it would be hiding the argument against itself.
+ *
+ * It does **not** settle the Run — the caller does, because a retry of one Job
+ * and a retry of every stopped Job in a Run are one act each, and both end with
+ * the same single settle.
+ */
+export async function requeueJobs(db: Database, jobIds: readonly string[]): Promise<void> {
+  if (jobIds.length === 0) return;
+  await db
+    .update(t.job)
+    .set({
+      state: 'queued',
+      error: null,
+      terminatedReason: null,
+      startedAt: null,
+      finishedAt: null,
+      lockedAt: null,
+      attempt: sql`${t.job.attempt} + 1`,
+    })
+    .where(inArray(t.job.id, [...jobIds]));
+}
+
+/**
+ * **Stops a Run**: nothing else is ever dequeued for it, and the Runs list says
+ * what happened.
+ *
+ * It does not interrupt a Job already in flight. The worker holds a claimed Job
+ * for the length of its Round and polls nothing, so stopping mid-Round would
+ * need either a cancellation channel through the dequeue loop — a second
+ * control path — or killing the process, which is not a thing a web page should
+ * do. What this buys is the part that matters: **the queue stops.**
+ *
+ * Queued Jobs are cancelled rather than left queued, because a Run stopped by
+ * killing the worker looks identical to one waiting for a worker, and starting
+ * a worker later for something else would silently resume it — spending the
+ * rest of a budget somebody had decided not to spend.
+ */
+export async function cancelRun(db: Database, runId: string): Promise<void> {
+  const finishedAt = new Date();
+  await db
+    .update(t.job)
+    .set({ state: 'cancelled', finishedAt, lockedAt: null })
+    .where(and(eq(t.job.runId, runId), eq(t.job.state, 'queued')));
+
+  await db.update(t.run).set({ state: 'cancelled', finishedAt }).where(eq(t.run.id, runId));
+}
+
+/**
  * Closes a Run once none of its Jobs can still move.
  *
  * A run is `done` when nothing is queued, running or paused — **including when
