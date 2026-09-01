@@ -113,6 +113,25 @@ pnpm check:founding-example   # re-measures the Bosch example the app is built a
 pnpm check:prefilter          # grades the forwarder heuristic against Sayari's own flag
 ```
 
+One check spends nothing but needs the app running, because what it checks is
+the app running:
+
+```bash
+pnpm dev          # in one terminal
+pnpm smoke:pages  # in another — fetches all thirteen pages
+```
+
+**Nothing in the suite touches `src/app`.** Fifty-seven test files cover the
+domain, the jobs, the tools and the two clients, and not one renders a page. So
+`smoke:pages` fetches every route and asserts more than a status code: a page
+that lost its `where` clause still returns 200, renders empty, and passes a
+status check. Each route carries **markers read out of the database** — the
+Program's name, the Supplier's roster name, the Category's name — strings that
+can only be on the page if it loaded the row it is about. A page whose subject
+does not exist yet is skipped by name (*"no Recommendation has been
+published"*) rather than failed, because a check that cries wolf on a fresh
+database is a check people learn to ignore.
+
 The suite is keyless by construction (`docs/SPEC.md` §19.1): it runs off cached
 response bodies, and a cache miss throws naming the key it missed rather than
 falling through to a live call. The honest cost is that **live upstream
