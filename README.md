@@ -100,6 +100,14 @@ pnpm test       # vitest run  (pnpm test:watch to iterate)
 pnpm format     # prettier --write
 ```
 
+> **`pnpm check` is red on a database it did not record against.** Two replays —
+> `assess-replay` (2 tests) and `recommend-replay` (1) — miss at turn 3 on a
+> freshly created `procurement_test`; the other 598 pass. It is characterised in
+> [`docs/BUILD-NOTES.md` finding 98](docs/BUILD-NOTES.md), with seven causes ruled
+> out, the one mechanism still open, and the method that will answer it. It is
+> written down rather than fixed, and saying so here is cheaper than letting you
+> find it.
+
 Two checks spend real Sayari credits and so are scripts rather than tests:
 
 ```bash
