@@ -147,9 +147,23 @@ export async function resolveSupplier(
     jobId?: string | undefined;
   },
 ): Promise<ResolveOutcome> {
-  const { db, upstream } = deps;
+  const candidates = await gatherPrepassCandidates(deps, args);
 
-  // ── Gather the candidates the pre-pass proposed, with their GLEIF witness ──
+  const gate = await runAutoAcceptGate(deps.db, args, candidates);
+  if (gate.outcome) return gate.outcome;
+
+  const rounds = await runAgentRounds(deps, args, candidates, gate);
+  if (rounds.outcome) return rounds.outcome;
+
+  return settleNonConvergence(deps.db, args, rounds.state);
+}
+
+/** Gather the candidates the pre-pass proposed, with their GLEIF witness. */
+async function gatherPrepassCandidates(
+  deps: Pick<ResolveDeps, 'db' | 'upstream'>,
+  args: { prepassEntityIds: string[] },
+): Promise<CandidateFacts[]> {
+  const { db, upstream } = deps;
   const candidates: CandidateFacts[] = [];
   for (const entityId of args.prepassEntityIds) {
     const fetched = await upstream.sayari.getEntity({ id: entityId });
@@ -172,21 +186,38 @@ export async function resolveSupplier(
     candidates.push(facts);
     await upsertEntity(db, fetched.data, fetched.upstreamResponseId);
   }
+  return candidates;
+}
 
-  // ── The auto-accept gate: plain code, zero tokens ────────────────────────
+type AutoAcceptGateResult =
+  | { outcome: ResolveOutcome }
+  | { outcome: null; gateReason: string; ruleCandidateRecords: CandidateRecord[] };
+
+/**
+ * ── The auto-accept gate: plain code, zero tokens ──────────────────────────
+ *
+ * Settles and returns an outcome when the gate accepts; otherwise hands back
+ * the gate's reason and its own-code Discriminator records, which the
+ * no-agent fallback below (`runAgentRounds`) needs verbatim if there is no
+ * `runRound` to hand off to.
+ */
+async function runAutoAcceptGate(
+  db: Database,
+  args: { supplierId: string; roster: RosterRow; jobId?: string | undefined },
+  candidates: CandidateFacts[],
+): Promise<AutoAcceptGateResult> {
   const assessments: CandidateAssessment[] = candidates.map((candidate) => ({
     candidate,
     verdicts: runDiscriminators(args.roster, candidate),
   }));
   const gate = evaluateAutoAccept(assessments);
 
-  const candidateRecords = (which: string): CandidateRecord[] =>
-    assessments.map((a) => ({
-      entityId: a.candidate.entityId,
-      foundByRung: 'R1',
-      queryProvenance: 'batch resolution pre-pass over the roster row',
-      verdicts: [{ reportedBy: which, results: a.verdicts }],
-    }));
+  const ruleCandidateRecords: CandidateRecord[] = assessments.map((a) => ({
+    entityId: a.candidate.entityId,
+    foundByRung: 'R1',
+    queryProvenance: 'batch resolution pre-pass over the roster row',
+    verdicts: [{ reportedBy: 'rules', results: a.verdicts }],
+  }));
 
   if (gate.accepted) {
     await settleMatch(db, {
@@ -197,30 +228,74 @@ export async function resolveSupplier(
       jobId: args.jobId,
       rungsUsed: ['R1'],
       note: gate.reason,
-      candidates: candidateRecords('rules'),
+      candidates: ruleCandidateRecords,
     });
-    return { status: 'accepted', entityId: gate.entityId, settledBy: 'rules', rounds: 0, reason: gate.reason };
+    return {
+      outcome: { status: 'accepted', entityId: gate.entityId, settledBy: 'rules', rounds: 0, reason: gate.reason },
+    };
   }
 
-  // ── The agent Rounds ─────────────────────────────────────────────────────
-  if (!deps.runRound) {
-    // No agent supplied: park the row rather than guess. A parked row never
-    // stalls a run — everything else finishes and the Program page reads
-    // "44 of 50 assessed, 6 waiting on you".
-    const status = sawCandidateInCountry(args.roster, candidates) ? 'needs_review' : 'not_found';
-    await settleMatch(db, {
-      supplierId: args.supplierId,
-      status,
-      entityId: null,
-      settledBy: 'rules',
-      jobId: args.jobId,
-      rungsUsed: ['R1'],
-      note: gate.reason,
-      candidates: candidateRecords('rules'),
-    });
-    return { status, entityId: null, settledBy: 'rules', rounds: 0, reason: gate.reason };
-  }
+  return { outcome: null, gateReason: gate.reason, ruleCandidateRecords };
+}
 
+type NonConvergenceState = {
+  seen: CandidateFacts[];
+  rungsUsed: string[];
+  lastRound: Awaited<ReturnType<NonNullable<ResolveDeps['runRound']>>> | undefined;
+  foundByRung: Map<string, string>;
+};
+
+/**
+ * ── The agent Rounds ────────────────────────────────────────────────────────
+ *
+ * Two ways in: no agent to hand off to, so the row parks on the gate's own
+ * reason (`settleWithoutAgent`); or an agent, so the ladder runs
+ * (`runRoundLadder`), which settles and returns an outcome for a Round that
+ * converges, or the state `settleNonConvergence` needs once it runs out.
+ */
+async function runAgentRounds(
+  deps: ResolveDeps,
+  args: { supplierId: string; roster: RosterRow; jobId?: string | undefined },
+  candidates: CandidateFacts[],
+  gate: { gateReason: string; ruleCandidateRecords: CandidateRecord[] },
+): Promise<{ outcome: ResolveOutcome } | { outcome: null; state: NonConvergenceState }> {
+  const { runRound } = deps;
+  if (!runRound) return settleWithoutAgent(deps.db, args, candidates, gate);
+  return runRoundLadder(deps, runRound, args, candidates);
+}
+
+/**
+ * No agent supplied: park the row rather than guess. A parked row never
+ * stalls a run — everything else finishes and the Program page reads
+ * "44 of 50 assessed, 6 waiting on you".
+ */
+async function settleWithoutAgent(
+  db: Database,
+  args: { supplierId: string; roster: RosterRow; jobId?: string | undefined },
+  candidates: CandidateFacts[],
+  gate: { gateReason: string; ruleCandidateRecords: CandidateRecord[] },
+): Promise<{ outcome: ResolveOutcome }> {
+  const status = sawCandidateInCountry(args.roster, candidates) ? 'needs_review' : 'not_found';
+  await settleMatch(db, {
+    supplierId: args.supplierId,
+    status,
+    entityId: null,
+    settledBy: 'rules',
+    jobId: args.jobId,
+    rungsUsed: ['R1'],
+    note: gate.gateReason,
+    candidates: gate.ruleCandidateRecords,
+  });
+  return { outcome: { status, entityId: null, settledBy: 'rules', rounds: 0, reason: gate.gateReason } };
+}
+
+async function runRoundLadder(
+  deps: ResolveDeps,
+  runRound: NonNullable<ResolveDeps['runRound']>,
+  args: { supplierId: string; roster: RosterRow; jobId?: string | undefined },
+  candidates: CandidateFacts[],
+): Promise<{ outcome: ResolveOutcome } | { outcome: null; state: NonConvergenceState }> {
+  const { db, upstream } = deps;
   const seen = [...candidates];
   let rungsUsed = ['R1'];
   let objection: string | undefined;
@@ -268,7 +343,7 @@ export async function resolveSupplier(
     // The seed is derived from the attempt and the Round, so a replay
     // reconstructs the same prompt rather than a differently-ordered one.
     const seed = seedFor(`${args.supplierId}`, roundN);
-    const round = await deps.runRound({
+    const round = await runRound({
       roster: args.roster,
       candidates: seen,
       roundN,
@@ -306,17 +381,28 @@ export async function resolveSupplier(
         })),
       });
       return {
-        status: 'accepted',
-        entityId: round.resolverPick,
-        settledBy: 'agents',
-        rounds: roundN,
-        reason: `Both agents independently named the same company at round ${roundN}.`,
+        outcome: {
+          status: 'accepted',
+          entityId: round.resolverPick,
+          settledBy: 'agents',
+          rounds: roundN,
+          reason: `Both agents independently named the same company at round ${roundN}.`,
+        },
       };
     }
     objection = round.objection;
   }
 
-  // ── Non-convergence: parked, and the two reasons are different ───────────
+  return { outcome: null, state: { seen, rungsUsed, lastRound, foundByRung } };
+}
+
+/** ── Non-convergence: parked, and the two reasons are different ───────────── */
+async function settleNonConvergence(
+  db: Database,
+  args: { supplierId: string; roster: RosterRow; jobId?: string | undefined },
+  state: NonConvergenceState,
+): Promise<ResolveOutcome> {
+  const { seen, rungsUsed, lastRound, foundByRung } = state;
   const status = sawCandidateInCountry(args.roster, seen) ? 'needs_review' : 'not_found';
   await settleMatch(db, {
     supplierId: args.supplierId,

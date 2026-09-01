@@ -44,8 +44,50 @@ export async function enrichSupplier(
   args: { supplierId: string; programId: string },
 ): Promise<EnrichResult> {
   const { db } = ctx;
-  const written: string[] = [];
 
+  const loaded = await loadResolvedProfile(db, ctx, args);
+  if (loaded.result) return loaded.result;
+  const { profile } = loaded;
+
+  const fanOut = await fanOutEnrichments(ctx, profile);
+  const { owners } = await loadOwnershipEvidence(ctx, profile.match);
+  const baseInput = await assembleScoringInput(ctx, args, profile, fanOut, owners);
+
+  const criterionValuesWritten = await writeAllCriteria(db, {
+    supplier: profile.supplier,
+    programId: args.programId,
+    categoryIds: profile.categories.map((c) => c.categoryId),
+    input: baseInput,
+    tariffByCategory: fanOut.tariffByCategory,
+    jobId: ctx.jobId,
+  });
+
+  return finalizeEnrichResult(profile.supplier, fanOut, criterionValuesWritten);
+}
+
+/** A `match` row narrowed to the `accepted` case: `entityId` is never null. */
+type AcceptedMatch = Omit<typeof t.match.$inferSelect, 'entityId'> & { entityId: string };
+
+type ResolvedProfile = {
+  supplier: typeof t.supplier.$inferSelect;
+  match: AcceptedMatch;
+  categories: { categoryId: string }[];
+  profileRow: typeof t.entity.$inferSelect;
+};
+
+/**
+ * Loads the Supplier, its Match and its Categories, and settles the no-Profile
+ * case on the spot.
+ *
+ * **A Supplier with no accepted Match is enriched no further than its
+ * country.** There is no Profile to fetch news or ownership for, and the
+ * Criteria all return `unknown` anyway (SPEC §13.3).
+ */
+async function loadResolvedProfile(
+  db: Database,
+  ctx: EnrichContext,
+  args: { supplierId: string; programId: string },
+): Promise<{ result: EnrichResult } | { result: null; profile: ResolvedProfile }> {
   const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.id, args.supplierId) });
   if (!supplier) throw new Error(`no supplier ${args.supplierId}`);
 
@@ -65,16 +107,39 @@ export async function enrichSupplier(
       jobId: ctx.jobId,
     });
     return {
-      supplierId: supplier.id,
-      enrichmentsWritten: [],
-      criterionValuesWritten: values,
-      familyMembers: 0,
-      skipped: `match is ${match?.status ?? 'absent'}, so there is no profile to enrich`,
+      result: {
+        supplierId: supplier.id,
+        enrichmentsWritten: [],
+        criterionValuesWritten: values,
+        familyMembers: 0,
+        skipped: `match is ${match?.status ?? 'absent'}, so there is no profile to enrich`,
+      },
     };
   }
 
   const profileRow = await db.query.entity.findFirst({ where: eq(t.entity.id, match.entityId) });
   if (!profileRow) throw new Error(`profile entity ${match.entityId} is not stored`);
+
+  return {
+    result: null,
+    profile: { supplier, match: { ...match, entityId: match.entityId }, categories, profileRow },
+  };
+}
+
+type FanOutResult = {
+  written: string[];
+  family: Awaited<ReturnType<typeof enrichFamily>>;
+  tariffByCategory: Map<string, { hsCode: string; mfnRatePct: number | null }>;
+  lat: number | null;
+  lon: number | null;
+  coordinatePrecision: string | undefined;
+};
+
+/** Fetches what is missing: news, the Corporate family, country, GLEIF, tariffs, geocoding. */
+async function fanOutEnrichments(ctx: EnrichContext, profile: ResolvedProfile): Promise<FanOutResult> {
+  const { db } = ctx;
+  const { match, profileRow, supplier, categories } = profile;
+  const written: string[] = [];
 
   // ── 1. Negative news, on the RESOLVED LEGAL NAME ─────────────────────────
   const news = await enrichNegativeNews(ctx, {
@@ -126,34 +191,40 @@ export async function enrichSupplier(
     coordinatePrecision = geocode.precision;
   }
 
-  // ── Assemble the scoring input ───────────────────────────────────────────
-  /**
-   * **The matched entity's OWN payload, asked for by id.**
-   *
-   * This used to read `upstream_response` directly, for any row whose endpoint
-   * was `entity.getEntity` — no filter on *which* entity, and no order. The
-   * resolve Job caches one body per candidate it considered, so a Supplier with
-   * seven candidates leaves seven rows carrying an identical `fetched_at`
-   * (`seedUpstream` writes them in one statement), and Postgres returned
-   * whichever it reached.
-   *
-   * The body then went to `readOwnerEdges` as `entity` while `entityId` stayed
-   * the *matched* one, so `parseRelationships` attributed **another company's
-   * relationship set to this company** and `storeRelationships` wrote those
-   * edges. Measured on the Yazaki fixture: `YAZAKI INDIA PRIVATE LIMITED`'s
-   * relationships were stored as the Japanese parent's, including a company the
-   * parent's own payload does not mention.
-   *
-   * It also made the assess replay non-deterministic, because the entity rows
-   * those edges upsert are what `get_entity` hands the model — finding 100, and
-   * the third time in this build that a query with no total order was read as
-   * prompt drift (findings 61 and 81).
-   *
-   * Going through `ctx.upstream` rather than fixing the `where` clause keeps
-   * one reader of the cache. `call()` is cache-first, so this costs nothing on
-   * a warm cache and nothing at all in replay, where the fixture already holds
-   * the row.
-   */
+  return { written, family, tariffByCategory, lat, lon, coordinatePrecision };
+}
+
+/**
+ * **The matched entity's OWN payload, asked for by id.**
+ *
+ * This used to read `upstream_response` directly, for any row whose endpoint
+ * was `entity.getEntity` — no filter on *which* entity, and no order. The
+ * resolve Job caches one body per candidate it considered, so a Supplier with
+ * seven candidates leaves seven rows carrying an identical `fetched_at`
+ * (`seedUpstream` writes them in one statement), and Postgres returned
+ * whichever it reached.
+ *
+ * The body then went to `readOwnerEdges` as `entity` while `entityId` stayed
+ * the *matched* one, so `parseRelationships` attributed **another company's
+ * relationship set to this company** and `storeRelationships` wrote those
+ * edges. Measured on the Yazaki fixture: `YAZAKI INDIA PRIVATE LIMITED`'s
+ * relationships were stored as the Japanese parent's, including a company the
+ * parent's own payload does not mention.
+ *
+ * It also made the assess replay non-deterministic, because the entity rows
+ * those edges upsert are what `get_entity` hands the model — finding 100, and
+ * the third time in this build that a query with no total order was read as
+ * prompt drift (findings 61 and 81).
+ *
+ * Going through `ctx.upstream` rather than fixing the `where` clause keeps
+ * one reader of the cache. `call()` is cache-first, so this costs nothing on
+ * a warm cache and nothing at all in replay, where the fixture already holds
+ * the row.
+ */
+async function loadOwnershipEvidence(
+  ctx: EnrichContext,
+  match: AcceptedMatch,
+): Promise<{ owners: Awaited<ReturnType<typeof readOwnerEdges>> }> {
   const own = await ctx.upstream.sayari
     .getEntity({ id: match.entityId })
     .catch((error: unknown) => {
@@ -181,6 +252,20 @@ export async function enrichSupplier(
         },
       )
     : [];
+  return { owners };
+}
+
+/** ── Assemble the scoring input ─────────────────────────────────────────── */
+async function assembleScoringInput(
+  ctx: EnrichContext,
+  args: { programId: string },
+  profile: ResolvedProfile,
+  fanOut: FanOutResult,
+  owners: Awaited<ReturnType<typeof readOwnerEdges>>,
+): Promise<SupplierScoringInput> {
+  const { db } = ctx;
+  const { supplier, match, profileRow } = profile;
+  const { lat, lon, coordinatePrecision, tariffByCategory } = fanOut;
 
   const plants = await loadPlants(db, args.programId);
   const nearest = nearestPlant(lat != null && lon != null ? { lat, lon } : undefined, plants);
@@ -206,7 +291,7 @@ export async function enrichSupplier(
     ...(coordinatePrecision ? ['nominatim'] : []),
   ];
 
-  const baseInput: SupplierScoringInput = {
+  return {
     supplierId: supplier.id,
     displayName: supplier.rosterName ?? profileRow.label,
     match: { status: 'accepted', entityId: match.entityId },
@@ -250,28 +335,25 @@ export async function enrichSupplier(
     },
     presentEnrichments,
   };
+}
 
-  const criterionValuesWritten = await writeAllCriteria(db, {
-    supplier,
-    programId: args.programId,
-    categoryIds: categories.map((c) => c.categoryId),
-    input: baseInput,
-    tariffByCategory,
-    jobId: ctx.jobId,
-  });
-
-  // The family badge is computed, never stored — like the Score and the
-  // Shortlist. It reads from `family_member` rows on demand.
-  const exposure = computeFamilyExposure(family.members, {
-    explored: family.members.length,
-    reachable: family.truncated ? null : family.members.length,
+/** The family badge is computed, never stored — like the Score and the Shortlist. */
+function finalizeEnrichResult(
+  supplier: typeof t.supplier.$inferSelect,
+  fanOut: FanOutResult,
+  criterionValuesWritten: number,
+): EnrichResult {
+  // Reads from `family_member` rows on demand.
+  const exposure = computeFamilyExposure(fanOut.family.members, {
+    explored: fanOut.family.members.length,
+    reachable: fanOut.family.truncated ? null : fanOut.family.members.length,
   });
 
   return {
     supplierId: supplier.id,
-    enrichmentsWritten: written,
+    enrichmentsWritten: fanOut.written,
     criterionValuesWritten,
-    familyMembers: family.members.length,
+    familyMembers: fanOut.family.members.length,
     skipped:
       exposure.state === 'not_covered'
         ? 'family not covered — the ownership graph returned nobody'

@@ -83,12 +83,27 @@ export async function discoverLeads(
   args: { programId: string; categoryId: string },
 ): Promise<DiscoverResult> {
   const { db } = deps;
+  const loaded = await loadDiscoverQuery(db, args);
+  if (loaded.result) return loaded.result;
 
+  const search = await searchTradeCandidates(deps, args, loaded.query);
+  const { classified } = await classifyAndRecordLeads(deps, args, loaded.query, search);
+
+  return { proposed: search.ranked.length, classified, alreadyOnRoster: search.alreadyOnRoster };
+}
+
+type DiscoverQuery = { hsCodes: string[]; arrivalCountries: string[] };
+
+/** The Category's HS lines and the Program's territories, or the no-op result if there are none. */
+async function loadDiscoverQuery(
+  db: Database,
+  args: { programId: string; categoryId: string },
+): Promise<{ result: DiscoverResult } | { result: null; query: DiscoverQuery }> {
   const lines = await db
     .select()
     .from(t.categoryHsLine)
     .where(eq(t.categoryHsLine.categoryId, args.categoryId));
-  if (lines.length === 0) return { proposed: 0, classified: 0, alreadyOnRoster: 0 };
+  if (lines.length === 0) return { result: { proposed: 0, classified: 0, alreadyOnRoster: 0 } };
 
   const program = await db.query.program.findFirst({ where: eq(t.program.id, args.programId) });
 
@@ -106,6 +121,25 @@ export async function discoverLeads(
    * forwarders and consumer-battery sellers.
    */
   const hsCodes = [...new Set(lines.map((line) => line.hsCode.replace(/\D/g, '').slice(0, 6)))];
+
+  return { result: null, query: { hsCodes, arrivalCountries } };
+}
+
+type RankedCandidates = {
+  ranked: { entity: SayariEntity; shipments: number | null; latestShipmentDate: string | null }[];
+  alreadyOnRoster: number;
+  familyMembers: Map<string, string>;
+  rosterNames: string[];
+};
+
+/** Runs the trade search, then ranks and dedupes it against the roster. */
+async function searchTradeCandidates(
+  deps: DiscoverDeps,
+  args: { programId: string },
+  query: DiscoverQuery,
+): Promise<RankedCandidates> {
+  const { db } = deps;
+  const { hsCodes, arrivalCountries } = query;
 
   const trade = await deps.upstream.sayari.tradeSearchSuppliers({
     hsCodes,
@@ -181,6 +215,20 @@ export async function discoverLeads(
     )
     .slice(0, DISCOVER_CLASSIFY_TOP_N);
 
+  return { ranked, alreadyOnRoster, familyMembers, rosterNames };
+}
+
+/** Classifies each ranked candidate and records it as a Lead. */
+async function classifyAndRecordLeads(
+  deps: DiscoverDeps,
+  args: { programId: string; categoryId: string },
+  query: DiscoverQuery,
+  search: RankedCandidates,
+): Promise<{ classified: number }> {
+  const { db } = deps;
+  const { hsCodes, arrivalCountries } = query;
+  const { ranked, familyMembers, rosterNames } = search;
+
   const registry = getRegistry();
   const classifierTool = registry.byName.get('submit_lead_classification')!;
   let classified = 0;
@@ -252,7 +300,7 @@ export async function discoverLeads(
     void nameFlag;
   }
 
-  return { proposed: ranked.length, classified, alreadyOnRoster };
+  return { classified };
 }
 
 /**

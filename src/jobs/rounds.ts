@@ -118,117 +118,164 @@ export type LoopDeps<TDraft> = {
   maxRounds?: number | undefined;
 };
 
+type RoundState<TDraft> = {
+  rounds: RoundRecord[];
+  carriedObjections: string[];
+  lastDraft: TDraft | undefined;
+  /** Empty unless the most recent draft failed the code checks. */
+  lastCodeObjections: Objection[];
+};
+
 export async function runProposerEvaluatorLoop<TDraft>(
   deps: LoopDeps<TDraft>,
 ): Promise<LoopOutcome<TDraft>> {
   const maxRounds = deps.maxRounds ?? MAX_ROUNDS;
-  const rounds: RoundRecord[] = [];
-  let carriedObjections: string[] = [];
-  let lastDraft: TDraft | undefined;
-  /** Empty unless the most recent draft failed the code checks. */
-  let lastCodeObjections: Objection[] = [];
+  const state: RoundState<TDraft> = {
+    rounds: [],
+    carriedObjections: [],
+    lastDraft: undefined,
+    lastCodeObjections: [],
+  };
 
   for (let roundN = 1; roundN <= maxRounds; roundN += 1) {
-    // ── Propose, with free retries for a mis-shaped output ─────────────────
-    let proposal: ProposalResult<TDraft> | undefined;
-    for (let retry = 0; retry <= MAX_FREE_RETRIES_PER_ROUND; retry += 1) {
-      proposal = await deps.propose({ roundN, objections: carriedObjections });
-      if (proposal.kind === 'draft') break;
-      // A refinement failure is the model mis-shaping its output. It retries
-      // free and THE ROUND COUNTER DOES NOT ADVANCE — charging a Round for
-      // punctuation would spend the budget in the wrong place.
-      //
-      // Logged as well as recorded: when every retry fails the Job produces no
-      // draft at all, and the `round` rows that would have explained why are
-      // never persisted, because persisting them is `publishVersion`'s job and
-      // there is nothing to publish.
-      // `attempt N of M`, not `retry N of M`: the first try is not a retry, and
-      // a log line reading "free retry 3/2" makes a reader doubt the counter
-      // rather than read the message.
-      const attempt = `attempt ${retry + 1} of ${MAX_FREE_RETRIES_PER_ROUND + 1}`;
-      const what = proposal.kind === 'loop_failure' ? 'the loop failed' : 'output shape rejected';
-      console.error(`[loop] round ${roundN}, ${attempt}, ${what}: ${proposal.message}`);
-      rounds.push({
-        n: roundN,
-        role: 'proposer',
-        source: 'code',
-        objection: `${what} (${attempt}): ${proposal.message}`,
-      });
-    }
-
-    if (!proposal || proposal.kind !== 'draft') {
-      /**
-       * Out of attempts. A broken loop, not a disagreement — and **which** kind
-       * of broken is the whole value of the message.
-       */
-      const attempts = MAX_FREE_RETRIES_PER_ROUND + 1;
-      const objection =
-        proposal?.kind === 'loop_failure'
-          ? `The model loop failed on all ${attempts} attempts. The last failure was: ${proposal.message}`
-          : `The proposer could not produce a well-shaped draft in ${attempts} attempts.`;
-
-      return {
-        draft: lastDraft,
-        evaluatorOutcome: 'published_with_objections',
-        rounds,
-        dissent: [{ objection, reply: undefined }],
-        roundsUsed: roundN,
-      };
-    }
-
-    lastDraft = proposal.draft;
-    rounds.push({ n: roundN, role: 'proposer', source: 'model', text: proposal.text });
-
-    // ── Our code checks, BEFORE the evaluator and before any insert ────────
-    const codeObjections = await deps.validate(proposal.draft);
-    if (codeObjections.length > 0) {
-      // A validator failure COSTS A ROUND and is recorded as one, with
-      // source='code' — so the Runs page can report "62 rounds · 14 spent on
-      // code rejections", which makes Round consumption a quality number.
-      rounds.push({
-        n: roundN,
-        role: 'evaluator',
-        source: 'code',
-        objection: codeObjections.map((o) => `[${o.check}] ${o.message}`).join('\n'),
-      });
-      carriedObjections = codeObjections.map((o) => o.message);
-      lastCodeObjections = codeObjections;
-      continue;
-    }
-    lastCodeObjections = [];
-
-    // ── The stateless evaluator ────────────────────────────────────────────
-    const evaluation = await deps.evaluate({ roundN, draft: proposal.draft });
-    rounds.push({
-      n: roundN,
-      role: 'evaluator',
-      source: 'model',
-      text: evaluation.text,
-      rubric: evaluation.rubric,
-      objection: evaluation.kind === 'objections' ? evaluation.objections.join('\n') : undefined,
-    });
-
-    if (evaluation.kind === 'pass') {
-      return { draft: proposal.draft, evaluatorOutcome: 'passed', rounds, dissent: [], roundsUsed: roundN };
-    }
-    carriedObjections = evaluation.objections;
+    const round = await runOneRound(deps, roundN, state);
+    if (round.outcome) return round.outcome;
   }
 
-  /**
-   * A draft that never passed the code checks is **not published**.
-   *
-   * A run must complete, and for a disagreement of judgement that means
-   * publishing with the dissent attached. It cannot mean publishing something
-   * that fails a check no reader can overrule — the insert would refuse it, and
-   * a Job that crashes on a constraint three Rounds later has spent the whole
-   * budget to arrive at an error it could have named in Round 1.
-   */
-  if (lastCodeObjections.length > 0) {
+  return settleAfterMaxRounds(state, maxRounds);
+}
+
+/**
+ * One Round: propose (with free retries for a mis-shaped output), our code
+ * checks, then the stateless evaluator. Mutates `state` in place — `rounds`,
+ * `carriedObjections` and `lastCodeObjections` are what `settleAfterMaxRounds`
+ * reads once the ladder runs out, and what the next Round's `propose` reads
+ * back as `objections`. A `null` outcome means the `for` loop above should
+ * move on to the next Round — the direct replacement for what was `continue`.
+ */
+async function runOneRound<TDraft>(
+  deps: LoopDeps<TDraft>,
+  roundN: number,
+  state: RoundState<TDraft>,
+): Promise<{ outcome: LoopOutcome<TDraft> | null }> {
+  // ── Propose, with free retries for a mis-shaped output ─────────────────
+  let proposal: ProposalResult<TDraft> | undefined;
+  for (let retry = 0; retry <= MAX_FREE_RETRIES_PER_ROUND; retry += 1) {
+    proposal = await deps.propose({ roundN, objections: state.carriedObjections });
+    if (proposal.kind === 'draft') break;
+    // A refinement failure is the model mis-shaping its output. It retries
+    // free and THE ROUND COUNTER DOES NOT ADVANCE — charging a Round for
+    // punctuation would spend the budget in the wrong place.
+    //
+    // Logged as well as recorded: when every retry fails the Job produces no
+    // draft at all, and the `round` rows that would have explained why are
+    // never persisted, because persisting them is `publishVersion`'s job and
+    // there is nothing to publish.
+    // `attempt N of M`, not `retry N of M`: the first try is not a retry, and
+    // a log line reading "free retry 3/2" makes a reader doubt the counter
+    // rather than read the message.
+    const attempt = `attempt ${retry + 1} of ${MAX_FREE_RETRIES_PER_ROUND + 1}`;
+    const what = proposal.kind === 'loop_failure' ? 'the loop failed' : 'output shape rejected';
+    console.error(`[loop] round ${roundN}, ${attempt}, ${what}: ${proposal.message}`);
+    state.rounds.push({
+      n: roundN,
+      role: 'proposer',
+      source: 'code',
+      objection: `${what} (${attempt}): ${proposal.message}`,
+    });
+  }
+
+  if (!proposal || proposal.kind !== 'draft') {
+    /**
+     * Out of attempts. A broken loop, not a disagreement — and **which** kind
+     * of broken is the whole value of the message.
+     */
+    const attempts = MAX_FREE_RETRIES_PER_ROUND + 1;
+    const objection =
+      proposal?.kind === 'loop_failure'
+        ? `The model loop failed on all ${attempts} attempts. The last failure was: ${proposal.message}`
+        : `The proposer could not produce a well-shaped draft in ${attempts} attempts.`;
+
+    return {
+      outcome: {
+        draft: state.lastDraft,
+        evaluatorOutcome: 'published_with_objections',
+        rounds: state.rounds,
+        dissent: [{ objection, reply: undefined }],
+        roundsUsed: roundN,
+      },
+    };
+  }
+
+  state.lastDraft = proposal.draft;
+  state.rounds.push({ n: roundN, role: 'proposer', source: 'model', text: proposal.text });
+
+  // ── Our code checks, BEFORE the evaluator and before any insert ────────
+  const codeObjections = await deps.validate(proposal.draft);
+  if (codeObjections.length > 0) {
+    // A validator failure COSTS A ROUND and is recorded as one, with
+    // source='code' — so the Runs page can report "62 rounds · 14 spent on
+    // code rejections", which makes Round consumption a quality number.
+    state.rounds.push({
+      n: roundN,
+      role: 'evaluator',
+      source: 'code',
+      objection: codeObjections.map((o) => `[${o.check}] ${o.message}`).join('\n'),
+    });
+    state.carriedObjections = codeObjections.map((o) => o.message);
+    state.lastCodeObjections = codeObjections;
+    return { outcome: null };
+  }
+  state.lastCodeObjections = [];
+
+  // ── The stateless evaluator ────────────────────────────────────────────
+  const evaluation = await deps.evaluate({ roundN, draft: proposal.draft });
+  state.rounds.push({
+    n: roundN,
+    role: 'evaluator',
+    source: 'model',
+    text: evaluation.text,
+    rubric: evaluation.rubric,
+    objection: evaluation.kind === 'objections' ? evaluation.objections.join('\n') : undefined,
+  });
+
+  if (evaluation.kind === 'pass') {
+    return {
+      outcome: {
+        draft: proposal.draft,
+        evaluatorOutcome: 'passed',
+        rounds: state.rounds,
+        dissent: [],
+        roundsUsed: roundN,
+      },
+    };
+  }
+  state.carriedObjections = evaluation.objections;
+  return { outcome: null };
+}
+
+/**
+ * A draft that never passed the code checks is **not published**.
+ *
+ * A run must complete, and for a disagreement of judgement that means
+ * publishing with the dissent attached. It cannot mean publishing something
+ * that fails a check no reader can overrule — the insert would refuse it, and
+ * a Job that crashes on a constraint three Rounds later has spent the whole
+ * budget to arrive at an error it could have named in Round 1.
+ */
+function settleAfterMaxRounds<TDraft>(
+  state: RoundState<TDraft>,
+  maxRounds: number,
+): LoopOutcome<TDraft> {
+  if (state.lastCodeObjections.length > 0) {
     return {
       draft: undefined,
       evaluatorOutcome: 'rejected_by_code',
-      rounds,
-      dissent: lastCodeObjections.map((o) => ({ objection: `[${o.check}] ${o.message}`, reply: undefined })),
+      rounds: state.rounds,
+      dissent: state.lastCodeObjections.map((o) => ({
+        objection: `[${o.check}] ${o.message}`,
+        reply: undefined,
+      })),
       roundsUsed: maxRounds,
     };
   }
@@ -237,12 +284,12 @@ export async function runProposerEvaluatorLoop<TDraft>(
   // A run must complete. The survivors are what the disagreement left behind,
   // each paired with the reply it drew — nobody writes dissent.
   return {
-    draft: lastDraft,
+    draft: state.lastDraft,
     evaluatorOutcome: 'published_with_objections',
-    rounds,
-    dissent: carriedObjections.map((objection) => ({
+    rounds: state.rounds,
+    dissent: state.carriedObjections.map((objection) => ({
       objection,
-      reply: replyTo(objection, rounds),
+      reply: replyTo(objection, state.rounds),
     })),
     roundsUsed: maxRounds,
   };

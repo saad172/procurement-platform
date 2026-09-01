@@ -7,15 +7,21 @@ import { loadSupplierSnapshots, scoreSnapshot } from '@/db/queries/shortlist';
 import type { FrozenInputs } from '@/domain/staleness';
 import {
   checkAssessment,
+  type Objection,
   type ResolvedEvidence,
   type SubmittedSentence,
 } from '@/domain/validation/submit-checks';
 import { runLoop } from '@/model';
 import { toRunnableTools } from '@/model/tool-adapter';
 import * as assessPrompts from '@/model/prompts/assess';
-import { getRegistry, type ToolContext } from '@/tools';
+import { getRegistry, type ToolContext, type ToolDefinition } from '@/tools';
 import { citationKey, publishVersion, resolveCitations } from './publish';
-import { UnpublishableDraftError, runProposerEvaluatorLoop } from './rounds';
+import {
+  UnpublishableDraftError,
+  runProposerEvaluatorLoop,
+  type EvaluationResult,
+  type ProposalResult,
+} from './rounds';
 import type { ModelContext } from '@/model/types';
 
 /**
@@ -43,10 +49,31 @@ export async function buildFrozenInputs(
   db: Database,
   args: { programId: string; supplierIds: string[] },
 ): Promise<FrozenInputs> {
-  const weights = await db
+  const weights = await loadCriterionWeights(db, args.programId);
+  const perSupplier = await loadPerSupplierFrozenFacts(db, args.supplierIds);
+  const scores = await computeFrozenScores(db, args, weights, perSupplier.categoriesBySupplier);
+
+  return {
+    /**
+     * Left as the **stored rows alone**, not `scoringWeights`. Filling absent
+     * keys from the constant here would reorder this object, and its key order
+     * is prompt bytes a fixture replays against.
+     */
+    weights: Object.fromEntries(weights.map((w) => [w.criterionKey, Number(w.weight)])),
+    criterionValues: perSupplier.criterionValues,
+    scores,
+    shortlistOrder: args.supplierIds,
+    supplierVerdicts: perSupplier.supplierVerdicts,
+    rosterRows: perSupplier.rosterRows,
+    tariffFlags: await tariffFlagsFor(db, [...perSupplier.categoryIds].sort()),
+  };
+}
+
+async function loadCriterionWeights(db: Database, programId: string) {
+  return db
     .select()
     .from(t.programCriterionWeight)
-    .where(eq(t.programCriterionWeight.programId, args.programId))
+    .where(eq(t.programCriterionWeight.programId, programId))
     /**
      * **Ordered, because these become the keys of a JSON object in a prompt.**
      *
@@ -57,16 +84,28 @@ export async function buildFrozenInputs(
      * a replay.
      */
     .orderBy(asc(t.programCriterionWeight.criterionKey));
+}
 
+type PerSupplierFrozenFacts = {
+  criterionValues: Record<string, number | null>;
+  supplierVerdicts: FrozenInputs['supplierVerdicts'];
+  rosterRows: FrozenInputs['rosterRows'];
+  categoryIds: Set<string>;
+  /** Per Supplier and **in query order**, for the same reason the weights are ordered. */
+  categoriesBySupplier: Map<string, string[]>;
+};
+
+async function loadPerSupplierFrozenFacts(
+  db: Database,
+  supplierIds: string[],
+): Promise<PerSupplierFrozenFacts> {
   const criterionValues: Record<string, number | null> = {};
-  const scores: Record<string, number | null> = {};
   const supplierVerdicts: FrozenInputs['supplierVerdicts'] = {};
   const rosterRows: FrozenInputs['rosterRows'] = {};
   const categoryIds = new Set<string>();
-  /** Per Supplier and **in query order**, for the same reason the weights are ordered. */
   const categoriesBySupplier = new Map<string, string[]>();
 
-  for (const supplierId of args.supplierIds) {
+  for (const supplierId of supplierIds) {
     const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.id, supplierId) });
     if (supplier) {
       rosterRows[supplierId] = {
@@ -112,30 +151,40 @@ export async function buildFrozenInputs(
     }
   }
 
-  /**
-   * The Scores the narrative is allowed to quote.
-   *
-   * `scores` was declared, typed, threaded into every prompt and stored on
-   * every version — and **never written to**. It stayed invisible only because
-   * no tool handed an agent a Score to quote: `get_shortlist` returned a
-   * `bidderCount`. Pointing that tool at `loadShortlist()` woke this up on the
-   * first live run, where the lead agent wrote *"the stored score of
-   * 67.259…"* and our own number check rejected it in all three Rounds —
-   * correctly, since the figure appeared in no frozen input and on no cited
-   * row. There is no `score` table for a sentence to cite instead
-   * (`db/schema/scoring.ts`), so the frozen inputs are the only place a Score
-   * can become checkable.
-   *
-   * **Keyed per Category, because a Score is Category-scoped** — tariff
-   * exposure is stored per Category and the other five at `category = null`,
-   * so one Supplier bidding in three Categories has three Scores. The
-   * Category-less key is kept beside them for a sentence about the Supplier
-   * itself, which is what the Supplier page shows.
-   *
-   * Computed through `scoreSnapshot`, the same function the pages call, rather
-   * than a second arithmetic here: a frozen Score that disagreed with the
-   * ranking on screen would be worse than no frozen Score at all.
-   */
+  return { criterionValues, supplierVerdicts, rosterRows, categoryIds, categoriesBySupplier };
+}
+
+/**
+ * The Scores the narrative is allowed to quote.
+ *
+ * `scores` was declared, typed, threaded into every prompt and stored on
+ * every version — and **never written to**. It stayed invisible only because
+ * no tool handed an agent a Score to quote: `get_shortlist` returned a
+ * `bidderCount`. Pointing that tool at `loadShortlist()` woke this up on the
+ * first live run, where the lead agent wrote *"the stored score of
+ * 67.259…"* and our own number check rejected it in all three Rounds —
+ * correctly, since the figure appeared in no frozen input and on no cited
+ * row. There is no `score` table for a sentence to cite instead
+ * (`db/schema/scoring.ts`), so the frozen inputs are the only place a Score
+ * can become checkable.
+ *
+ * **Keyed per Category, because a Score is Category-scoped** — tariff
+ * exposure is stored per Category and the other five at `category = null`,
+ * so one Supplier bidding in three Categories has three Scores. The
+ * Category-less key is kept beside them for a sentence about the Supplier
+ * itself, which is what the Supplier page shows.
+ *
+ * Computed through `scoreSnapshot`, the same function the pages call, rather
+ * than a second arithmetic here: a frozen Score that disagreed with the
+ * ranking on screen would be worse than no frozen Score at all.
+ */
+async function computeFrozenScores(
+  db: Database,
+  args: { programId: string; supplierIds: string[] },
+  weights: Awaited<ReturnType<typeof loadCriterionWeights>>,
+  categoriesBySupplier: Map<string, string[]>,
+): Promise<Record<string, number | null>> {
+  const scores: Record<string, number | null> = {};
   const scoringWeights = {
     ...DEFAULT_WEIGHTS,
     ...Object.fromEntries(weights.map((w) => [w.criterionKey, Number(w.weight)])),
@@ -153,21 +202,7 @@ export async function buildFrozenInputs(
       scores[`${supplierId}:${categoryId}`] = scoreSnapshot(snapshot, scoringWeights, categoryId).score;
     }
   }
-
-  return {
-    /**
-     * Left as the **stored rows alone**, not `scoringWeights`. Filling absent
-     * keys from the constant here would reorder this object, and its key order
-     * is prompt bytes a fixture replays against.
-     */
-    weights: Object.fromEntries(weights.map((w) => [w.criterionKey, Number(w.weight)])),
-    criterionValues,
-    scores,
-    shortlistOrder: args.supplierIds,
-    supplierVerdicts,
-    rosterRows,
-    tariffFlags: await tariffFlagsFor(db, [...categoryIds].sort()),
-  };
+  return scores;
 }
 
 /**
@@ -284,165 +319,12 @@ export async function assessSupplier(
   args: { supplierId: string; programId: string },
 ): Promise<{ versionId: string; n: number; evaluatorOutcome: string; roundsUsed: number }> {
   const { db } = deps;
-  const registry = getRegistry();
-
-  const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.id, args.supplierId) });
-  if (!supplier) throw new Error(`no supplier ${args.supplierId}`);
-  const program = await db.query.program.findFirst({ where: eq(t.program.id, args.programId) });
-
-  const frozenInputs = await buildFrozenInputs(db, {
-    programId: args.programId,
-    supplierIds: [args.supplierId],
-  });
-
-  const briefTool = registry.byName.get('get_assessment_brief')!;
-  const briefResult = await briefTool.handler(
-    { supplierId: args.supplierId, programId: args.programId },
-    deps.toolCtx,
-  );
-  const brief = briefResult.ok ? JSON.stringify(briefResult.data, null, 2) : '(the brief could not be built)';
-
-  const proposerTools = [
-    registry.byName.get('get_supplier')!,
-    registry.byName.get('get_supplier_family')!,
-    registry.byName.get('get_assessment_brief')!,
-    registry.byName.get('get_entity')!,
-    registry.byName.get('submit_assessment')!,
-  ];
+  const ctx = await loadAssessContext(deps, args);
 
   const outcome = await runProposerEvaluatorLoop<AssessDraft>({
-    propose: async ({ roundN, objections }) => {
-      const result = await runLoop(
-        {
-          loop: 'assess',
-          system: assessPrompts.proposerSystem,
-          tools: toRunnableTools(proposerTools, deps.toolCtx),
-          messages: [
-            {
-              role: 'user',
-              content: assessPrompts.buildFirstUserMessage({
-                supplierName: supplier.rosterName ?? args.supplierId,
-                programName: program?.name ?? '(unnamed program)',
-                roundN,
-                brief,
-                frozenInputs: JSON.stringify(frozenInputs, null, 2),
-                objections: objections.length > 0 ? objections : undefined,
-              }),
-            },
-          ],
-          caps: JOB_CAPS.assess,
-          roundN,
-          toolDigest: registry.digest(proposerTools),
-        },
-        deps.modelCtx,
-      );
-
-      if (result.status !== 'done') {
-        // The LOOP failed — transport, refusal, a cap. Distinct from our zod
-        // refinements rejecting a well-formed request's answer.
-        return {
-          kind: 'loop_failure',
-          message:
-            `the loop ended as ${result.status}` +
-            ('error' in result ? `: ${result.error}` : '') +
-            ('reason' in result ? `: ${result.reason}` : ''),
-        };
-      }
-      // Read the proposal out of the message rather than out of the tool's
-      // run(): the agents propose, and our code settles.
-      const submitted = result.toolUses.find((u) => u.name === 'submit_assessment')?.input as
-        | AssessDraft
-        | undefined;
-      if (!submitted?.sentences?.length) {
-        // An Assessment exists only when submit_assessment runs, so a refused
-        // or empty turn makes no record at all — the empty-Assessment failure
-        // is structurally impossible rather than guarded against.
-        return {
-          kind: 'refinement_failure',
-          message:
-            `the loop ended without a usable submit_assessment payload ` +
-            `(tools called: ${result.toolUses.map((u) => u.name).join(', ') || 'none'}; ` +
-            `sentences: ${(submitted as { sentences?: unknown[] } | undefined)?.sentences?.length ?? 'none'})`,
-        };
-      }
-      return { kind: 'draft', draft: submitted, text: JSON.stringify(submitted) };
-    },
-
-    validate: async (draft) => {
-      const evidence = await buildEvidence(db, {
-        programId: args.programId,
-        supplierIds: [args.supplierId],
-        frozenInputs: frozenInputs as unknown as Record<string, unknown>,
-        citations: draft.sentences.flatMap((s) => s.citations),
-      });
-      return checkAssessment({
-        verdict: draft.verdict,
-        sentences: draft.sentences,
-        supplierId: args.supplierId,
-        evidence,
-      });
-    },
-
-    evaluate: async ({ roundN, draft }) => {
-      // The evaluator is STATELESS and sees exactly what the proposer saw —
-      // never its own earlier objections, and never the replies to them.
-      const result = await runLoop(
-        {
-          loop: 'assess',
-          system: assessPrompts.evaluatorSystem,
-          /**
-           * **The evaluator reads what the proposer read.**
-           *
-           * It used to hold `get_assessment_brief` alone, while the proposer
-           * had four read tools — so it was asked to verify claims against
-           * evidence it could not see, and it said so: *"the cited rows are
-           * real and resolvable, but they carry only a key and a value.
-           * Nothing in the row supports the sub-structure the draft attributes
-           * to it."* That objection was **correct**, it survived three Rounds,
-           * and no draft could ever have answered it.
-           *
-           * A verifier weaker than the thing it verifies does not measure
-           * accuracy, it measures what fits through its own window.
-           *
-           * It still cannot **write** — no `submit_assessment` — so the
-           * asymmetry that matters is preserved: the proposer proposes, the
-           * evaluator judges, and neither can do the other's job.
-           */
-          tools: toRunnableTools(
-            proposerTools.filter((tool) => tool.name !== 'submit_assessment'),
-            deps.toolCtx,
-          ),
-          messages: [
-            {
-              role: 'user',
-              content: [
-                assessPrompts.buildFirstUserMessage({
-                  supplierName: supplier.rosterName ?? args.supplierId,
-                  programName: program?.name ?? '(unnamed program)',
-                  roundN,
-                  brief,
-                  frozenInputs: JSON.stringify(frozenInputs, null, 2),
-                }),
-                '',
-                'THE DRAFT TO REVIEW',
-                JSON.stringify(draft, null, 2),
-                '',
-                'Return your six rubric verdicts. If every item passes, say so plainly.',
-              ].join('\n'),
-            },
-          ],
-          caps: JOB_CAPS.assess,
-          roundN,
-        },
-        deps.modelCtx,
-      );
-
-      const text = textOf(result);
-      const objections = parseObjections(text);
-      return objections.length === 0
-        ? { kind: 'pass', rubric: { raw: text }, text }
-        : { kind: 'objections', objections, rubric: { raw: text }, text };
-    },
+    propose: (roundArgs) => runAssessPropose(ctx, roundArgs),
+    validate: (draft) => validateAssessDraft(ctx, draft),
+    evaluate: (roundArgs) => runAssessEvaluate(ctx, roundArgs),
   });
 
   /**
@@ -470,12 +352,204 @@ export async function assessSupplier(
     sentences: outcome.draft.sentences,
     rounds: outcome.rounds,
     dissent: outcome.dissent,
-    frozenInputs: frozenInputs as unknown as Record<string, unknown>,
+    frozenInputs: ctx.frozenInputs as unknown as Record<string, unknown>,
     evaluatorOutcome: outcome.evaluatorOutcome,
     jobId: deps.jobId,
   });
 
   return { ...published, evaluatorOutcome: outcome.evaluatorOutcome, roundsUsed: outcome.roundsUsed };
+}
+
+/** Everything a Round of the proposer/evaluator loop reads, built once. */
+type AssessRoundContext = {
+  db: Database;
+  deps: AssessDeps;
+  args: { supplierId: string; programId: string };
+  supplier: typeof t.supplier.$inferSelect;
+  program: typeof t.program.$inferSelect | undefined;
+  frozenInputs: FrozenInputs;
+  brief: string;
+  proposerTools: ToolDefinition[];
+};
+
+/**
+ * The proposer and the evaluator each get a **derived** tool list — five for
+ * assess, per SPEC §15.3 — so neither can reach a tool the loop was not given.
+ */
+async function loadAssessContext(
+  deps: AssessDeps,
+  args: { supplierId: string; programId: string },
+): Promise<AssessRoundContext> {
+  const { db } = deps;
+  const registry = getRegistry();
+
+  const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.id, args.supplierId) });
+  if (!supplier) throw new Error(`no supplier ${args.supplierId}`);
+  const program = await db.query.program.findFirst({ where: eq(t.program.id, args.programId) });
+
+  const frozenInputs = await buildFrozenInputs(db, {
+    programId: args.programId,
+    supplierIds: [args.supplierId],
+  });
+
+  const briefTool = registry.byName.get('get_assessment_brief')!;
+  const briefResult = await briefTool.handler(
+    { supplierId: args.supplierId, programId: args.programId },
+    deps.toolCtx,
+  );
+  const brief = briefResult.ok ? JSON.stringify(briefResult.data, null, 2) : '(the brief could not be built)';
+
+  const proposerTools = [
+    registry.byName.get('get_supplier')!,
+    registry.byName.get('get_supplier_family')!,
+    registry.byName.get('get_assessment_brief')!,
+    registry.byName.get('get_entity')!,
+    registry.byName.get('submit_assessment')!,
+  ];
+
+  return { db, deps, args, supplier, program, frozenInputs, brief, proposerTools };
+}
+
+async function runAssessPropose(
+  ctx: AssessRoundContext,
+  roundArgs: { roundN: number; objections: string[] },
+): Promise<ProposalResult<AssessDraft>> {
+  const { roundN, objections } = roundArgs;
+  const registry = getRegistry();
+  const result = await runLoop(
+    {
+      loop: 'assess',
+      system: assessPrompts.proposerSystem,
+      tools: toRunnableTools(ctx.proposerTools, ctx.deps.toolCtx),
+      messages: [
+        {
+          role: 'user',
+          content: assessPrompts.buildFirstUserMessage({
+            supplierName: ctx.supplier.rosterName ?? ctx.args.supplierId,
+            programName: ctx.program?.name ?? '(unnamed program)',
+            roundN,
+            brief: ctx.brief,
+            frozenInputs: JSON.stringify(ctx.frozenInputs, null, 2),
+            objections: objections.length > 0 ? objections : undefined,
+          }),
+        },
+      ],
+      caps: JOB_CAPS.assess,
+      roundN,
+      toolDigest: registry.digest(ctx.proposerTools),
+    },
+    ctx.deps.modelCtx,
+  );
+
+  if (result.status !== 'done') {
+    // The LOOP failed — transport, refusal, a cap. Distinct from our zod
+    // refinements rejecting a well-formed request's answer.
+    return {
+      kind: 'loop_failure',
+      message:
+        `the loop ended as ${result.status}` +
+        ('error' in result ? `: ${result.error}` : '') +
+        ('reason' in result ? `: ${result.reason}` : ''),
+    };
+  }
+  // Read the proposal out of the message rather than out of the tool's
+  // run(): the agents propose, and our code settles.
+  const submitted = result.toolUses.find((u) => u.name === 'submit_assessment')?.input as
+    | AssessDraft
+    | undefined;
+  if (!submitted?.sentences?.length) {
+    // An Assessment exists only when submit_assessment runs, so a refused
+    // or empty turn makes no record at all — the empty-Assessment failure
+    // is structurally impossible rather than guarded against.
+    return {
+      kind: 'refinement_failure',
+      message:
+        `the loop ended without a usable submit_assessment payload ` +
+        `(tools called: ${result.toolUses.map((u) => u.name).join(', ') || 'none'}; ` +
+        `sentences: ${(submitted as { sentences?: unknown[] } | undefined)?.sentences?.length ?? 'none'})`,
+    };
+  }
+  return { kind: 'draft', draft: submitted, text: JSON.stringify(submitted) };
+}
+
+async function validateAssessDraft(ctx: AssessRoundContext, draft: AssessDraft): Promise<Objection[]> {
+  const evidence = await buildEvidence(ctx.db, {
+    programId: ctx.args.programId,
+    supplierIds: [ctx.args.supplierId],
+    frozenInputs: ctx.frozenInputs as unknown as Record<string, unknown>,
+    citations: draft.sentences.flatMap((s) => s.citations),
+  });
+  return checkAssessment({
+    verdict: draft.verdict,
+    sentences: draft.sentences,
+    supplierId: ctx.args.supplierId,
+    evidence,
+  });
+}
+
+async function runAssessEvaluate(
+  ctx: AssessRoundContext,
+  roundArgs: { roundN: number; draft: AssessDraft },
+): Promise<EvaluationResult> {
+  const { roundN, draft } = roundArgs;
+  // The evaluator is STATELESS and sees exactly what the proposer saw —
+  // never its own earlier objections, and never the replies to them.
+  const result = await runLoop(
+    {
+      loop: 'assess',
+      system: assessPrompts.evaluatorSystem,
+      /**
+       * **The evaluator reads what the proposer read.**
+       *
+       * It used to hold `get_assessment_brief` alone, while the proposer
+       * had four read tools — so it was asked to verify claims against
+       * evidence it could not see, and it said so: *"the cited rows are
+       * real and resolvable, but they carry only a key and a value.
+       * Nothing in the row supports the sub-structure the draft attributes
+       * to it."* That objection was **correct**, it survived three Rounds,
+       * and no draft could ever have answered it.
+       *
+       * A verifier weaker than the thing it verifies does not measure
+       * accuracy, it measures what fits through its own window.
+       *
+       * It still cannot **write** — no `submit_assessment` — so the
+       * asymmetry that matters is preserved: the proposer proposes, the
+       * evaluator judges, and neither can do the other's job.
+       */
+      tools: toRunnableTools(
+        ctx.proposerTools.filter((tool) => tool.name !== 'submit_assessment'),
+        ctx.deps.toolCtx,
+      ),
+      messages: [
+        {
+          role: 'user',
+          content: [
+            assessPrompts.buildFirstUserMessage({
+              supplierName: ctx.supplier.rosterName ?? ctx.args.supplierId,
+              programName: ctx.program?.name ?? '(unnamed program)',
+              roundN,
+              brief: ctx.brief,
+              frozenInputs: JSON.stringify(ctx.frozenInputs, null, 2),
+            }),
+            '',
+            'THE DRAFT TO REVIEW',
+            JSON.stringify(draft, null, 2),
+            '',
+            'Return your six rubric verdicts. If every item passes, say so plainly.',
+          ].join('\n'),
+        },
+      ],
+      caps: JOB_CAPS.assess,
+      roundN,
+    },
+    ctx.deps.modelCtx,
+  );
+
+  const text = textOf(result);
+  const objections = parseObjections(text);
+  return objections.length === 0
+    ? { kind: 'pass', rubric: { raw: text }, text }
+    : { kind: 'objections', objections, rubric: { raw: text }, text };
 }
 
 function textOf(result: Awaited<ReturnType<typeof runLoop>>): string {
