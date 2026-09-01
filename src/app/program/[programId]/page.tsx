@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
 import * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
@@ -165,10 +165,87 @@ export default async function ProgramPage({
     biddersByCategory.set(row.categoryId, (biddersByCategory.get(row.categoryId) ?? 0) + 1);
   }
 
-  const recommendations = await db
-    .select({ categoryId: t.recommendation.categoryId })
-    .from(t.recommendation)
-    .where(eq(t.recommendation.programId, programId));
+  /**
+   * What each Category's argued case actually says, not merely whether a row
+   * exists. The Category table below is where a person picks which Category to
+   * open next, and the state of its Recommendation is the most useful thing
+   * that table can tell them — so it carries the award Pick and the
+   * evaluator's outcome, at the weight the Category page states them.
+   *
+   * Latest version by `n`, matching the Category and Recommendation pages. A
+   * header with no version is not an argued case, and counts as none.
+   */
+  const recommendations = await db.query.recommendation.findMany({
+    where: eq(t.recommendation.programId, programId),
+    with: {
+      versions: {
+        orderBy: [desc(t.recommendationVersion.n)],
+        limit: 1,
+        with: { picks: { with: { supplier: true } } },
+      },
+    },
+  });
+  const recByCategory = new Map(
+    recommendations.flatMap((rec) => {
+      const version = rec.versions[0];
+      if (!version) return [];
+      const award = version.picks.find((pick) => pick.role === 'award');
+      return [
+        [
+          rec.categoryId,
+          {
+            n: version.n,
+            evaluatorOutcome: version.evaluatorOutcome,
+            humanMark: version.humanMark,
+            awardedTo: award?.supplier.rosterName ?? null,
+          },
+        ] as const,
+      ];
+    }),
+  );
+
+  /**
+   * A Recommend that ran and published nothing is **not** the same thing as one
+   * nobody asked for, and with only the table above both rows read blank.
+   *
+   * That distinction is the point of `terminated`: the loop refused its own
+   * draft in every round, which is a result about the evidence rather than an
+   * absence of one — and the Job page says which rubric item it died on. Last
+   * attempt wins; it is only ever read for a Category with no published
+   * version, so a `done` Job needs no special case.
+   */
+  const recommendJobs = await db
+    .select({
+      subjectId: t.job.subjectId,
+      state: t.job.state,
+      jobId: t.job.id,
+      runId: t.job.runId,
+    })
+    .from(t.job)
+    .innerJoin(t.run, eq(t.run.id, t.job.runId))
+    .where(
+      and(
+        eq(t.run.programId, programId),
+        eq(t.job.kind, 'recommend'),
+        eq(t.job.subjectType, 'category'),
+      ),
+    )
+    .orderBy(t.job.createdAt);
+
+  const attemptByCategory = new Map<
+    string,
+    { outcome: 'in_flight' | 'refused' | 'broke'; href: string }
+  >();
+  for (const job of recommendJobs) {
+    const href = `/program/${programId}/runs/${job.runId}/job/${job.jobId}`;
+    if (job.state === 'queued' || job.state === 'running' || job.state === 'paused_on_budget') {
+      attemptByCategory.set(job.subjectId, { outcome: 'in_flight', href });
+    } else if (job.state === 'terminated') {
+      attemptByCategory.set(job.subjectId, { outcome: 'refused', href });
+    } else if (job.state === 'failed') {
+      attemptByCategory.set(job.subjectId, { outcome: 'broke', href });
+    }
+  }
 
   /**
    * The rows only a person can settle, **named**. A count alone makes them
@@ -183,7 +260,7 @@ export default async function ProgramPage({
   const runs = await loadRuns(db, programId);
   const spent = runs.reduce((sum, run) => sum + run.actualUsd, 0);
 
-  const awardable = new Set(recommendations.map((r) => r.categoryId)).size;
+  const awardable = recByCategory.size;
 
   const answers = programmeAnswer({
     workerUp,
@@ -352,13 +429,39 @@ export default async function ProgramPage({
               <th>Code</th>
               <th>Category</th>
               <th className="num">Bidders</th>
-              <th>Default HS line</th>
-              <th className="num">MFN</th>
+              <th>Recommendation</th>
+              <th>Tariff code</th>
+              <th className="num">Base duty</th>
             </tr>
           </thead>
           <tbody>
             {program.categories.map((category) => {
               const line = category.hsLines.find((l) => l.isDefault);
+              /*
+                `hsLines` holds every candidate classification, not just the
+                scored one. The header used to read "Default HS line", and that
+                word Default was the only thing saying a choice had been made —
+                dropping the jargon dropped the signal with it, so the count
+                says it in words. ENC has three candidates in a 0.4-point band;
+                BAT has one and is settled. That difference is worth a glance.
+              */
+              const others = category.hsLines.length - 1;
+              const rec = recByCategory.get(category.id);
+              /*
+                Only read when nothing was published — a Category with a
+                version shows the version, whatever a later re-run did.
+              */
+              const attempt = recByCategory.has(category.id)
+                ? undefined
+                : attemptByCategory.get(category.id);
+              const attemptSays =
+                attempt?.outcome === 'in_flight'
+                  ? { badge: 'being written', tone: '', link: 'follow the run' }
+                  : attempt?.outcome === 'refused'
+                    ? { badge: 'nothing published', tone: 'warn', link: 'why nothing was published' }
+                    : attempt
+                      ? { badge: 'the run broke', tone: 'bad', link: 'what broke' }
+                      : null;
               return (
                 <tr key={category.id}>
                   <td>
@@ -368,7 +471,54 @@ export default async function ProgramPage({
                   </td>
                   <td>{category.name}</td>
                   <td className="num">{biddersByCategory.get(category.id) ?? 0}</td>
-                  <td className="mono">{line?.hsCode ?? '—'}</td>
+                  <td>
+                    {rec ? (
+                      <>
+                        <Link
+                          href={
+                            `/program/${programId}/category/${category.id}/recommendation` as never
+                          }
+                        >
+                          Version {rec.n}
+                        </Link>{' '}
+                        <span
+                          className={`badge ${rec.evaluatorOutcome === 'passed' ? 'good' : 'warn'}`}
+                        >
+                          {rec.evaluatorOutcome.replace(/_/g, ' ')}
+                        </span>
+                        {rec.awardedTo ? <div className="note">awards {rec.awardedTo}</div> : null}
+                        {rec.humanMark ? (
+                          <div className="note">
+                            marked {rec.humanMark.replace(/_/g, ' ')} by a person
+                          </div>
+                        ) : null}
+                      </>
+                    ) : attemptSays && attempt ? (
+                      <>
+                        <span className={`badge ${attemptSays.tone}`}>{attemptSays.badge}</span>
+                        <div className="note">
+                          <Link href={attempt.href as never}>{attemptSays.link}</Link>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="note">none written</span>
+                    )}
+                  </td>
+                  <td>
+                    {line ? (
+                      <>
+                        <div className="mono">{line.hsCode}</div>
+                        <div className="note">{line.label}</div>
+                        {others > 0 ? (
+                          <div className="note">
+                            + {others} {others === 1 ? 'other' : 'others'} considered
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td className="num">{line ? `${Number(line.rate)}%` : '—'}</td>
                 </tr>
               );
@@ -376,6 +526,20 @@ export default async function ProgramPage({
           </tbody>
         </table>
       </div>
+
+      {/*
+        The detail page states the invariant — the caveat rides with every rate
+        — and then honours it. This table did not, and "Base duty" claims more
+        than "MFN" did, because MFN at least announced itself as one specific
+        legal rate. One note under the card, carrying the framing and the
+        caveat together: two grey paragraphs around an eight-row table is more
+        apparatus than the table.
+      */}
+      <p className="note" style={{ margin: '0.6rem 0 1.6rem', maxWidth: '56rem' }}>
+        Base duty is the ordinary rate for that code into {program.importingCountry}. It is a floor,
+        not a landed cost — surcharges that key on where a part is actually made are not folded in.
+        Open a category for the full picture.
+      </p>
 
       <h3>
         Every company on the roster{' '}

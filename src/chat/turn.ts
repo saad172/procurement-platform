@@ -34,7 +34,7 @@ export type ChatTurnRequest = {
   programId: string;
   message: string;
   pageRef: string;
-  viewState?: Record<string, unknown> | undefined;
+  viewState?: Record<string, string | string[] | undefined> | undefined;
 };
 
 export type ChatTurnDeps = {
@@ -121,7 +121,17 @@ export async function runChatTurn(
   const chatTools = registry.forSurface('chat');
   const tools = toChatTools(
     chatTools,
-    { db, upstream, meter: { addModelTokens: () => {} }, runId, surface: 'chat' },
+    {
+      db,
+      upstream,
+      meter: { addModelTokens: () => {} },
+      runId,
+      surface: 'chat',
+      // The rail the person is actually looking at. A read that can default its
+      // weight vector from this cannot answer about the programme default while
+      // a what-if is on screen (SPEC §14.3).
+      viewState: request.viewState,
+    },
     {
       onProposal: (proposal) => proposals.push(proposal),
       onResult: (toolName, result) => {

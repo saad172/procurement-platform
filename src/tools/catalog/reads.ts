@@ -3,6 +3,9 @@ import { z } from 'zod/v4';
 import * as t from '@/db/schema';
 import { isDatabaseId, notAnIdObjection } from '../ids';
 import { defineTool, type ReadWithWidget, type ToolContext, type WidgetType } from '../define';
+import { loadShortlist } from '@/db/queries/shortlist';
+import { DEFAULT_WEIGHTS, normaliseWeights } from '@/domain/score';
+import { isWhatIf, parseViewState } from '@/lib/view-state';
 
 /**
  * Families 1 and 2: page reads, and reads no page owns (SPEC §15.2).
@@ -353,21 +356,101 @@ export const getShortlist = defineTool({
   spends: [],
   latency: 'fast',
   handler: async (input, ctx) => {
-    // The assembly lands with the pages in build-order step 11; the tool exists
-    // now so the registry is complete and its invariants are real.
-    const suppliers = await ctx.db
-      .select()
-      .from(t.supplierCategory)
-      .where(eq(t.supplierCategory.categoryId, input.categoryId))
-      .orderBy(asc(t.supplierCategory.supplierId));
+    const program = await ctx.db.query.program.findFirst({
+      where: eq(t.program.id, input.programId),
+      with: { weights: true },
+    });
+    if (!program) return { ok: false, objections: [`no programme with id ${input.programId}`] };
+
+    const category = await ctx.db.query.category.findFirst({
+      where: eq(t.category.id, input.categoryId),
+    });
+    if (!category) return { ok: false, objections: [`no category with id ${input.categoryId}`] };
+
+    // The **Program's own** default, never the `DEFAULT_WEIGHTS` constant: a
+    // missing `w.` key fills from what this Program saved, and a URL carries
+    // only what differs from it.
+    const programDefault = {
+      ...DEFAULT_WEIGHTS,
+      ...Object.fromEntries(program.weights.map((w) => [w.criterionKey, Number(w.weight)])),
+    };
+
+    /**
+     * Precedence: a what-if the model asked for explicitly, then **the rail the
+     * person is actually looking at**, then the Program default.
+     *
+     * The middle rung is the point. §14.3 tells the model to answer about the
+     * ranking on screen, but an instruction can be forgotten and this one was —
+     * a turn that omits `weights` used to silently answer about the Program
+     * default while a what-if was on screen, in the one surface with no
+     * Citation check. Defaulting it here makes that unrepresentable.
+     */
+    const view = ctx.viewState ? parseViewState(ctx.viewState, programDefault) : undefined;
+    const whatIf = input.weights != null || (view != null && isWhatIf(view, programDefault));
+
+    /**
+     * Resolved **unconditionally**, never left undefined.
+     *
+     * Two reasons, and the second is the quieter one. It is what lets the
+     * widget carry its vector as a rendered field on every path, including the
+     * common one — §14.4's *legible rather than merely true*. And an absent
+     * vector does not mean "the Program's default": `scoreFromStoredValues`
+     * falls back to the `DEFAULT_WEIGHTS` constant, while the Category page
+     * always passes the Program's saved weights. A Program that had saved its
+     * own would have been ranked one way on the page and another way here.
+     */
+    const weights = normaliseWeights(input.weights ?? view?.weights, programDefault);
+
+    const shortlist = await loadShortlist(ctx.db, {
+      programId: input.programId,
+      categoryId: input.categoryId,
+      weights,
+      facets: view?.facets,
+    });
+
     return {
       ok: true,
-      data: widget('shortlist_table', {
-        programId: input.programId,
-        categoryId: input.categoryId,
-        weights: input.weights ?? null,
-        bidderCount: suppliers.length,
-      }),
+      data: widget(
+        'shortlist_table',
+        /**
+         * What the **model** reads: enough to name a winner, say where it
+         * ranks, and know when not to recommend it. Deliberately not the
+         * `criteria[]` arrays — eight categories of every contribution is a
+         * cost paid on every turn for a breakdown most turns never ask for.
+         *
+         * `ranked` is the **unfiltered** ranking, always. A filter hides rows
+         * from a page without changing a rank, so a model reading the crop as
+         * the set would be reading a different question's answer (SPEC §13.6).
+         */
+        {
+          category: category.name,
+          weights: whatIf ? weights : 'programme default',
+          ranked: shortlist.ranked.map((row) => ({
+            rank: row.rank,
+            supplierId: row.supplierId,
+            name: row.displayName,
+            score: row.score,
+            coverage: `${row.coverage.computed} of ${row.coverage.total}`,
+            dataConfidence: row.dataConfidence,
+            // A `high` factor in a pinning family forces the verdict — a model
+            // naming a winner has to know this row cannot be one.
+            disqualifying: row.disqualifying,
+          })),
+          // Excluded is never ranked low: no Score, no estimated Criterion, and
+          // the two reasons are different problems (SPEC §13.3).
+          excluded: shortlist.excluded.map((entry) => ({
+            supplierId: entry.row.supplierId,
+            name: entry.row.displayName,
+            reason: entry.reason,
+          })),
+          visibleCount: shortlist.visibleCount,
+          totalCount: shortlist.totalCount,
+        },
+        // What the **widget** renders: every contribution a breakdown could
+        // want, plus the vector that produced the ranking as a rendered field —
+        // which is what makes the freeze legible rather than merely true.
+        { category: category.name, weights, whatIf, ...shortlist },
+      ),
     };
   },
 });
