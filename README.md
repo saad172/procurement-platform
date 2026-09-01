@@ -100,13 +100,14 @@ pnpm test       # vitest run  (pnpm test:watch to iterate)
 pnpm format     # prettier --write
 ```
 
-> **`pnpm check` is red on a database it did not record against.** Two replays —
-> `assess-replay` (2 tests) and `recommend-replay` (1) — miss at turn 3 on a
-> freshly created `procurement_test`; the other 598 pass. It is characterised in
-> [`docs/BUILD-NOTES.md` finding 98](docs/BUILD-NOTES.md), with seven causes ruled
-> out, the one mechanism still open, and the method that will answer it. It is
-> written down rather than fixed, and saying so here is cheaper than letting you
-> find it.
+> **All 602 pass, including on a database created seconds ago.** Two replays used
+> to miss at turn 3 on a freshly created `procurement_test`, which read as a
+> drifted fixture for three sessions and was not one: `enrich` asked for "the
+> cached entity body" without saying *which* entity, so it could attribute one
+> company's ownership to another, and the recorded fixture had frozen the wrong
+> answer. [`docs/BUILD-NOTES.md` finding 100](docs/BUILD-NOTES.md) is the
+> account; `tests/jobs/owner-edges.test.ts` is what stops it returning, because a
+> replay fixture provably cannot.
 
 Two checks spend real Sayari credits and so are scripts rather than tests:
 
@@ -218,6 +219,6 @@ Sequenced so each step is verifiable before the next depends on it
 
 All sixteen are done. What each step actually cost, and every place the spec's
 assumptions turned out to be wrong, is in
-[`docs/BUILD-NOTES.md`](docs/BUILD-NOTES.md) — 87 numbered findings, each one a
+[`docs/BUILD-NOTES.md`](docs/BUILD-NOTES.md) — 100 numbered findings, each one a
 measurement rather than an opinion. **The write-up should quote that file, not
 the spec, for any number.**

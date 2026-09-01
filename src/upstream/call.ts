@@ -40,18 +40,34 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 function retryDelayMs(error: unknown, attempt: number): number {
   const header =
     typeof error === 'object' && error !== null
-      ? (error as { retryAfter?: unknown; headers?: Record<string, string> }).retryAfter ??
-        (error as { headers?: Record<string, string> }).headers?.['retry-after']
+      ? ((error as { retryAfter?: unknown; headers?: Record<string, string> }).retryAfter ??
+        (error as { headers?: Record<string, string> }).headers?.['retry-after'])
       : undefined;
-  const seconds = typeof header === 'string' ? Number(header) : typeof header === 'number' ? header : NaN;
+  const seconds =
+    typeof header === 'string' ? Number(header) : typeof header === 'number' ? header : NaN;
   if (Number.isFinite(seconds) && seconds > 0) {
     return Math.min(seconds * 1_000, RETRY_AFTER_CAP_MS);
   }
   return Math.min(500 * 2 ** attempt, RETRY_AFTER_CAP_MS);
 }
 
-/** Latest-wins on read over an append-only table (SPEC §3.2). */
-async function readCache(ctx: UpstreamContext, source: string, endpoint: string, paramsHash: string) {
+/**
+ * Latest-wins on read over an append-only table (SPEC §3.2).
+ *
+ * **`id` is the tiebreak, and it is not decoration.** `fetchedAt` alone is not
+ * a total order here: `seedUpstream` writes a fixture's rows in one statement,
+ * so every one of them carries the same instant, and two seedings of the same
+ * `paramsHash` would leave `limit(1)` answering whichever row Postgres reached
+ * — an answer that changes with the plan and reads as fixture drift when it
+ * moves. No committed fixture holds a duplicated key today; the point is that
+ * nothing stops one from doing so, and finding 100 is what that costs.
+ */
+async function readCache(
+  ctx: UpstreamContext,
+  source: string,
+  endpoint: string,
+  paramsHash: string,
+) {
   const [row] = await ctx.db
     .select()
     .from(t.upstreamResponse)
@@ -62,7 +78,7 @@ async function readCache(ctx: UpstreamContext, source: string, endpoint: string,
         eq(t.upstreamResponse.paramsHash, paramsHash),
       ),
     )
-    .orderBy(desc(t.upstreamResponse.fetchedAt))
+    .orderBy(desc(t.upstreamResponse.fetchedAt), desc(t.upstreamResponse.id))
     .limit(1);
   return row;
 }

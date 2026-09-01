@@ -18,7 +18,6 @@ import {
   writeCriterionValue,
   type EnrichContext,
 } from './enrich';
-import type { SayariEntity } from '@/upstream/projections/sayari';
 
 /**
  * The enrich Job for one Supplier (SPEC §7, §8, §9).
@@ -128,17 +127,59 @@ export async function enrichSupplier(
   }
 
   // ── Assemble the scoring input ───────────────────────────────────────────
-  const cachedEntity = await db.query.upstreamResponse.findFirst({
-    where: and(
-      eq(t.upstreamResponse.endpoint, 'entity.getEntity'),
-      eq(t.upstreamResponse.source, 'sayari'),
-    ),
-  });
-  const owners = cachedEntity
-    ? await readOwnerEdges(ctx, {
-        entityId: match.entityId,
-        entity: cachedEntity.body as SayariEntity,
-      }).catch(() => [])
+  /**
+   * **The matched entity's OWN payload, asked for by id.**
+   *
+   * This used to read `upstream_response` directly, for any row whose endpoint
+   * was `entity.getEntity` — no filter on *which* entity, and no order. The
+   * resolve Job caches one body per candidate it considered, so a Supplier with
+   * seven candidates leaves seven rows carrying an identical `fetched_at`
+   * (`seedUpstream` writes them in one statement), and Postgres returned
+   * whichever it reached.
+   *
+   * The body then went to `readOwnerEdges` as `entity` while `entityId` stayed
+   * the *matched* one, so `parseRelationships` attributed **another company's
+   * relationship set to this company** and `storeRelationships` wrote those
+   * edges. Measured on the Yazaki fixture: `YAZAKI INDIA PRIVATE LIMITED`'s
+   * relationships were stored as the Japanese parent's, including a company the
+   * parent's own payload does not mention.
+   *
+   * It also made the assess replay non-deterministic, because the entity rows
+   * those edges upsert are what `get_entity` hands the model — finding 100, and
+   * the third time in this build that a query with no total order was read as
+   * prompt drift (findings 61 and 81).
+   *
+   * Going through `ctx.upstream` rather than fixing the `where` clause keeps
+   * one reader of the cache. `call()` is cache-first, so this costs nothing on
+   * a warm cache and nothing at all in replay, where the fixture already holds
+   * the row.
+   */
+  const own = await ctx.upstream.sayari
+    .getEntity({ id: match.entityId })
+    .catch((error: unknown) => {
+      /**
+       * Loud, and not fatal — the same rule as the unclassified relationship
+       * types above. Ownership will read `unknown`, and §10's reason has to be
+       * able to say *why*: "we could not read the payload" and "this company has
+       * no owners" are the distinction the Criterion exists to preserve, and a
+       * silent `[]` collapses them.
+       */
+      console.warn(
+        `  no own payload for ${match.entityId} — ownership will read unknown: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    });
+  const owners = own
+    ? await readOwnerEdges(ctx, { entityId: match.entityId, entity: own.data }).catch(
+        (error: unknown) => {
+          console.warn(
+            `  owner edges unreadable for ${match.entityId} — ownership will read unknown: ` +
+              `${error instanceof Error ? error.message : String(error)}`,
+          );
+          return [];
+        },
+      )
     : [];
 
   const plants = await loadPlants(db, args.programId);
@@ -181,9 +222,12 @@ export async function enrichSupplier(
       pep: profileRow.pep,
       closed: profileRow.closed,
       // Unioned with per-factor provenance across the endpoints that reported.
-      riskFactors: unionRiskFactors([{ source: 'getEntity', risk: profileRow.risk }]).map((u) => u.factor),
+      riskFactors: unionRiskFactors([{ source: 'getEntity', risk: profileRow.risk }]).map(
+        (u) => u.factor,
+      ),
       psaCount: profileRow.psaCount ?? undefined,
-      relationshipCount: (profileRow.relationshipCount as Record<string, number> | null) ?? undefined,
+      relationshipCount:
+        (profileRow.relationshipCount as Record<string, number> | null) ?? undefined,
       relationshipsTruncated: profileRow.relationshipsTruncated,
     },
     owners: owners.map((o) => ({
@@ -228,14 +272,19 @@ export async function enrichSupplier(
     enrichmentsWritten: written,
     criterionValuesWritten,
     familyMembers: family.members.length,
-    skipped: exposure.state === 'not_covered' ? 'family not covered — the ownership graph returned nobody' : undefined,
+    skipped:
+      exposure.state === 'not_covered'
+        ? 'family not covered — the ownership graph returned nobody'
+        : undefined,
   };
 }
 
 /** Serious flags weigh ×3, moderate ×1, unflagged ×0.5 (SPEC §9.2). */
 function scoreArticle(riskFlags: unknown): { seriousFlags: number; moderateFlags: number } {
   const flags = Array.isArray(riskFlags) ? riskFlags.map(String) : [];
-  const serious = flags.filter((f) => /sanction|forced_labor|export_control|corruption|fraud/i.test(f)).length;
+  const serious = flags.filter((f) =>
+    /sanction|forced_labor|export_control|corruption|fraud/i.test(f),
+  ).length;
   return { seriousFlags: serious, moderateFlags: flags.length - serious };
 }
 
@@ -271,7 +320,9 @@ async function writeAllCriteria(
 ): Promise<number> {
   let written = 0;
 
-  const nonTariff = scoreSupplier(args.input, undefined, { hasCategory: args.categoryIds.length > 0 });
+  const nonTariff = scoreSupplier(args.input, undefined, {
+    hasCategory: args.categoryIds.length > 0,
+  });
   for (const criterion of nonTariff.criteria) {
     if (criterion.key === 'tariff_exposure') continue;
     await writeCriterionValue(db, {
@@ -291,7 +342,10 @@ async function writeAllCriteria(
   for (const categoryId of args.categoryIds) {
     const tariff = args.tariffByCategory?.get(categoryId);
     const perCategory = scoreSupplier(
-      { ...args.input, tariff: tariff ? { hsCode: tariff.hsCode, mfnRatePct: tariff.mfnRatePct } : undefined },
+      {
+        ...args.input,
+        tariff: tariff ? { hsCode: tariff.hsCode, mfnRatePct: tariff.mfnRatePct } : undefined,
+      },
       undefined,
       { hasCategory: true },
     );
@@ -313,7 +367,11 @@ async function writeAllCriteria(
      * only row this belongs on is the one whose rate the caveat qualifies.
      */
     const flags = await db
-      .select({ key: t.tariffFlag.key, label: t.tariffFlag.label, whyNotARate: t.tariffFlag.whyNotARate })
+      .select({
+        key: t.tariffFlag.key,
+        label: t.tariffFlag.label,
+        whyNotARate: t.tariffFlag.whyNotARate,
+      })
       .from(t.categoryFlag)
       .innerJoin(t.tariffFlag, eq(t.tariffFlag.key, t.categoryFlag.flagKey))
       .where(eq(t.categoryFlag.categoryId, categoryId))
