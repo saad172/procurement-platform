@@ -1,7 +1,7 @@
 import type { Database } from '@/db/client';
 import type * as t from '@/db/schema';
 import { checkRunBudget, dequeueJob, finishJob, settleRunState } from '@/jobs/runs';
-import { describeError } from '@/jobs/describe-error';
+import { describeError } from '@/lib/describe-error';
 import { UnpublishableDraftError } from '@/jobs/rounds';
 import { UpstreamCapExceededError } from '@/upstream/errors';
 

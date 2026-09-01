@@ -16,6 +16,7 @@
  */
 export { runLoop, priceOf } from './run-loop';
 export { getAnthropicClient, resetAnthropicClients } from './client';
+export { describeModelError } from './describe-model-error';
 export {
   CACHE_CONTROL,
   isSystemRoleUnsupported,

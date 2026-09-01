@@ -4,6 +4,7 @@ import { eq, sql } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { MODEL_PRICE_USD_PER_MTOK } from '@/config/constants';
 import { getAnthropicClient } from './client';
+import { describeModelError } from './describe-model-error';
 import { takeWireHash } from './wire';
 import {
   BASE_BETAS,
@@ -156,7 +157,7 @@ export async function runLoop(params: RunLoopParams, ctx: ModelContext): Promise
     // Named loudly: a failure here is something only we can fix, and a silent
     // one reads to the caller as the model mis-shaping its output.
     console.error(`[model] runLoop(${params.loop}) failed:`, error);
-    return { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+    return { status: 'failed', error: describeModelError(error) };
   }
 
   return { status: 'done', finalMessage: lastMessage, toolUses, turns, toolCalls, tokens };
