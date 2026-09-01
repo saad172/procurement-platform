@@ -257,6 +257,6 @@ Sequenced so each step is verifiable before the next depends on it
 
 All sixteen are done. What each step actually cost, and every place the spec's
 assumptions turned out to be wrong, is in
-[`docs/BUILD-NOTES.md`](docs/BUILD-NOTES.md) — 103 numbered findings, each one a
+[`docs/BUILD-NOTES.md`](docs/BUILD-NOTES.md) — 104 numbered findings, each one a
 measurement rather than an opinion. **The write-up should quote that file, not
 the spec, for any number.**
