@@ -99,118 +99,131 @@ const getSupplier = defineTool({
       };
     }
 
-    const supplier = await ctx.db.query.supplier.findFirst({
-      where: eq(t.supplier.id, input.supplierId),
-      with: { categories: { with: { category: true } } },
-    });
-    if (!supplier) return { ok: false, objections: [`no supplier with id ${input.supplierId}`] };
+    const loaded = await loadSupplierCard(ctx, input.supplierId);
+    if (!loaded) return { ok: false, objections: [`no supplier with id ${input.supplierId}`] };
 
-    const match = await ctx.db.query.match.findFirst({
-      where: eq(t.match.supplierId, supplier.id),
-      with: { entity: true },
-    });
-    const criterionValues = await ctx.db
-      .select()
-      .from(t.criterionValue)
-      .where(and(eq(t.criterionValue.supplierId, supplier.id), eq(t.criterionValue.isCurrent, true)))
-      .orderBy(asc(t.criterionValue.criterionKey));
-
-    /**
-     * **Projected, not the raw rows** (SPEC §15.2; the same lesson as
-     * `sayari_get_entity`, finding 44).
-     *
-     * A `criterion_value` row carries `rawInputs` — a whole scoring input blob —
-     * plus `supersedesId`, `isCurrent` and `jobId`. Handed over whole, the
-     * model receives the app's *bookkeeping* alongside the figure, and the
-     * bookkeeping is both the larger half and the part no sentence should ever
-     * quote: `settledAt` and `jobId` are facts about when we ran, not about the
-     * Supplier.
-     *
-     * What stays is everything a sentence can honestly cite — the value, the
-     * anchor line the UI renders beside it, the reason a criterion is unknown,
-     * and the `rawInputs` the Assessment argues from. What goes is the row's
-     * own history.
-     *
-     * The widget keeps the full rows: it renders for a person, who is entitled
-     * to see when a Match was settled.
-     */
-    const forModel = {
-      supplier: {
-        id: supplier.id,
-        rosterIndex: supplier.rosterIndex,
-        rosterName: supplier.rosterName,
-        rosterAddress: supplier.rosterAddress,
-        rosterCountry: supplier.rosterCountry,
-        origin: supplier.origin,
-        categories: supplier.categories.map((link) => ({
-          code: link.category.code,
-          name: link.category.name,
-        })),
-      },
-      match: match
-        ? {
-            id: match.id,
-            status: match.status,
-            settledBy: match.settledBy,
-            matchStrength: match.matchStrength,
-            entityId: match.entityId,
-            /**
-             * The **local** entity row, projected by its own shape.
-             *
-             * This called `toEntityView`, which reads a *Sayari* projection —
-             * `countries`, `addresses`, `identifiers`, `source_count` as an
-             * object. The local table stores `country`, `address_line`, `lei`
-             * and a separate `distinct_source_count`, so every field read
-             * `undefined` and the model was handed a company with no country,
-             * no address and no identifiers.
-             *
-             * It said so, in the published Assessment: *"the entity snapshot
-             * carried on the match itself is thin … no country, no addresses,
-             * no identifiers and a source count of 0"*, and then went and found
-             * the real row through another tool. The prose was accurate about
-             * what it had been shown, and what it had been shown was wrong.
-             *
-             * The same casing-and-shape confusion as finding 5, one layer in:
-             * two representations of one company, and a projection pointed at
-             * the wrong one. `as never` is what let it compile.
-             */
-            entity: match.entity
-              ? {
-                  id: match.entity.id,
-                  label: match.entity.label,
-                  entityType: match.entity.entityType,
-                  country: match.entity.country,
-                  addressLine: match.entity.addressLine,
-                  city: match.entity.city,
-                  postcode: match.entity.postcode,
-                  lei: match.entity.lei,
-                  distinctSourceCount: match.entity.distinctSourceCount,
-                  sanctioned: match.entity.sanctioned,
-                  pep: match.entity.pep,
-                  closed: match.entity.closed,
-                  psaCount: match.entity.psaCount,
-                  risk: match.entity.risk,
-                  relationshipCount: match.entity.relationshipCount,
-                  relationshipsTruncated: match.entity.relationshipsTruncated,
-                }
-              : null,
-          }
-        : null,
-      criterionValues: criterionValues.map((row) => ({
-        id: row.id,
-        criterionKey: row.criterionKey,
-        value: row.value,
-        unknownReason: row.unknownReason,
-        anchorLine: row.anchorLine,
-        rawInputs: row.rawInputs,
-      })),
-    };
+    const forModel = projectSupplierCard(loaded);
 
     // `widget(type, data, payload)` — `data` is what the MODEL reads, `payload`
     // is what the widget renders for a person. They are not the same thing here.
-    return { ok: true, data: widget('supplier_card', forModel, { supplier, match, criterionValues }) };
+    return { ok: true, data: widget('supplier_card', forModel, loaded) };
   },
 });
+
+/** The rows `get_supplier`'s widget and model projection are both built from. */
+async function loadSupplierCard(ctx: ToolContext, supplierId: string) {
+  const supplier = await ctx.db.query.supplier.findFirst({
+    where: eq(t.supplier.id, supplierId),
+    with: { categories: { with: { category: true } } },
+  });
+  if (!supplier) return undefined;
+
+  const match = await ctx.db.query.match.findFirst({
+    where: eq(t.match.supplierId, supplier.id),
+    with: { entity: true },
+  });
+  const criterionValues = await ctx.db
+    .select()
+    .from(t.criterionValue)
+    .where(and(eq(t.criterionValue.supplierId, supplier.id), eq(t.criterionValue.isCurrent, true)))
+    .orderBy(asc(t.criterionValue.criterionKey));
+
+  return { supplier, match, criterionValues };
+}
+
+/**
+ * **Projected, not the raw rows** (SPEC §15.2; the same lesson as
+ * `sayari_get_entity`, finding 44).
+ *
+ * A `criterion_value` row carries `rawInputs` — a whole scoring input blob —
+ * plus `supersedesId`, `isCurrent` and `jobId`. Handed over whole, the
+ * model receives the app's *bookkeeping* alongside the figure, and the
+ * bookkeeping is both the larger half and the part no sentence should ever
+ * quote: `settledAt` and `jobId` are facts about when we ran, not about the
+ * Supplier.
+ *
+ * What stays is everything a sentence can honestly cite — the value, the
+ * anchor line the UI renders beside it, the reason a criterion is unknown,
+ * and the `rawInputs` the Assessment argues from. What goes is the row's
+ * own history.
+ *
+ * The widget keeps the full rows: it renders for a person, who is entitled
+ * to see when a Match was settled.
+ */
+function projectSupplierCard(loaded: NonNullable<Awaited<ReturnType<typeof loadSupplierCard>>>) {
+  const { supplier, match, criterionValues } = loaded;
+  return {
+    supplier: {
+      id: supplier.id,
+      rosterIndex: supplier.rosterIndex,
+      rosterName: supplier.rosterName,
+      rosterAddress: supplier.rosterAddress,
+      rosterCountry: supplier.rosterCountry,
+      origin: supplier.origin,
+      categories: supplier.categories.map((link) => ({
+        code: link.category.code,
+        name: link.category.name,
+      })),
+    },
+    match: match
+      ? {
+          id: match.id,
+          status: match.status,
+          settledBy: match.settledBy,
+          matchStrength: match.matchStrength,
+          entityId: match.entityId,
+          /**
+           * The **local** entity row, projected by its own shape.
+           *
+           * This called `toEntityView`, which reads a *Sayari* projection —
+           * `countries`, `addresses`, `identifiers`, `source_count` as an
+           * object. The local table stores `country`, `address_line`, `lei`
+           * and a separate `distinct_source_count`, so every field read
+           * `undefined` and the model was handed a company with no country,
+           * no address and no identifiers.
+           *
+           * It said so, in the published Assessment: *"the entity snapshot
+           * carried on the match itself is thin … no country, no addresses,
+           * no identifiers and a source count of 0"*, and then went and found
+           * the real row through another tool. The prose was accurate about
+           * what it had been shown, and what it had been shown was wrong.
+           *
+           * The same casing-and-shape confusion as finding 5, one layer in:
+           * two representations of one company, and a projection pointed at
+           * the wrong one. `as never` is what let it compile.
+           */
+          entity: match.entity
+            ? {
+                id: match.entity.id,
+                label: match.entity.label,
+                entityType: match.entity.entityType,
+                country: match.entity.country,
+                addressLine: match.entity.addressLine,
+                city: match.entity.city,
+                postcode: match.entity.postcode,
+                lei: match.entity.lei,
+                distinctSourceCount: match.entity.distinctSourceCount,
+                sanctioned: match.entity.sanctioned,
+                pep: match.entity.pep,
+                closed: match.entity.closed,
+                psaCount: match.entity.psaCount,
+                risk: match.entity.risk,
+                relationshipCount: match.entity.relationshipCount,
+                relationshipsTruncated: match.entity.relationshipsTruncated,
+              }
+            : null,
+        }
+      : null,
+    criterionValues: criterionValues.map((row) => ({
+      id: row.id,
+      criterionKey: row.criterionKey,
+      value: row.value,
+      unknownReason: row.unknownReason,
+      anchorLine: row.anchorLine,
+      rawInputs: row.rawInputs,
+    })),
+  };
+}
 
 /**
  * The Corporate family for one Supplier (SPEC §8.4).

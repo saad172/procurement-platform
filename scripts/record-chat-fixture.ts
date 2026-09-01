@@ -4,8 +4,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { and, eq, gte, isNotNull } from 'drizzle-orm';
 import * as t from '@/db/schema';
-import { loadEnv } from '@/config/env';
-import { closeTestDb, getTestDb, testDatabaseIsUp } from '../tests/support/test-db';
+import { loadEnv, type Env } from '@/config/env';
+import { closeTestDb, getTestDb, testDatabaseIsUp, type TestDb } from '../tests/support/test-db';
 import { resetDerived } from '../tests/support/reset';
 import { seededProgram } from '../tests/support/seeded-program';
 import { runChatTurn } from '@/chat/turn';
@@ -15,6 +15,9 @@ import { fixtureDigest, serializeFixture } from '@/fixtures/record';
 import { buildManifest } from '@/model';
 import { getRegistry } from '@/tools';
 import type { Fixture, FixtureUpstreamRow } from '@/fixtures/types';
+
+/** What `main` reads out of a finished `done` event to build the fixture from. */
+type Done = { threadId: string; text: string; widgets: unknown[]; proposals: unknown[] };
 
 /**
  * Records the `chat/one-turn` fixture (SPEC §19.2).
@@ -85,37 +88,9 @@ async function main(): Promise<void> {
     await resetDerived(db);
     const program = await seededProgram(db);
 
-    const message = process.argv[2] ?? DEFAULT_MESSAGE;
-    const startedAt = new Date();
+    const { sink, events, startedAt } = await runRecordedChatTurn(db, env, program);
 
-    /**
-     * The recording client is built here and the module cache cleared around
-     * it, so the recording fetch cannot leak into a later call and a cached
-     * production client cannot serve this one.
-     */
-    resetAnthropicClients();
-    const sink: RecordingSink = { turns: [] };
-    const recorded = recordingFetch(fetch, sink, { loop: 'chat' });
-
-    const events: { event: string; data: unknown }[] = [];
-    await runChatTurn(
-      {
-        db,
-        upstreamCredentials: {
-          sayariClientId: env.SAYARI_CLIENT_ID,
-          sayariClientSecret: env.SAYARI_CLIENT_SECRET,
-          nominatimUserAgent: env.NOMINATIM_USER_AGENT,
-        },
-        modelCredentials: { apiKey: env.ANTHROPIC_API_KEY, fetch: recorded },
-      },
-      { programId: program.id, message, pageRef: `/program/${program.id}` },
-      (event, data) => events.push({ event, data }),
-    );
-    resetAnthropicClients();
-
-    const done = events.find((entry) => entry.event === 'done')?.data as
-      | { threadId: string; text: string; widgets: unknown[]; proposals: unknown[] }
-      | undefined;
+    const done = events.find((entry) => entry.event === 'done')?.data as Done | undefined;
     if (!done) {
       console.error('The turn produced no `done` event, so there is nothing to record.');
       process.exitCode = 1;
@@ -124,87 +99,146 @@ async function main(): Promise<void> {
 
     const run = await db.query.run.findFirst({ where: eq(t.run.threadId, done.threadId) });
 
-    /**
-     * Upstream bodies are captured by **time window** — every row written since
-     * the turn began.
-     *
-     * That is complete only if every upstream call this turn made was live. A
-     * cache *hit* reused a row that already existed, which the window misses,
-     * and a fixture missing a body it needs fails at replay with a cache miss
-     * rather than here. So a hit is refused now, where the fix is obvious.
-     */
-    const upstreamUsage = run
-      ? await db
-          .select({ endpoint: t.usageEvent.endpoint, cacheHit: t.usageEvent.cacheHit })
-          .from(t.usageEvent)
-          .where(and(eq(t.usageEvent.runId, run.id), isNotNull(t.usageEvent.source)))
-      : [];
-
-    const hits = upstreamUsage.filter((row) => row.cacheHit);
-    if (hits.length > 0) {
-      console.error(
-        [
-          `${hits.length} upstream call(s) were served from cache, so their bodies were not`,
-          'written during this turn and the fixture would be missing them:',
-          ...hits.map((row) => `  ${row.endpoint}`),
-          '',
-          'Delete those `upstream_response` rows and record again, so every body the',
-          'fixture needs is captured in the window.',
-        ].join('\n'),
-      );
+    const upstream = await loadFixtureUpstream(db, run, startedAt);
+    if (!upstream) {
       process.exitCode = 1;
       return;
     }
 
-    const upstreamRows = await db
-      .select()
-      .from(t.upstreamResponse)
-      .where(gte(t.upstreamResponse.fetchedAt, startedAt));
-
-    const upstream: FixtureUpstreamRow[] = upstreamRows.map((row) => ({
-      source: row.source,
-      endpoint: row.endpoint,
-      paramsHash: row.paramsHash,
-      params: row.params,
-      body: row.body,
-      bodyHash: row.bodyHash,
-      via: row.via,
-    }));
-
-    const registry = getRegistry();
-    const chatDigest = registry.digest(registry.forSurface('chat')).hash;
-    const chatManifest = buildManifest({ chat: chatDigest }).find((entry) => entry.loop === 'chat')!;
-
-    const fixture: Fixture = {
-      manifest: {
-        name: FIXTURE_NAME,
-        recordedAt: new Date().toISOString(),
-        loopHashes: { chat: chatManifest.hash },
-        toolDigests: { chat: chatDigest },
-      },
-      turns: sink.turns,
-      upstream,
-    };
-
-    const path = join(process.cwd(), 'tests', 'fixtures', `${FIXTURE_NAME}.json`);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, serializeFixture(fixture));
-
-    console.warn(
-      [
-        '',
-        `  ${FIXTURE_NAME}`,
-        `    ${fixture.turns.length} turn(s), ${fixture.turns.filter((turn) => turn.sse).length} streamed`,
-        `    ${upstream.length} cached upstream row(s)`,
-        `    ${done.widgets.length} widget(s), ${done.proposals.length} proposal(s)`,
-        `    digest ${fixtureDigest(fixture).slice(0, 16)}…`,
-        `    written to ${path}`,
-        '',
-      ].join('\n'),
-    );
+    await writeFixture(sink, upstream, done);
   } finally {
     await closeTestDb();
   }
+}
+
+/**
+ * The recording client is built here and the module cache cleared around
+ * it, so the recording fetch cannot leak into a later call and a cached
+ * production client cannot serve this one.
+ */
+async function runRecordedChatTurn(
+  db: TestDb,
+  env: Env,
+  program: Awaited<ReturnType<typeof seededProgram>>,
+): Promise<{ sink: RecordingSink; events: { event: string; data: unknown }[]; startedAt: Date }> {
+  const message = process.argv[2] ?? DEFAULT_MESSAGE;
+  const startedAt = new Date();
+
+  resetAnthropicClients();
+  const sink: RecordingSink = { turns: [] };
+  const recorded = recordingFetch(fetch, sink, { loop: 'chat' });
+
+  const events: { event: string; data: unknown }[] = [];
+  await runChatTurn(
+    {
+      db,
+      upstreamCredentials: {
+        sayariClientId: env.SAYARI_CLIENT_ID,
+        sayariClientSecret: env.SAYARI_CLIENT_SECRET,
+        nominatimUserAgent: env.NOMINATIM_USER_AGENT,
+      },
+      modelCredentials: { apiKey: env.ANTHROPIC_API_KEY, fetch: recorded },
+    },
+    { programId: program.id, message, pageRef: `/program/${program.id}` },
+    (event, data) => events.push({ event, data }),
+  );
+  resetAnthropicClients();
+
+  return { sink, events, startedAt };
+}
+
+/**
+ * Upstream bodies are captured by **time window** — every row written since
+ * the turn began.
+ *
+ * That is complete only if every upstream call this turn made was live. A
+ * cache *hit* reused a row that already existed, which the window misses,
+ * and a fixture missing a body it needs fails at replay with a cache miss
+ * rather than here. So a hit is refused now, where the fix is obvious.
+ *
+ * Returns `undefined` on the refusal above, having already printed why — the
+ * caller only needs to know whether to stop.
+ */
+async function loadFixtureUpstream(
+  db: TestDb,
+  run: { id: string } | undefined,
+  startedAt: Date,
+): Promise<FixtureUpstreamRow[] | undefined> {
+  const upstreamUsage = run
+    ? await db
+        .select({ endpoint: t.usageEvent.endpoint, cacheHit: t.usageEvent.cacheHit })
+        .from(t.usageEvent)
+        .where(and(eq(t.usageEvent.runId, run.id), isNotNull(t.usageEvent.source)))
+    : [];
+
+  const hits = upstreamUsage.filter((row) => row.cacheHit);
+  if (hits.length > 0) {
+    console.error(
+      [
+        `${hits.length} upstream call(s) were served from cache, so their bodies were not`,
+        'written during this turn and the fixture would be missing them:',
+        ...hits.map((row) => `  ${row.endpoint}`),
+        '',
+        'Delete those `upstream_response` rows and record again, so every body the',
+        'fixture needs is captured in the window.',
+      ].join('\n'),
+    );
+    return undefined;
+  }
+
+  const upstreamRows = await db
+    .select()
+    .from(t.upstreamResponse)
+    .where(gte(t.upstreamResponse.fetchedAt, startedAt));
+
+  return upstreamRows.map((row) => ({
+    source: row.source,
+    endpoint: row.endpoint,
+    paramsHash: row.paramsHash,
+    params: row.params,
+    body: row.body,
+    bodyHash: row.bodyHash,
+    via: row.via,
+  }));
+}
+
+/** Builds the manifest, writes the fixture to disk, and prints a summary. */
+async function writeFixture(
+  sink: RecordingSink,
+  upstream: FixtureUpstreamRow[],
+  done: Done,
+): Promise<void> {
+  const registry = getRegistry();
+  const chatDigest = registry.digest(registry.forSurface('chat')).hash;
+  const chatManifest = buildManifest({ chat: chatDigest }).find((entry) => entry.loop === 'chat')!;
+
+  const fixture: Fixture = {
+    manifest: {
+      name: FIXTURE_NAME,
+      recordedAt: new Date().toISOString(),
+      loopHashes: { chat: chatManifest.hash },
+      toolDigests: { chat: chatDigest },
+    },
+    turns: sink.turns,
+    upstream,
+  };
+
+  const path = join(process.cwd(), 'tests', 'fixtures', `${FIXTURE_NAME}.json`);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, serializeFixture(fixture));
+
+  console.warn(
+    [
+      '',
+      `  ${FIXTURE_NAME}`,
+      `    ${fixture.turns.length} turn(s), ${fixture.turns.filter((turn) => turn.sse).length} streamed`,
+      `    ${upstream.length} cached upstream row(s)`,
+      `    ${done.widgets.length} widget(s), ${done.proposals.length} proposal(s)`,
+      `    digest ${fixtureDigest(fixture).slice(0, 16)}…`,
+      `    written to ${path}`,
+      '',
+    ].join('\n'),
+  );
 }
 
 void main();

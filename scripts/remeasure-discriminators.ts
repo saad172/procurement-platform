@@ -35,17 +35,40 @@ type Row = {
 
 const pct = (n: number, of: number) => (of === 0 ? '  —  ' : `${((n / of) * 100).toFixed(1)}%`);
 
+type Flip = { entity: string; roster: string; discriminator: string; from: string; to: string };
+
+type Measurement = {
+  now: Record<string, Record<string, number>>;
+  then: Record<string, Record<string, number>>;
+  flips: Flip[];
+  noPayload: number;
+  noRecorded: number;
+  measured: number;
+  aliasesGained: number;
+  purposesGained: number;
+};
+
+/** The spine: query the judged Candidates, remeasure them, then report. */
 async function main() {
   const sql = postgres(process.env.DATABASE_URL!);
 
-  /**
-   * One row per judged Candidate, carrying the roster row it was judged
-   * against and the most recent stored body for its entity.
-   *
-   * `distinct on` keeps the newest payload per entity — a Candidate refetched
-   * in a later attempt should be re-measured against what we hold now.
-   */
-  const rows = (await sql`
+  const rows = await queryJudgedCandidates(sql);
+  const measurement = remeasure(rows);
+
+  await sql.end();
+
+  printReport(rows.length, measurement);
+}
+
+/**
+ * One row per judged Candidate, carrying the roster row it was judged
+ * against and the most recent stored body for its entity.
+ *
+ * `distinct on` keeps the newest payload per entity — a Candidate refetched
+ * in a later attempt should be re-measured against what we hold now.
+ */
+async function queryJudgedCandidates(sql: postgres.Sql): Promise<Row[]> {
+  return (await sql`
     with payload as (
       select distinct on (u.params->>'id')
              u.params->>'id' as entity_id, u.body
@@ -67,10 +90,13 @@ async function main() {
     left join payload p on p.entity_id = mc.entity_id
     where s.roster_name is not null
   `) as unknown as Row[];
+}
 
+/** Runs the eight Discriminators over every row's stored payload and diffs against what was recorded. */
+function remeasure(rows: Row[]): Measurement {
   const now: Record<string, Record<string, number>> = {};
   const then: Record<string, Record<string, number>> = {};
-  const flips: { entity: string; roster: string; discriminator: string; from: string; to: string }[] = [];
+  const flips: Flip[] = [];
   let noPayload = 0;
   let noRecorded = 0;
   let measured = 0;
@@ -139,9 +165,14 @@ async function main() {
     }
   }
 
-  await sql.end();
+  return { now, then, flips, noPayload, noRecorded, measured, aliasesGained, purposesGained };
+}
 
-  console.log(`judged Candidates       ${rows.length}`);
+/** Prints the counts, the per-Discriminator then/now table, and the named flips. */
+function printReport(judgedCount: number, measurement: Measurement) {
+  const { now, then, flips, noPayload, noRecorded, measured, aliasesGained, purposesGained } = measurement;
+
+  console.log(`judged Candidates       ${judgedCount}`);
   console.log(`  re-measured           ${measured}`);
   console.log(`  no stored payload     ${noPayload}`);
   console.log(`  no recorded verdicts  ${noRecorded}`);

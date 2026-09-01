@@ -112,6 +112,11 @@ async function writeUsage(
   });
 }
 
+/**
+ * The spine. Reads top to bottom as the four phases named above: cache
+ * lookup → dispatch (which itself writes and projects — see `dispatch()`
+ * for why those two are not pulled out to this level).
+ */
 export async function call<TParams extends Record<string, unknown>, TProjected>(
   def: EndpointDef<TParams, TProjected>,
   rawParams: TParams,
@@ -125,43 +130,81 @@ export async function call<TParams extends Record<string, unknown>, TProjected>(
 
   // ── 1. Cache lookup ────────────────────────────────────────────────────────
   if (!ctx.refresh) {
-    const cached = await readCache(ctx, def.source, def.endpoint, paramsHash);
-    if (cached) {
-      // A cache hit is still a usage row, with `cache_hit` true and `ms` 0 —
-      // the confirm gate reads exactly this to say "cached — no credits".
-      await writeUsage(ctx, def, {
-        ms: 0,
-        outcome: 'ok',
-        cacheHit: true,
-        via: cached.via,
-        // Recorded on a hit as well as a live call. A fixture has to find the
-        // bodies a Job READ, and on a warm cache almost every read is a hit.
-        upstreamResponseId: cached.id,
-      });
-      return {
-        data: project(def, cached.body, paramsHash),
-        cacheHit: true,
-        via: cached.via,
-        fetchedAt: cached.fetchedAt,
-        upstreamResponseId: cached.id,
-        bodyHash: cached.bodyHash,
-      };
-    }
+    const hit = await lookupCache(ctx, def, paramsHash);
+    if (hit) return hit;
   }
 
-  /**
-   * ── The per-Job ceiling, checked before a live call ─────────────────────
-   *
-   * **After the cache, and deliberately.** A cache hit spends no credit, so
-   * refusing one would stop a Job that was costing nothing — and replaying a
-   * fixture, which is all cache hits, would hit a ceiling sized for real calls.
-   * What this bounds is spend, so it sits exactly where spend begins.
-   *
-   * Counted from `usage_event`, the one home of usage, rather than from a
-   * counter held in memory: a Job resumed after a killed worker has already
-   * spent what its earlier attempt spent, and a fresh in-process count would
-   * hand it the whole ceiling a second time.
-   */
+  // ── 2. Dispatch ────────────────────────────────────────────────────────────
+  return dispatch(def, withDefaults, params, paramsHash, ctx);
+}
+
+/**
+ * ── 1. Cache lookup ──────────────────────────────────────────────────────
+ *
+ * Returns `undefined` on a miss, so the spine's `if (hit)` reads as the
+ * whole decision. A cache hit is still a usage row, with `cache_hit` true
+ * and `ms` 0 — the confirm gate reads exactly this to say "cached — no
+ * credits".
+ */
+async function lookupCache<TParams extends Record<string, unknown>, TProjected>(
+  ctx: UpstreamContext,
+  def: EndpointDef<TParams, TProjected>,
+  paramsHash: string,
+): Promise<UpstreamResult<TProjected> | undefined> {
+  const cached = await readCache(ctx, def.source, def.endpoint, paramsHash);
+  if (!cached) return undefined;
+  await writeUsage(ctx, def, {
+    ms: 0,
+    outcome: 'ok',
+    cacheHit: true,
+    via: cached.via,
+    // Recorded on a hit as well as a live call. A fixture has to find the
+    // bodies a Job READ, and on a warm cache almost every read is a hit.
+    upstreamResponseId: cached.id,
+  });
+  return {
+    data: project(def, cached.body, paramsHash),
+    cacheHit: true,
+    via: cached.via,
+    fetchedAt: cached.fetchedAt,
+    upstreamResponseId: cached.id,
+    bodyHash: cached.bodyHash,
+  };
+}
+
+/**
+ * ── 2. Dispatch ────────────────────────────────────────────────────────────
+ *
+ * The per-Job ceiling, the credentials guard, the retried live call, and —
+ * nested inside the same try/catch as the call itself — phases 3 (write) and
+ * 4 (project). They stay inside this one function, rather than becoming
+ * further top-level calls from `call()`, because the retry loop's
+ * try/catch/finally is the thing that must not move: a failure while writing
+ * `upstream_response` or while projecting is still a failure *of this
+ * attempt*, classified and (if retryable) retried the same as a failure in
+ * the live call itself. Pulling write and project out to `call()` would put
+ * their exceptions outside that catch — a different handler for the same
+ * failure.
+ *
+ * ── The per-Job ceiling, checked before a live call ─────────────────────
+ *
+ * **After the cache, and deliberately.** A cache hit spends no credit, so
+ * refusing one would stop a Job that was costing nothing — and replaying a
+ * fixture, which is all cache hits, would hit a ceiling sized for real calls.
+ * What this bounds is spend, so it sits exactly where spend begins.
+ *
+ * Counted from `usage_event`, the one home of usage, rather than from a
+ * counter held in memory: a Job resumed after a killed worker has already
+ * spent what its earlier attempt spent, and a fresh in-process count would
+ * hand it the whole ceiling a second time.
+ */
+async function dispatch<TParams extends Record<string, unknown>, TProjected>(
+  def: EndpointDef<TParams, TProjected>,
+  withDefaults: TParams,
+  params: Record<string, unknown>,
+  paramsHash: string,
+  ctx: UpstreamContext,
+): Promise<UpstreamResult<TProjected>> {
   if (ctx.jobId && ctx.toolCallCap && ctx.toolCallCap > 0) {
     const [used] = (await ctx.db
       .select({ n: sql<number>`count(*)::int` })
@@ -186,7 +229,6 @@ export async function call<TParams extends Record<string, unknown>, TProjected>(
   }
   const credentials = ctx.credentials;
 
-  // ── 2. Dispatch ────────────────────────────────────────────────────────────
   let lastError: UpstreamError | undefined;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     const controller = new AbortController();

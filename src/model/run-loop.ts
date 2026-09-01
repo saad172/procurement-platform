@@ -92,10 +92,72 @@ function isMessageStream(value: BetaMessage | BetaMessageStream): value is BetaM
   return typeof (value as BetaMessageStream).finalMessage === 'function';
 }
 
+/**
+ * The spine. Reads top to bottom as the phases named above: yield (via
+ * `resolveTurn`, already a private helper before this one) → write → check
+ * caps → let the tools run. "Let the tools run" is never a call of its own —
+ * it is what happens when a turn does not return: control falls back to
+ * `for await`, and the SDK's tool runner executes any pending tool calls
+ * before yielding the next turn.
+ */
 export async function runLoop(
   params: RunLoopParams,
   ctx: ModelContext,
 ): Promise<RunLoopOutcome> {
+  const { runner, controller } = buildRunner(params, ctx);
+
+  let turns = 0;
+  let toolCalls = 0;
+  let tokens = 0;
+  let lastMessage: BetaMessage | undefined;
+  const toolUses: { name: string; input: unknown }[] = [];
+
+  try {
+    for await (const message of runner) {
+      /**
+       * Streaming turns arrive as a `BetaMessageStream`. Text deltas are handed
+       * to `onTextDelta` as they land — that is the whole point of streaming —
+       * and then the turn is awaited to completion.
+       *
+       * **The bookkeeping still runs on the finished message.** Metering a
+       * partial turn would mean a `usage_event` whose token counts are not yet
+       * known, and a cap check against a number still moving. Streaming changes
+       * when the *person* sees the answer, not when the ledger is written.
+       */
+      const turn = await resolveTurn(message, params.onTextDelta);
+      turns += 1;
+      lastMessage = turn;
+
+      const written = await recordTurn(ctx, params, turn);
+      toolUses.push(...written.toolUses);
+      toolCalls += written.toolCalls;
+      tokens += written.tokens;
+
+      const decision = await checkCapsAndBudget(params, controller, turn, {
+        turns,
+        toolCalls,
+        tokens,
+        toolUses,
+      });
+      if (decision) return decision;
+    }
+  } catch (error) {
+    if (controller.signal.aborted) {
+      // An abort we initiated has already returned its outcome above; reaching
+      // here means the abort raced the iterator, so report what we counted.
+      return { status: 'terminated', reason: 'aborted at a ceiling', turns, toolCalls, tokens, toolUses };
+    }
+    // Named loudly: a failure here is something only we can fix, and a silent
+    // one reads to the caller as the model mis-shaping its output.
+    console.error(`[model] runLoop(${params.loop}) failed:`, error);
+    return { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+  }
+
+  return { status: 'done', finalMessage: lastMessage, toolUses, turns, toolCalls, tokens };
+}
+
+/** Constructs the Tool Runner and the controller that aborts it — the setup the loop runs on. */
+function buildRunner(params: RunLoopParams, ctx: ModelContext) {
   const settings = LOOP_SETTINGS[params.loop];
   const client = getAnthropicClient(ctx.credentials);
 
@@ -134,114 +196,117 @@ export async function runLoop(
     { signal: controller.signal },
   );
 
-  let turns = 0;
-  let toolCalls = 0;
-  let tokens = 0;
-  let lastMessage: BetaMessage | undefined;
+  return { runner, controller };
+}
+
+/**
+ * ── Write, before checking anything ──────────────────────────────────────
+ *
+ * Records this turn's tool uses and counts, and writes `trace_turn` +
+ * `usage_event` (+ the pending `trace_tool_call` rows) before any cap or
+ * budget check runs — a crash inside a tool still leaves the turn that
+ * caused it on record.
+ */
+async function recordTurn(
+  ctx: ModelContext,
+  params: RunLoopParams,
+  turn: BetaMessage,
+): Promise<{ toolUses: { name: string; input: unknown }[]; toolCalls: number; tokens: number }> {
   const toolUses: { name: string; input: unknown }[] = [];
+  for (const block of turn.content) {
+    if (block.type === 'tool_use') toolUses.push({ name: block.name, input: block.input });
+  }
+  const toolCalls = toolCallsIn(turn);
+  const tokens = tokensOf(turn);
 
-  try {
-    for await (const message of runner) {
-      /**
-       * Streaming turns arrive as a `BetaMessageStream`. Text deltas are handed
-       * to `onTextDelta` as they land — that is the whole point of streaming —
-       * and then the turn is awaited to completion.
-       *
-       * **The bookkeeping still runs on the finished message.** Metering a
-       * partial turn would mean a `usage_event` whose token counts are not yet
-       * known, and a cap check against a number still moving. Streaming changes
-       * when the *person* sees the answer, not when the ledger is written.
-       */
-      const turn = await resolveTurn(message, params.onTextDelta);
-      turns += 1;
-      lastMessage = turn;
+  const traceTurnId = await writeTurn(ctx, params, turn);
+  await writeUsage(ctx, turn, traceTurnId);
+  await writeToolCalls(ctx, turn, traceTurnId);
 
-      // ── Write, before checking anything ──────────────────────────────────
-      for (const block of turn.content) {
-        if (block.type === 'tool_use') toolUses.push({ name: block.name, input: block.input });
-      }
-      const turnToolCalls = toolCallsIn(turn);
-      const turnTokens = tokensOf(turn);
-      toolCalls += turnToolCalls;
-      tokens += turnTokens;
+  return { toolUses, toolCalls, tokens };
+}
 
-      const traceTurnId = await writeTurn(ctx, params, turn);
-      await writeUsage(ctx, turn, traceTurnId);
-      await writeToolCalls(ctx, turn, traceTurnId);
+/**
+ * ── Check caps, before letting the next tools run ────────────────────────
+ *
+ * Refusal, the `max_iterations` backstop, the tool-call and token ceilings,
+ * and the Run budget, in that order — the whole "decide to continue" step.
+ * Returns the outcome to return from `runLoop` when the loop must stop, or
+ * `undefined` to let the `for await` fall through to the next turn.
+ */
+async function checkCapsAndBudget(
+  params: RunLoopParams,
+  controller: AbortController,
+  turn: BetaMessage,
+  counts: {
+    turns: number;
+    toolCalls: number;
+    tokens: number;
+    toolUses: { name: string; input: unknown }[];
+  },
+): Promise<RunLoopOutcome | undefined> {
+  const { turns, toolCalls, tokens, toolUses } = counts;
 
-      // ── A whole-chain refusal fails the Job ──────────────────────────────
-      // `failed`, meaning *something broke* — never `terminated`, which means
-      // *a number you set*. The parameter routes what it can; this handles
-      // what it cannot.
-      if (turn.stop_reason === 'refusal') {
-        controller.abort();
-        const details = turn.stop_details as { category?: string | null; explanation?: string | null } | null;
-        return {
-          status: 'failed',
-          error: 'the model refused, and server-side fallback did not produce an answer',
-          refusal: { category: details?.category ?? null, explanation: details?.explanation ?? null },
-        };
-      }
-
-      // `max_iterations` stops SILENTLY, leaving stop_reason: 'tool_use' on a
-      // truncated run. It is a backstop set far above our own ceiling, so if it
-      // fires that is a bug in our counting, not a limit doing its job.
-      if (turns >= MAX_ITERATIONS_BACKSTOP) {
-        console.error(
-          `[model] runLoop(${params.loop}) hit max_iterations (${MAX_ITERATIONS_BACKSTOP}). ` +
-            `This is a backstop and should be unreachable — our own ceiling is ${params.caps.toolCalls} tool calls.`,
-        );
-      }
-
-      // ── Check caps, before letting the next tools run ────────────────────
-      if (toolCalls > params.caps.toolCalls) {
-        controller.abort();
-        return {
-          status: 'terminated',
-          reason: `stopped at its ${params.caps.toolCalls}-tool-call ceiling`,
-          turns,
-          toolCalls,
-          tokens,
-          toolUses,
-        };
-      }
-      if (params.caps.tokens > 0 && tokens > params.caps.tokens) {
-        controller.abort();
-        return {
-          status: 'terminated',
-          reason: `stopped at its ${params.caps.tokens.toLocaleString('en-US')}-token ceiling`,
-          turns,
-          toolCalls,
-          tokens,
-          toolUses,
-        };
-      }
-
-      // ── The run budget: checked at the Round boundary only ───────────────
-      // It PAUSES rather than terminating, because it is a spending decision a
-      // person may revise. `paused_on_budget` is the only state that returns to
-      // `running`.
-      if (params.budgetCheck && turn.stop_reason !== 'tool_use') {
-        const budget = await params.budgetCheck();
-        if (!budget.withinBudget) {
-          controller.abort();
-          return { status: 'paused_on_budget', spentUsd: budget.spentUsd, turns, toolCalls, tokens };
-        }
-      }
-    }
-  } catch (error) {
-    if (controller.signal.aborted) {
-      // An abort we initiated has already returned its outcome above; reaching
-      // here means the abort raced the iterator, so report what we counted.
-      return { status: 'terminated', reason: 'aborted at a ceiling', turns, toolCalls, tokens, toolUses };
-    }
-    // Named loudly: a failure here is something only we can fix, and a silent
-    // one reads to the caller as the model mis-shaping its output.
-    console.error(`[model] runLoop(${params.loop}) failed:`, error);
-    return { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+  // ── A whole-chain refusal fails the Job ──────────────────────────────────
+  // `failed`, meaning *something broke* — never `terminated`, which means
+  // *a number you set*. The parameter routes what it can; this handles
+  // what it cannot.
+  if (turn.stop_reason === 'refusal') {
+    controller.abort();
+    const details = turn.stop_details as { category?: string | null; explanation?: string | null } | null;
+    return {
+      status: 'failed',
+      error: 'the model refused, and server-side fallback did not produce an answer',
+      refusal: { category: details?.category ?? null, explanation: details?.explanation ?? null },
+    };
   }
 
-  return { status: 'done', finalMessage: lastMessage, toolUses, turns, toolCalls, tokens };
+  // `max_iterations` stops SILENTLY, leaving stop_reason: 'tool_use' on a
+  // truncated run. It is a backstop set far above our own ceiling, so if it
+  // fires that is a bug in our counting, not a limit doing its job.
+  if (turns >= MAX_ITERATIONS_BACKSTOP) {
+    console.error(
+      `[model] runLoop(${params.loop}) hit max_iterations (${MAX_ITERATIONS_BACKSTOP}). ` +
+        `This is a backstop and should be unreachable — our own ceiling is ${params.caps.toolCalls} tool calls.`,
+    );
+  }
+
+  if (toolCalls > params.caps.toolCalls) {
+    controller.abort();
+    return {
+      status: 'terminated',
+      reason: `stopped at its ${params.caps.toolCalls}-tool-call ceiling`,
+      turns,
+      toolCalls,
+      tokens,
+      toolUses,
+    };
+  }
+  if (params.caps.tokens > 0 && tokens > params.caps.tokens) {
+    controller.abort();
+    return {
+      status: 'terminated',
+      reason: `stopped at its ${params.caps.tokens.toLocaleString('en-US')}-token ceiling`,
+      turns,
+      toolCalls,
+      tokens,
+      toolUses,
+    };
+  }
+
+  // ── The run budget: checked at the Round boundary only ───────────────────
+  // It PAUSES rather than terminating, because it is a spending decision a
+  // person may revise. `paused_on_budget` is the only state that returns to
+  // `running`.
+  if (params.budgetCheck && turn.stop_reason !== 'tool_use') {
+    const budget = await params.budgetCheck();
+    if (!budget.withinBudget) {
+      controller.abort();
+      return { status: 'paused_on_budget', spentUsd: budget.spentUsd, turns, toolCalls, tokens };
+    }
+  }
+
+  return undefined;
 }
 
 /**
