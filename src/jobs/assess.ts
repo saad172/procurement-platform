@@ -2,7 +2,8 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { JOB_CAPS } from '@/config/constants';
-import { WEIGHTED_CRITERIA } from '@/domain/score';
+import { DEFAULT_WEIGHTS, WEIGHTED_CRITERIA } from '@/domain/score';
+import { loadSupplierSnapshots, scoreSnapshot } from '@/db/queries/shortlist';
 import type { FrozenInputs } from '@/domain/staleness';
 import {
   checkAssessment,
@@ -62,6 +63,8 @@ export async function buildFrozenInputs(
   const supplierVerdicts: FrozenInputs['supplierVerdicts'] = {};
   const rosterRows: FrozenInputs['rosterRows'] = {};
   const categoryIds = new Set<string>();
+  /** Per Supplier and **in query order**, for the same reason the weights are ordered. */
+  const categoriesBySupplier = new Map<string, string[]>();
 
   for (const supplierId of args.supplierIds) {
     const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.id, supplierId) });
@@ -83,11 +86,16 @@ export async function buildFrozenInputs(
       criterionValues[`${supplierId}:${value.criterionKey}`] = value.value;
     }
 
-    for (const row of await db
+    const supplierCategories = await db
       .select({ categoryId: t.supplierCategory.categoryId })
       .from(t.supplierCategory)
       .where(eq(t.supplierCategory.supplierId, supplierId))
-      .orderBy(asc(t.supplierCategory.categoryId))) {
+      .orderBy(asc(t.supplierCategory.categoryId));
+    categoriesBySupplier.set(
+      supplierId,
+      supplierCategories.map((row) => row.categoryId),
+    );
+    for (const row of supplierCategories) {
       categoryIds.add(row.categoryId);
     }
 
@@ -104,7 +112,54 @@ export async function buildFrozenInputs(
     }
   }
 
+  /**
+   * The Scores the narrative is allowed to quote.
+   *
+   * `scores` was declared, typed, threaded into every prompt and stored on
+   * every version — and **never written to**. It stayed invisible only because
+   * no tool handed an agent a Score to quote: `get_shortlist` returned a
+   * `bidderCount`. Pointing that tool at `loadShortlist()` woke this up on the
+   * first live run, where the lead agent wrote *"the stored score of
+   * 67.259…"* and our own number check rejected it in all three Rounds —
+   * correctly, since the figure appeared in no frozen input and on no cited
+   * row. There is no `score` table for a sentence to cite instead
+   * (`db/schema/scoring.ts`), so the frozen inputs are the only place a Score
+   * can become checkable.
+   *
+   * **Keyed per Category, because a Score is Category-scoped** — tariff
+   * exposure is stored per Category and the other five at `category = null`,
+   * so one Supplier bidding in three Categories has three Scores. The
+   * Category-less key is kept beside them for a sentence about the Supplier
+   * itself, which is what the Supplier page shows.
+   *
+   * Computed through `scoreSnapshot`, the same function the pages call, rather
+   * than a second arithmetic here: a frozen Score that disagreed with the
+   * ranking on screen would be worse than no frozen Score at all.
+   */
+  const scoringWeights = {
+    ...DEFAULT_WEIGHTS,
+    ...Object.fromEntries(weights.map((w) => [w.criterionKey, Number(w.weight)])),
+  };
+  const snapshots = await loadSupplierSnapshots(db, {
+    programId: args.programId,
+    supplierIds: args.supplierIds,
+  });
+  const snapshotById = new Map(snapshots.map((snapshot) => [snapshot.supplierId, snapshot]));
+  for (const supplierId of args.supplierIds) {
+    const snapshot = snapshotById.get(supplierId);
+    if (!snapshot) continue;
+    scores[supplierId] = scoreSnapshot(snapshot, scoringWeights, null).score;
+    for (const categoryId of categoriesBySupplier.get(supplierId) ?? []) {
+      scores[`${supplierId}:${categoryId}`] = scoreSnapshot(snapshot, scoringWeights, categoryId).score;
+    }
+  }
+
   return {
+    /**
+     * Left as the **stored rows alone**, not `scoringWeights`. Filling absent
+     * keys from the constant here would reorder this object, and its key order
+     * is prompt bytes a fixture replays against.
+     */
     weights: Object.fromEntries(weights.map((w) => [w.criterionKey, Number(w.weight)])),
     criterionValues,
     scores,
