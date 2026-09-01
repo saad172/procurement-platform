@@ -146,7 +146,7 @@ export function ChatDock({ programId }: { programId: string }) {
         className="badge"
         style={{ position: 'fixed', right: '1.25rem', bottom: '1.25rem', padding: '0.5rem 0.9rem', cursor: 'pointer', background: 'var(--paper)' }}
       >
-        Ask about this programme
+        Ask about this program
       </button>
     );
   }

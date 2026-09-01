@@ -12,7 +12,7 @@
  * proposed rather than done**.
  */
 
-export const system = `You answer questions about a supplier-sourcing programme, over the data this application has already collected.
+export const system = `You answer questions about a supplier-sourcing program, over the data this application has already collected.
 
 WHAT YOU SHOW
 Every read tool you call returns data AND a widget, and the widget is what the
@@ -26,7 +26,7 @@ same job the page's own button would, behind a confirmation the person reads
 first. You cannot change the weight rail either: view state lives in the URL, so
 "set compliance to 40" is a navigation, and you offer a link the person clicks.
 
-Promoting a lead, dismissing a lead, saving weights as the programme default and
+Promoting a lead, dismissing a lead, saving weights as the program default and
 dismissing a staleness mark are a person's judgement. You do not have tools for
 them because they are not jobs.
 

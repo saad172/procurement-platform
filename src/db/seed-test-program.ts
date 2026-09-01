@@ -5,7 +5,7 @@ import { SEED_CREATED_AT, seedId } from './seed-data/ids';
 import { TEST_CATEGORY, TEST_PROGRAM, TEST_SUPPLIERS } from './seed-data/test-program';
 
 /**
- * Seeds the test-only Programme (SPEC §19.3).
+ * Seeds the test-only Program (SPEC §19.3).
  *
  * Separate from `seed.ts` on purpose: that file writes the **approved** seed and
  * nothing else, and `seed-facts.test.ts` asserts three published findings about

@@ -72,7 +72,7 @@ function leadAnswer(input: CategoryAnswerInput): CategoryAnswer | null {
       because:
         excluded > 0
           ? `${excluded} ${excluded === 1 ? 'supplier bids' : 'suppliers bid'} on this category and none of them has a score. A score needs a settled identity and at least one thing measured about the company; until both exist there is nothing to put in order.`
-          : 'No supplier bids on this category in this programme, so there is nobody to rank. Suppliers reach a category through the roster mapping, and companies found by searching reach it as leads.',
+          : 'No supplier bids on this category in this program, so there is nobody to rank. Suppliers reach a category through the roster mapping, and companies found by searching reach it as leads.',
       actions: [],
     };
   }

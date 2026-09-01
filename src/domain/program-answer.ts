@@ -1,13 +1,13 @@
 import type { AnswerTone } from './supplier-answer';
 
 /**
- * What a Programme page says before anything else.
+ * What a Program page says before anything else.
  *
  * The page opened with a two-figure strip, a run panel and four charts under
  * the heading *"Where this roster is, and whether resolution worked"* — which
  * names a **pipeline stage**, not a question anybody arrives with. A person
  * opening this page wants to know whether anything is blocking them, whether
- * anything is waiting on them, and how far from a decision the programme is.
+ * anything is waiting on them, and how far from a decision the program is.
  *
  * Those are three different things and up to two of them can be urgent at once,
  * so this returns a list. The order is the order they block on:
@@ -17,18 +17,18 @@ import type { AnswerTone } from './supplier-answer';
  *    until that does, and it is not something the page can fix.
  * 2. **Something is waiting on a person** — the software has already tried and
  *    declined to guess, so this will not resolve itself.
- * 3. **Where the programme actually is** — said honestly, including when the
+ * 3. **Where the program actually is** — said honestly, including when the
  *    honest answer is "at the beginning".
  */
 
-export type ProgrammeAnswer = {
+export type ProgramAnswer = {
   tone: AnswerTone;
   said: string;
   because: string;
   actions: { label: string; href?: string; primary?: boolean }[];
 };
 
-export type ProgrammeAnswerInput = {
+export type ProgramAnswerInput = {
   /** Whether a worker has picked anything up recently. Liveness, not health. */
   workerUp: boolean;
   /** A Run still moving, if there is one. */
@@ -44,8 +44,8 @@ export type ProgrammeAnswerInput = {
 /** How many names a sentence lists before it starts being a list. */
 const NAMED = 3;
 
-export function programmeAnswer(input: ProgrammeAnswerInput): ProgrammeAnswer[] {
-  const answers: ProgrammeAnswer[] = [];
+export function programAnswer(input: ProgramAnswerInput): ProgramAnswer[] {
+  const answers: ProgramAnswer[] = [];
 
   if (!input.workerUp) {
     answers.push({
@@ -82,21 +82,21 @@ export function programmeAnswer(input: ProgrammeAnswerInput): ProgrammeAnswer[] 
 }
 
 /**
- * Where the programme actually is.
+ * Where the program actually is.
  *
  * **A category can be awarded once its bidders have been researched and a
  * recommendation written for it**, so that is the figure this leads with — not
  * the count of suppliers, which moves early and steadily and reads like
  * progress towards a decision it is not progress towards.
  */
-function progress(input: ProgrammeAnswerInput): ProgrammeAnswer {
+function progress(input: ProgramAnswerInput): ProgramAnswer {
   const { categories, suppliers } = input;
 
   if (categories.withRecommendation === 0) {
     return {
       tone: 'neutral',
       said: `No category can be awarded yet, and ${suppliers.assessed === 0 ? 'nothing has been written up' : `${suppliers.assessed} of ${suppliers.total} suppliers have been`}.`,
-      because: `A category becomes awardable once its bidders have been researched and a recommendation written for it, and none has been written for any of the ${categories.total}. At ${suppliers.assessed} ${suppliers.assessed === 1 ? 'supplier' : 'suppliers'} written up out of ${suppliers.total}, the honest read is that this programme is at the beginning rather than near a decision.`,
+      because: `A category becomes awardable once its bidders have been researched and a recommendation written for it, and none has been written for any of the ${categories.total}. At ${suppliers.assessed} ${suppliers.assessed === 1 ? 'supplier' : 'suppliers'} written up out of ${suppliers.total}, the honest read is that this program is at the beginning rather than near a decision.`,
       actions: [],
     };
   }

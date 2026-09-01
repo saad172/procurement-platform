@@ -100,7 +100,7 @@ export async function recommendCategory(
             {
               role: 'user',
               content: recommendPrompts.buildFirstUserMessage({
-                programName: program?.name ?? '(unnamed programme)',
+                programName: program?.name ?? '(unnamed program)',
                 categoryName: `${category.code} — ${category.name}`,
                 roundN,
                 brief,
@@ -190,7 +190,7 @@ export async function recommendCategory(
               role: 'user',
               content: [
                 recommendPrompts.buildFirstUserMessage({
-                  programName: program?.name ?? '(unnamed programme)',
+                  programName: program?.name ?? '(unnamed program)',
                   categoryName: `${category.code} — ${category.name}`,
                   roundN,
                   brief,

@@ -186,7 +186,7 @@ export function supplierAnswer(input: SupplierAnswerInput): SupplierAnswer {
       case 'no_category':
         return {
           tone: 'neutral',
-          said: `${name} is mapped to no category in this programme, so there is nothing to rank it against.`,
+          said: `${name} is mapped to no category in this program, so there is nothing to rank it against.`,
           because:
             'A score is a fit for one category, and this supplier is on no category here. It still carries everything we have measured about the company, and it can still be written up.',
           actions: [{ label: 'Write the analysis', action: 'assess' }],

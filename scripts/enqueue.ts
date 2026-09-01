@@ -64,7 +64,7 @@ async function main(): Promise<void> {
         `  kinds:    ${Object.keys(SUBJECT_BY_KIND).join(', ')}`,
         '  subject:  a Supplier roster name, or a Category code',
         '',
-        '  --test-program  use the arranged fixtures programme (SPEC §19.3)',
+        '  --test-program  use the arranged fixtures program (SPEC §19.3)',
         '',
         '  e.g. pnpm enqueue resolve Yazaki',
         '       pnpm enqueue recommend HAR',
@@ -86,7 +86,7 @@ async function main(): Promise<void> {
   const db = getDirectDb();
   try {
     /**
-     * `--test-program` reaches the arranged Programme (SPEC §19.3), which is
+     * `--test-program` reaches the arranged Program (SPEC §19.3), which is
      * seeded here rather than at boot so the approved seed stays untouched.
      */
     const useTestProgram = process.argv.includes('--test-program');
@@ -101,7 +101,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Scoped to the Programme, so two Programmes may hold the same name.
+    // Scoped to the Program, so two Programs may hold the same name.
     const row =
       subjectType === 'supplier'
         ? await db.query.supplier.findFirst({
@@ -112,7 +112,7 @@ async function main(): Promise<void> {
           });
 
     if (!row) {
-      console.error(`No ${subjectType} named "${subject}" on this programme.`);
+      console.error(`No ${subjectType} named "${subject}" on this program.`);
       process.exitCode = 1;
       return;
     }

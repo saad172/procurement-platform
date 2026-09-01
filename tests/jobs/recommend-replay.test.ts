@@ -26,7 +26,7 @@ import { buildAssessableSupplier, openJob } from '../support/pipeline';
  * cached upstream bodies. All offline, no credentials, no credits.
  *
  * It is the longest test in the suite and the only one that shows the app's
- * actual shape: a Programme is not a request, it is a pipeline.
+ * actual shape: a Program is not a request, it is a pipeline.
  */
 
 const FIXTURE = 'recommend/one-category';

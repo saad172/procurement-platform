@@ -152,4 +152,4 @@ export function historyModeFor(gesture: 'drag' | 'preset' | 'chat' | 'navigate' 
  * The one act separating a what-if from the record is **"Save as Program
  * default"**, and it is UI-only. Everything else here stays in the address bar.
  */
-export const RESET_TO_DEFAULT_LABEL = 'Reset to Programme default';
+export const RESET_TO_DEFAULT_LABEL = 'Reset to Program default';

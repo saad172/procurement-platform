@@ -1,9 +1,9 @@
 import { seedId } from './ids';
 
 /**
- * A **test-only Sourcing Programme** (SPEC §19.3).
+ * A **test-only Sourcing Program** (SPEC §19.3).
  *
- * ## Why a second Programme rather than two more roster rows
+ * ## Why a second Program rather than two more roster rows
  *
  * Three of the seven fixtures need an outcome the seeded roster does not
  * produce: a Supplier that resolves to nothing, and a Supplier carrying a
@@ -14,7 +14,7 @@ import { seedId } from './ids';
  * outcome inevitable, and then recording what really happens. It does not mean
  * writing the outcome down.
  *
- * They live in their own Programme so **the approved seed and the boot seed
+ * They live in their own Program so **the approved seed and the boot seed
  * stay untouched**. `seed-facts.test.ts` asserts three findings the write-up
  * stakes its honesty on — that BAT ranks two, that no Supplier sits between
  * 824 km and 6 082 km, that MFN is origin-invariant — and every one of those is
@@ -23,14 +23,14 @@ import { seedId } from './ids';
  * so, which is the right behaviour and the wrong reason.
  *
  * Ids are derived like every other seeded row (finding 40), so a fixture
- * recorded against this Programme replays anywhere.
+ * recorded against this Program replays anywhere.
  */
 
 export const TEST_PROGRAM = {
   id: seedId('program', 'FIXTURE ARRANGEMENTS — test only'),
   name: 'FIXTURE ARRANGEMENTS — test only',
   importingCountry: 'USA',
-  vehicleClass: 'Not a real programme; rows arranged so §19.3 outcomes are reachable',
+  vehicleClass: 'Not a real program; rows arranged so §19.3 outcomes are reachable',
   sourcingHorizon: 'n/a',
 } as const;
 

@@ -56,7 +56,7 @@ export default async function EntityPage({
     <main>
       <Breadcrumb
         trail={[
-          { label: program?.name ?? 'Programme', href: `/program/${programId}` },
+          { label: program?.name ?? 'Program', href: `/program/${programId}` },
           { label: entity.label },
         ]}
       />
@@ -271,7 +271,7 @@ export default async function EntityPage({
       </div>
 
       <p className="note" style={{ marginTop: '1rem' }}>
-        <Link href={`/program/${programId}` as never}>← back to the programme</Link>
+        <Link href={`/program/${programId}` as never}>← back to the program</Link>
       </p>
       {/*
         The graph, grouped by relationship type and direction.

@@ -13,7 +13,7 @@ import type { Mark } from './map-marks';
 import world from './world-110m.json';
 
 /**
- * The four Programme charts (SPEC §13.2).
+ * The four Program charts (SPEC §13.2).
  *
  * All four survive, each answering a question the Category table cannot. **The
  * charts are the filter control** — there is no separate filter UI, because

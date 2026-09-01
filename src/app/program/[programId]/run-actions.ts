@@ -131,7 +131,7 @@ export async function enrichRoster(formData: FormData): Promise<void> {
  * **Assess the roster.**
  *
  * Nothing chains into `assess` — not the worker, not any other action — so
- * without this the Programme strip's *"N of 50 assessed"* can only ever be
+ * without this the Program strip's *"N of 50 assessed"* can only ever be
  * moved one Supplier at a time. An assessment argues from criterion values, so
  * this queues only Suppliers that have them; a Supplier with none would produce
  * a Job that had nothing to argue from.

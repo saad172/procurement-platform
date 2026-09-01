@@ -49,12 +49,12 @@ export default async function CitationPage({
   const trail =
     owner.kind === 'assessment'
       ? [
-          { label: program?.name ?? 'Programme', href: `/program/${programId}` },
+          { label: program?.name ?? 'Program', href: `/program/${programId}` },
           { label: owner.supplierName, href: `/program/${programId}/supplier/${owner.supplierId}` },
           { label: 'Evidence' },
         ]
       : [
-          { label: program?.name ?? 'Programme', href: `/program/${programId}` },
+          { label: program?.name ?? 'Program', href: `/program/${programId}` },
           { label: owner.categoryName, href: `/program/${programId}/category/${owner.categoryId}` },
           { label: 'Evidence' },
         ];

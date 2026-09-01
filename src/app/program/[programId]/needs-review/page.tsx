@@ -7,7 +7,7 @@ import { Breadcrumb } from '@/components/breadcrumb';
 import { loadParked } from '@/db/queries/needs-review';
 
 /**
- * Needs Review (SPEC §6.8) — a branch off the Programme page.
+ * Needs Review (SPEC §6.8) — a branch off the Program page.
  *
  * **A list of decisions, one link each.** What stood here rendered every parked
  * row in full on one page: nine candidates for NSK and eight for Nemak, each
@@ -49,7 +49,7 @@ export default async function NeedsReviewPage({
           <p className="said">Nothing is waiting on you.</p>
           <p className="because">
             Every roster row is settled — by the resolver, by the evaluator agreeing with it, or by
-            somebody here. <Link href={`/program/${programId}`}>Back to the programme</Link>.
+            somebody here. <Link href={`/program/${programId}`}>Back to the program</Link>.
           </p>
         </div>
       ) : (

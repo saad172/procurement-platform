@@ -42,7 +42,7 @@ const FIXTURE = join(process.cwd(), 'tests', 'fixtures', 'model', 'two-turn-tool
 function lookupTool(onRun: () => void) {
   return betaZodTool({
     name: 'lookup_supplier_country',
-    description: 'Returns the roster country recorded for a supplier on this programme.',
+    description: 'Returns the roster country recorded for a supplier on this program.',
     inputSchema: z.object({ supplierName: z.string().describe('The roster name, exactly as imported') }),
     run: async (input) => {
       onRun();
@@ -54,7 +54,7 @@ function lookupTool(onRun: () => void) {
       const country = known[input.supplierName];
       return country
         ? `${input.supplierName}: ${country}`
-        : 'no such supplier on this programme';
+        : 'no such supplier on this program';
     },
   });
 }

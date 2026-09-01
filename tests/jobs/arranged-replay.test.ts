@@ -20,7 +20,7 @@ import { openJob } from '../support/pipeline';
  * a name with no company behind it, and a company on every sanctions list.
  * Then the real pipeline ran and what it did was recorded.
  *
- * They live in their own Programme so the approved seed stays untouched —
+ * They live in their own Program so the approved seed stays untouched —
  * `seed-facts.test.ts` asserts three published findings about exactly those
  * fifty rows, and a fifty-first would make them wrong.
  */
@@ -37,7 +37,7 @@ async function arrange(fixtureName: string, rosterName: string) {
   const supplier = await db.query.supplier.findFirst({
     where: and(eq(t.supplier.programId, TEST_PROGRAM.id), eq(t.supplier.rosterName, rosterName)),
   });
-  if (!supplier) throw new Error(`the arranged programme has no supplier "${rosterName}"`);
+  if (!supplier) throw new Error(`the arranged program has no supplier "${rosterName}"`);
 
   const [run] = await db
     .insert(t.run)

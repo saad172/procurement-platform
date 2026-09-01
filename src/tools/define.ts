@@ -81,7 +81,7 @@ export type ToolContext = {
    *
    * It is here rather than in the prompt because §14.3's instruction — *answer
    * about the ranking they are actually looking at* — is an instruction, and a
-   * model that forgets it answers about the programme default while the person
+   * model that forgets it answers about the program default while the person
    * reads a what-if. A read that defaults its weight vector from this cannot
    * forget. **Raw, not parsed**: renormalising needs the Program's own stored
    * default, which only the handler knows how to load.

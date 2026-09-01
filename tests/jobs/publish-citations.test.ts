@@ -17,7 +17,7 @@ import { getTestDb, testDatabaseIsUp } from '../support/test-db';
  */
 describe('resolveCitations refuses a malformed id', () => {
   const cases = [
-    { name: 'a shortlist naming the programme by slug', citation: { shortlist: { programId: 'MY2029-CROSSOVER-BEV-NA', categoryId: 'HAR' } } },
+    { name: 'a shortlist naming the program by slug', citation: { shortlist: { programId: 'MY2029-CROSSOVER-BEV-NA', categoryId: 'HAR' } } },
     { name: 'a match id that is not a uuid', citation: { matchId: 'Yazaki' } },
     { name: 'an enrichment id that is not a uuid', citation: { enrichmentId: 'gleif' } },
     { name: 'a criterion value id that is not a uuid', citation: { criterionValueId: 'compliance_risk' } },

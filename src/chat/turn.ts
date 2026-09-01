@@ -128,7 +128,7 @@ export async function runChatTurn(
       runId,
       surface: 'chat',
       // The rail the person is actually looking at. A read that can default its
-      // weight vector from this cannot answer about the programme default while
+      // weight vector from this cannot answer about the program default while
       // a what-if is on screen (SPEC §14.3).
       viewState: request.viewState,
     },

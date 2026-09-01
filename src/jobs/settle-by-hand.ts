@@ -48,7 +48,7 @@ export async function settleRowByHand(
 
   const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.id, supplierId) });
   if (!supplier || supplier.programId !== programId) {
-    return { ok: false, error: 'That roster row is not in this programme, so nothing was written.' };
+    return { ok: false, error: 'That roster row is not in this program, so nothing was written.' };
   }
 
   // What this row's page actually offered, read back rather than trusted from

@@ -46,7 +46,7 @@ The same holds for a marker that looks like a figure. A family walk stored as
 truncated at its limit is not the sentence "truncated at 50" unless a cited row
 carries 50 — say "truncated at its limit" instead.`;
 
-export const proposerSystem = `You write an evaluation of one supplier for one sourcing programme.
+export const proposerSystem = `You write an evaluation of one supplier for one sourcing program.
 
 ${CITATION_RULE}
 

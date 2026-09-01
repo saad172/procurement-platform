@@ -34,7 +34,7 @@ const widget = <T>(type: WidgetType, data: T, payload: unknown = data): ReadWith
 export const getProgram = defineTool({
   name: 'get_program',
   description:
-    'The sourcing programme: its plants, categories, weight vector, and how many suppliers are resolved, assessed or waiting on a person.',
+    'The sourcing program: its plants, categories, weight vector, and how many suppliers are resolved, assessed or waiting on a person.',
   input: z.object({ programId: z.string() }),
   surfaces: ['chat', 'job', 'mcp'],
   effect: 'read',
@@ -45,9 +45,9 @@ export const getProgram = defineTool({
       where: eq(t.program.id, input.programId),
       with: { plants: true, categories: true, weights: true },
     });
-    if (!program) return { ok: false, objections: [`no programme with id ${input.programId}`] };
+    if (!program) return { ok: false, objections: [`no program with id ${input.programId}`] };
 
-    // The eight suppliers that bid on no category are part of the programme's
+    // The eight suppliers that bid on no category are part of the program's
     // shape, not a separate question — they walk the whole lifecycle and simply
     // reach no shortlist. Folding them in here keeps this read page-shaped
     // rather than adding a tool for one state.
@@ -64,7 +64,7 @@ export const getProgram = defineTool({
 
 export const getCategory = defineTool({
   name: 'get_category',
-  description: 'One category of a sourcing programme: its HS lines, its trade-action flags, and its bidders.',
+  description: 'One category of a sourcing program: its HS lines, its trade-action flags, and its bidders.',
   input: z.object({ categoryId: z.string() }),
   surfaces: ['chat', 'job', 'mcp'],
   effect: 'read',
@@ -345,11 +345,11 @@ export const getRecord = defineTool({
 export const getShortlist = defineTool({
   name: 'get_shortlist',
   description:
-    'The suppliers of one programme and category, ranked by score, with the weight vector that produced the ranking and the excluded block beneath it.',
+    'The suppliers of one program and category, ranked by score, with the weight vector that produced the ranking and the excluded block beneath it.',
   input: z.object({
     programId: z.string(),
     categoryId: z.string(),
-    weights: z.record(z.string(), z.number()).optional().describe('A what-if vector; omit for the programme default'),
+    weights: z.record(z.string(), z.number()).optional().describe('A what-if vector; omit for the program default'),
   }),
   surfaces: ['chat', 'job', 'mcp'],
   effect: 'read',
@@ -360,7 +360,7 @@ export const getShortlist = defineTool({
       where: eq(t.program.id, input.programId),
       with: { weights: true },
     });
-    if (!program) return { ok: false, objections: [`no programme with id ${input.programId}`] };
+    if (!program) return { ok: false, objections: [`no program with id ${input.programId}`] };
 
     const category = await ctx.db.query.category.findFirst({
       where: eq(t.category.id, input.categoryId),
@@ -424,7 +424,7 @@ export const getShortlist = defineTool({
          */
         {
           category: category.name,
-          weights: whatIf ? weights : 'programme default',
+          weights: whatIf ? weights : 'program default',
           ranked: shortlist.ranked.map((row) => ({
             rank: row.rank,
             supplierId: row.supplierId,
@@ -560,7 +560,7 @@ export const listLeads = defineTool({
 export const getUsage = defineTool({
   name: 'get_usage',
   description:
-    "What this programme has spent, and separately what the Sayari account has used. The two are differently scoped and are never netted against each other.",
+    "What this program has spent, and separately what the Sayari account has used. The two are differently scoped and are never netted against each other.",
   input: z.object({ programId: z.string(), runId: z.string().optional() }),
   surfaces: ['chat', 'mcp'],
   effect: 'read',
@@ -575,7 +575,7 @@ export const getUsage = defineTool({
     return {
       ok: true,
       data: widget('usage_meter', {
-        ours: { scope: 'This Programme', runs: runs.length },
+        ours: { scope: 'This Program', runs: runs.length },
         // The labels live here, not in the page, so asking in chat cannot lose
         // a caveat that navigating would have shown.
         sayari: {

@@ -47,7 +47,7 @@ export default async function RecordPage({
     <main>
       <Breadcrumb
         trail={[
-          { label: program?.name ?? 'Programme', href: `/program/${programId}` },
+          { label: program?.name ?? 'Program', href: `/program/${programId}` },
           { label: 'Source record' },
         ]}
       />
@@ -90,7 +90,7 @@ export default async function RecordPage({
       ) : null}
 
       <p className="note" style={{ marginTop: '1rem' }}>
-        <Link href={`/program/${programId}` as never}>← back to the programme</Link>
+        <Link href={`/program/${programId}` as never}>← back to the program</Link>
       </p>
       <ChatDock programId={programId} />
     </main>

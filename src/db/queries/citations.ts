@@ -63,8 +63,8 @@ export async function loadSentenceEvidence(
   });
   if (!sentence) return null;
 
-  // Scoped to the Programme in the URL: a sentence reached through the wrong
-  // one is not this Programme's evidence, and rendering it anyway would let a
+  // Scoped to the Program in the URL: a sentence reached through the wrong
+  // one is not this Program's evidence, and rendering it anyway would let a
   // hand-edited URL cross a boundary the rest of the app keeps.
   const owner = await loadOwner(db, sentence, args.programId);
   if (!owner) return null;

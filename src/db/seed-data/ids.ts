@@ -61,7 +61,7 @@ export function seedId(kind: string, key: string): string {
 /**
  * The instant every seeded row records as its `created_at`.
  *
- * **"When you happened to run the seed" is not a fact about the Programme.**
+ * **"When you happened to run the seed" is not a fact about the Program.**
  * These rows are authored fixture data; their creation time is as authored as
  * their name, and letting it default to `now()` made two databases seeded from
  * the same file disagree on a value that then rode into a tool result and out

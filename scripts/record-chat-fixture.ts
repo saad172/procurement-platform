@@ -3,10 +3,11 @@ import 'dotenv/config';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { and, eq, gte, isNotNull } from 'drizzle-orm';
-import { closeDirectDb, getDirectDb } from '@/db/client';
 import * as t from '@/db/schema';
-import { PROGRAM } from '@/db/seed-data/program';
 import { loadEnv } from '@/config/env';
+import { closeTestDb, getTestDb, testDatabaseIsUp } from '../tests/support/test-db';
+import { resetDerived } from '../tests/support/reset';
+import { seededProgram } from '../tests/support/seeded-program';
 import { runChatTurn } from '@/chat/turn';
 import { resetAnthropicClients } from '@/model/client';
 import { recordingFetch, type RecordingSink } from '@/fixtures/record-fetch';
@@ -54,17 +55,35 @@ const FIXTURE_NAME = 'chat/one-turn';
  */
 const DEFAULT_MESSAGE = 'Show me Yazaki, then refresh its enrichment data.';
 
+/**
+ * Recorded **from the state its replay reconstructs**, against the TEST
+ * database — the same argument `record-replayable.ts` makes, applied to the one
+ * recorder that never got it (finding 85).
+ *
+ * It used to record from the **development** database: fifty Suppliers, their
+ * Matches, their families, three published Assessments. `chat-replay.test.ts`
+ * starts from `resetDerived()` plus the seeded Program, so a read tool returned
+ * different rows there than here, the next request differed, and the replay
+ * missed at turn 3 — the first request carrying a tool result. Turns 1 and 2
+ * matched, which is what made it look like prompt drift rather than a database
+ * mismatch.
+ *
+ * Recording and replay cannot drift now, because neither owns a copy of the
+ * starting state: both call `resetDerived` and `seededProgram`.
+ */
 async function main(): Promise<void> {
   const env = loadEnv();
-  const db = getDirectDb();
+
+  if (!(await testDatabaseIsUp())) {
+    console.error('The test database is not up. Start it, then run this again.');
+    process.exitCode = 1;
+    return;
+  }
+  const db = await getTestDb();
 
   try {
-    const program = await db.query.program.findFirst({ where: eq(t.program.name, PROGRAM.name) });
-    if (!program) {
-      console.error('Seed the database first: pnpm db:seed');
-      process.exitCode = 1;
-      return;
-    }
+    await resetDerived(db);
+    const program = await seededProgram(db);
 
     const message = process.argv[2] ?? DEFAULT_MESSAGE;
     const startedAt = new Date();
@@ -184,7 +203,7 @@ async function main(): Promise<void> {
       ].join('\n'),
     );
   } finally {
-    await closeDirectDb();
+    await closeTestDb();
   }
 }
 

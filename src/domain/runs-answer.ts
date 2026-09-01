@@ -13,7 +13,7 @@ import type { AnswerTone } from './supplier-answer';
  * of news:
  *
  * 1. **Work that was started and never finished**, because that is usually the
- *    whole explanation for why the programme looks emptier than it should.
+ *    whole explanation for why the program looks emptier than it should.
  * 2. **Work our own validator refused to publish** — which is the system
  *    working, and reads as failure unless the page says otherwise. Nobody was
  *    told at the time and the reason is three clicks down.
@@ -53,7 +53,7 @@ export function runsAnswer(input: RunsAnswerInput): RunsAnswer[] {
    * The largest piece of work that was stopped part way.
    *
    * Largest by what was left undone rather than by what it cost, because the
-   * question this answers is *why is the programme emptier than it should be*
+   * question this answers is *why is the program emptier than it should be*
    * and the answer is the count of things that never ran.
    */
   const abandoned = input.runs
@@ -65,7 +65,7 @@ export function runsAnswer(input: RunsAnswerInput): RunsAnswer[] {
     answers.push({
       tone: 'stop',
       said: `${capitalise(abandoned.label)} was stopped part way. ${jobs.neverStarted} of ${jobs.total} never started.`,
-      because: `${jobs.done === 0 ? 'None finished' : `${jobs.done} finished`}${jobs.failed > 0 ? `, ${jobs.failed} ${jobs.failed === 1 ? 'was' : 'were'} refused` : ''}, and the remaining ${jobs.neverStarted} never began before it was ${abandoned.state === 'cancelled' ? 'cancelled' : 'stopped'} — after $${abandoned.actualUsd.toFixed(2)} had been spent. That is usually the whole reason a programme looks emptier than the work put into it suggests.`,
+      because: `${jobs.done === 0 ? 'None finished' : `${jobs.done} finished`}${jobs.failed > 0 ? `, ${jobs.failed} ${jobs.failed === 1 ? 'was' : 'were'} refused` : ''}, and the remaining ${jobs.neverStarted} never began before it was ${abandoned.state === 'cancelled' ? 'cancelled' : 'stopped'} — after $${abandoned.actualUsd.toFixed(2)} had been spent. That is usually the whole reason a program looks emptier than the work put into it suggests.`,
       actions: [{ label: 'See what it got through', href: input.runHref(abandoned.id) }],
     });
   }
@@ -93,7 +93,7 @@ export function runsAnswer(input: RunsAnswerInput): RunsAnswer[] {
       input.runs.length === 0
         ? {
             tone: 'neutral',
-            said: 'Nothing has been run for this programme yet.',
+            said: 'Nothing has been run for this program yet.',
             because:
               'Every figure in this application comes from work somebody started, and none has been. A run is the unit of that work, and this is where every one of them and what it cost is recorded.',
             actions: [],

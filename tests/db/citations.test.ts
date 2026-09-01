@@ -20,7 +20,7 @@ import {
  * These tests cover the resolver rather than the page, because the resolver is
  * where the interesting claims are: that every one of the six target kinds the
  * `citation` one-of CHECK allows renders rather than vanishing, that a
- * Programme in the URL cannot reach another Programme's sentence, and that a
+ * Program in the URL cannot reach another Program's sentence, and that a
  * Citation whose row is gone says so instead of disappearing.
  */
 
@@ -51,7 +51,7 @@ describe.skipIf(!up)(`resolving what a sentence cites (needs: ${START_TEST_DB_HI
     await sql`DELETE FROM program WHERE id IN (${PROGRAM}, ${OTHER_PROGRAM})`;
     await sql`DELETE FROM entity WHERE id = ${ENTITY}`;
 
-    for (const [id, name] of [[PROGRAM, 'Citation fixture'], [OTHER_PROGRAM, 'Another programme']]) {
+    for (const [id, name] of [[PROGRAM, 'Citation fixture'], [OTHER_PROGRAM, 'Another program']]) {
       await sql`INSERT INTO program (id, name, importing_country, vehicle_class, sourcing_horizon)
                 VALUES (${id!}, ${name!}, 'USA', 'BEV', 'FY2027')`;
     }
@@ -87,7 +87,7 @@ describe.skipIf(!up)(`resolving what a sentence cites (needs: ${START_TEST_DB_HI
     await sql`INSERT INTO sentence (id, assessment_version_id, section, ordinal, text)
               VALUES (${SENTENCE}, ${VERSION}, 'identity', 1, 'A sentence resting on five things.')`;
     await sql`INSERT INTO sentence (id, assessment_version_id, section, ordinal, text)
-              VALUES (${OTHER_SENTENCE}, ${OTHER_VERSION}, 'identity', 1, 'Another programme''s sentence.')`;
+              VALUES (${OTHER_SENTENCE}, ${OTHER_VERSION}, 'identity', 1, 'Another program''s sentence.')`;
 
     // One of every target group the one-of CHECK allows, on one sentence.
     await sql`INSERT INTO citation (sentence_id, entity_id) VALUES (${SENTENCE}, ${ENTITY})`;
@@ -177,11 +177,11 @@ describe.skipIf(!up)(`resolving what a sentence cites (needs: ${START_TEST_DB_HI
   });
 
   /**
-   * The Programme in the URL is a boundary, not decoration. Without this a
-   * hand-edited URL would render another Programme's evidence under this
-   * Programme's breadcrumb, which is worse than a 404 because it looks right.
+   * The Program in the URL is a boundary, not decoration. Without this a
+   * hand-edited URL would render another Program's evidence under this
+   * Program's breadcrumb, which is worse than a 404 because it looks right.
    */
-  it('refuses a sentence belonging to another programme', async () => {
+  it('refuses a sentence belonging to another program', async () => {
     const db = await getTestDb();
     expect(await loadSentenceEvidence(db, { programId: PROGRAM, sentenceId: OTHER_SENTENCE })).toBeNull();
     // And it is genuinely reachable from its own.

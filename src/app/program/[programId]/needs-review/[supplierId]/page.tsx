@@ -55,7 +55,7 @@ export default async function SettleRowPage({
     <main>
       {/*
         A real trail, not a parent pointer. The rest of the app renders
-        `[programme, current]` everywhere; the citation page builds the owner's
+        `[program, current]` everywhere; the citation page builds the owner's
         trail from the record itself and this does the same, so the reader can
         get back to the list of what is still waiting without the back button.
       */}

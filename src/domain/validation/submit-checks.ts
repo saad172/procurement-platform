@@ -339,7 +339,7 @@ function checkPickLegality(
   for (const pick of picks) {
     const supplier = evidence.suppliers.get(pick.supplierId);
     if (!supplier) {
-      objections.push({ check: 'eligibility', message: `Pick ${pick.supplierId} is not a supplier of this programme.` });
+      objections.push({ check: 'eligibility', message: `Pick ${pick.supplierId} is not a supplier of this program.` });
       continue;
     }
     if (!supplier.matchAccepted) {

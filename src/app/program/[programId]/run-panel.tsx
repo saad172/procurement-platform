@@ -18,7 +18,7 @@ import type { RosterWork } from '@/db/queries/runs';
  * **It follows the roster through all three stages.** The pipeline is resolve →
  * enrich → assess, and only the first hop is chained by the worker; nothing
  * queues an assessment at all. A panel that went quiet once every Match was
- * settled left the reviewer on a Programme reading *0 of 50 assessed* with no
+ * settled left the reviewer on a Program reading *0 of 50 assessed* with no
  * control that would change it, which is the state this replaced.
  */
 export function RunPanel({

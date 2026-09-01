@@ -51,14 +51,14 @@ async function main(): Promise<void> {
   let toolRuns = 0;
   const lookup = betaZodTool({
     name: 'lookup_supplier_country',
-    description: 'Returns the roster country recorded for a supplier on this programme.',
+    description: 'Returns the roster country recorded for a supplier on this program.',
     inputSchema: z.object({ supplierName: z.string().describe('The roster name, exactly as imported') }),
     run: async (input) => {
       toolRuns += 1;
       const row = await db.query.supplier.findFirst({
         where: eq(t.supplier.rosterName, input.supplierName),
       });
-      return row ? `${row.rosterName}: ${row.rosterCountry}` : 'no such supplier on this programme';
+      return row ? `${row.rosterName}: ${row.rosterCountry}` : 'no such supplier on this program';
     },
   });
 

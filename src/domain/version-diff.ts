@@ -202,7 +202,7 @@ export function describeWhyWritten(run: { trigger: string; subjectLabel: string 
   if (!run) return 'Written by the original run.';
   switch (run.trigger) {
     case 'full':
-      return 'Written by a full run of the programme.';
+      return 'Written by a full run of the program.';
     case 'traverse':
       return `Re-ran after ${run.subjectLabel ?? 'a deep traversal'}.`;
     case 'settlement':

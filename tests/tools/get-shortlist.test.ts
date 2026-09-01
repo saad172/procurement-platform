@@ -15,7 +15,7 @@ import { buildAssessableSupplier, openJob } from '../support/pipeline';
  *
  * It shipped as a stub. The handler ran the bidder query, **discarded the
  * rows**, and returned `{ programId, categoryId, weights, bidderCount }` behind
- * a description promising *"the suppliers of one programme and category, ranked
+ * a description promising *"the suppliers of one program and category, ranked
  * by score, with the weight vector that produced the ranking and the excluded
  * block beneath it"*. A comment said the assembly would land with the pages in
  * build-order step 11. Step 11 landed; the tool was never pointed at
@@ -86,7 +86,7 @@ describe('get_shortlist', () => {
    *
    * §14.3 *instructs* the model to answer about the ranking on screen. An
    * instruction can be forgotten, and a turn that omitted `weights` used to
-   * answer about the Programme default while a what-if was live — in the one
+   * answer about the Program default while a what-if was live — in the one
    * surface with no Citation check. The vector now defaults from the view
    * state, so forgetting is not a thing the model can do.
    */
@@ -101,7 +101,7 @@ describe('get_shortlist', () => {
 
     const onDefault = await callGetShortlist(db, runId, { programId, categoryId: category.id });
     if (!onDefault.ok) throw new Error(onDefault.objections.join('; '));
-    expect(onDefault.data.data.weights).toBe('programme default');
+    expect(onDefault.data.data.weights).toBe('program default');
 
     // The same call, from a page whose rail has been dragged.
     const onWhatIf = await callGetShortlist(
@@ -112,9 +112,9 @@ describe('get_shortlist', () => {
     );
     if (!onWhatIf.ok) throw new Error(onWhatIf.objections.join('; '));
 
-    // It is no longer reported as the Programme's own ranking, and the vector
+    // It is no longer reported as the Program's own ranking, and the vector
     // it names is the one from the URL.
-    expect(onWhatIf.data.data.weights).not.toBe('programme default');
+    expect(onWhatIf.data.data.weights).not.toBe('program default');
     const weights = onWhatIf.data.data.weights as Record<string, number>;
     expect(weights.compliance_risk).toBeGreaterThan(
       (onDefault.data.widget.payload as { weights: Record<string, number> }).weights

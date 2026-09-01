@@ -7,7 +7,7 @@ import { seedId } from './seed-data/ids';
  *
  * Finding 40 made the **authored** rows deterministic, so two databases seeded
  * from the same file agree on the ids everything else points at. That fixed the
- * *request* side of a replay: the prompt names a Programme and a Supplier, and
+ * *request* side of a replay: the prompt names a Program and a Supplier, and
  * both now have the same id everywhere.
  *
  * The **response** side stayed broken, and it took an assess replay to show it.

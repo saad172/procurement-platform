@@ -131,7 +131,7 @@ const citedSentence = z.object({
           .object({
             programId: z
               .string()
-              .describe("The programme's `id` from get_program or get_shortlist — a uuid, never its name."),
+              .describe("The program's `id` from get_program or get_shortlist — a uuid, never its name."),
             categoryId: z
               .string()
               .describe("The category's `id` — a uuid, never its code like 'HAR'."),

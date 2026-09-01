@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { programmeAnswer, type ProgrammeAnswerInput } from '@/domain/programme-answer';
+import { programAnswer, type ProgramAnswerInput } from '@/domain/program-answer';
 
 /**
- * The Programme page opened with a two-figure strip, a run panel and four
+ * The Program page opened with a two-figure strip, a run panel and four
  * charts under the heading *"Where this roster is, and whether resolution
  * worked"* — which names a **pipeline stage**, not a question anybody arrives
  * with.
  *
  * What is tested here is the order things block on: nothing listening beats
- * something waiting on a person beats where the programme is, and the last of
+ * something waiting on a person beats where the program is, and the last of
  * those only appears when neither of the first two does.
  */
 
-const base: ProgrammeAnswerInput = {
+const base: ProgramAnswerInput = {
   workerUp: true,
   running: undefined,
   suppliers: { total: 50, identified: 48, assessed: 3, uncategorised: 8 },
@@ -22,8 +22,8 @@ const base: ProgrammeAnswerInput = {
   runsHref: '/program/p/runs',
 };
 
-const answers = (overrides: Partial<ProgrammeAnswerInput> = {}) =>
-  programmeAnswer({ ...base, ...overrides });
+const answers = (overrides: Partial<ProgramAnswerInput> = {}) =>
+  programAnswer({ ...base, ...overrides });
 
 describe('nothing listening blocks everything under it', () => {
   /**
@@ -96,7 +96,7 @@ describe('what only a person can settle', () => {
   });
 });
 
-describe('where the programme actually is', () => {
+describe('where the program actually is', () => {
   /**
    * **A category becomes awardable once a recommendation is written for it**,
    * so that is the figure this leads with — not the supplier count, which moves
@@ -135,7 +135,7 @@ describe('where the programme actually is', () => {
 });
 
 describe('every answer is one a person could act on', () => {
-  const cases: ProgrammeAnswerInput[] = [
+  const cases: ProgramAnswerInput[] = [
     base,
     { ...base, workerUp: false },
     { ...base, waitingOnYou: { count: 2, names: ['Nemak', 'NSK'] } },
@@ -145,7 +145,7 @@ describe('every answer is one a person could act on', () => {
 
   it('never answers with a bare status word, and never with two priorities', () => {
     for (const input of cases) {
-      for (const answer of programmeAnswer(input)) {
+      for (const answer of programAnswer(input)) {
         // A sentence, not a label: several words, ending in a full stop.
         expect(answer.said.split(/\s+/).length).toBeGreaterThanOrEqual(4);
         expect(answer.said).toMatch(/[.!]$/);

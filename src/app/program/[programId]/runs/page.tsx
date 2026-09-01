@@ -12,13 +12,13 @@ import { LiveRefresh } from '@/components/live-refresh';
 /**
  * The Runs branch (SPEC §18.5) — `Program → Runs → Run → Trace`.
  *
- * A **branch off the Programme page, not a sixth level of the spine**, because
+ * A **branch off the Program page, not a sixth level of the spine**, because
  * "what did it cost?" is a different question from "which supplier?".
  *
  * **No filter bar**, deliberately: not filtering means there is no denominator
- * to disclose. Every run this programme has ever had is here, newest first.
+ * to disclose. Every run this program has ever had is here, newest first.
  *
- * **Completeness deliberately does not live here** — it sits on the Programme
+ * **Completeness deliberately does not live here** — it sits on the Program
  * strip, because *is my work done?* and *what did it cost?* are different
  * questions and only the first belongs where a person starts.
  */
@@ -192,7 +192,7 @@ export default async function RunsPage({
 
       {/*
         Sayari's own usage block sits ONCE at the foot of this page and is
-        identical on every programme, because it is account-scoped. The two
+        identical on every program, because it is account-scoped. The two
         numbers are not the same kind of thing, so they are shown separately
         with no delta anywhere: reconciliation stays a human act.
       */}
@@ -235,7 +235,7 @@ export default async function RunsPage({
       <section className="card">
         <p className="note" style={{ marginTop: 0 }}>
           Sayari reports seven endpoint-class counters, <strong>account-wide</strong>, over a rolling
-          year — with no programme dimension and no dollar figure. It is a different number from the
+          year — with no program dimension and no dollar figure. It is a different number from the
           count above, scoped differently and lagging, so the two are never netted against each other.
         </p>
         <p className="note" style={{ marginBottom: 0 }}>

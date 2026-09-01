@@ -39,7 +39,7 @@ const answers = (overrides: Partial<RunsAnswerInput> = {}) =>
   runsAnswer({ ...base, ...overrides });
 
 describe('work that was started and never finished', () => {
-  /** The real case, and the whole explanation for a nearly-empty programme. */
+  /** The real case, and the whole explanation for a nearly-empty program. */
   it('names the abandoned batch and what it left undone', () => {
     const [first] = answers();
     expect(first!.tone).toBe('stop');
@@ -50,7 +50,7 @@ describe('work that was started and never finished', () => {
 
   /**
    * Largest by what was left undone, not by what it cost: the question this
-   * answers is why the programme is emptier than the work suggests, and that
+   * answers is why the program is emptier than the work suggests, and that
    * is a count of things that never ran.
    */
   it('picks the batch that left the most undone, not the dearest', () => {
@@ -119,7 +119,7 @@ describe('when there is nothing to flag', () => {
   it('separates "nothing has run" from "everything finished"', () => {
     const result = runsAnswer({ ...clean, runs: [] });
     expect(result[0]!.tone).toBe('neutral');
-    expect(result[0]!.said).toBe('Nothing has been run for this programme yet.');
+    expect(result[0]!.said).toBe('Nothing has been run for this program yet.');
   });
 });
 

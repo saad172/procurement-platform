@@ -351,11 +351,11 @@ export default async function SupplierPage({
         <p className="note" style={{ margin: '-0.9rem 0 1.5rem', maxWidth: '56rem' }}>
           {/*
             The figure most likely to be misread on the page, so it is said
-            plainly next to it: a fit score is about this programme, not a
+            plainly next to it: a fit score is about this program, not a
             judgement of the company.
           */}
           A low score is not a verdict on the company — it is a fit for{' '}
-          <em>this programme</em>, over the {scored.coverage.computed} criteria that returned a
+          <em>this program</em>, over the {scored.coverage.computed} criteria that returned a
           value. The rest dropped out and the weights renormalised, because a score over five
           criteria is not the same claim as one over six.
         </p>
@@ -453,7 +453,7 @@ export default async function SupplierPage({
                       This used to point at
                       `.../supplier/[supplierId]/citation/[sentenceId]`, which
                       was never built — 169 published links, every one a 404.
-                      The route lives under the Programme now, because a
+                      The route lives under the Program now, because a
                       Citation belongs to a sentence and a sentence already
                       knows whether an Assessment or a Recommendation published
                       it.
@@ -524,7 +524,7 @@ export default async function SupplierPage({
                   thing about this page that was false.
                 */}
                 {scored?.scoreAbsentReason === 'no_category'
-                  ? 'This supplier is not mapped to any category in this programme, so it reaches no shortlist. It still carries criterion values and an assessment.'
+                  ? 'This supplier is not mapped to any category in this program, so it reaches no shortlist. It still carries criterion values and an assessment.'
                   : scored?.scoreAbsentReason === 'no_match'
                     ? 'Its match is not settled, so there is no profile to measure — and no estimated criterion is shown, because a number about a company we have not identified would be worse than none.'
                     : 'Its match is settled, but no criterion has a value yet — nothing has been enriched, so every weight dropped out and there is nothing left to average. Re-enrich fetches the six sources a score is computed from.'}

@@ -149,7 +149,7 @@ export function WeightRail({
             the record, and it stays UI-only — a person's judgement recorded,
             not a Job started.
           */}
-          On the programme default. Changing a slider makes a what-if that lives in the address bar,
+          On the program default. Changing a slider makes a what-if that lives in the address bar,
           so it survives a reload and can be shared without re-ranking under someone else’s default.
         </p>
       )}

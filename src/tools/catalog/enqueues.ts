@@ -336,7 +336,7 @@ export const navigateTo = defineTool({
 /** Chat's own supplier lookup by name, so a person need not paste an id. */
 export const findSupplierByName = defineTool({
   name: 'find_supplier_by_name',
-  description: 'Find a supplier of this programme by its roster name or part of it.',
+  description: 'Find a supplier of this program by its roster name or part of it.',
   input: z.object({ programId: z.string(), nameContains: z.string() }),
   surfaces: ['chat', 'mcp'],
   effect: 'read',

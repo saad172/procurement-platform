@@ -17,7 +17,7 @@ describe('the weight vector is KEYED, not positional', () => {
     expect(state.weights.proximity).toBe(5);
   });
 
-  it('fills a missing key from the Programme default rather than shifting the vector', () => {
+  it('fills a missing key from the Program default rather than shifting the vector', () => {
     // A positional vector silently misreads every saved link the moment a
     // Criterion is added or removed — and one WAS removed during design, when
     // data confidence became a badge.
@@ -38,8 +38,8 @@ describe('the weight vector is KEYED, not positional', () => {
 });
 
 describe('a link says what it means', () => {
-  it('writes nothing when the rail is on the Programme default', () => {
-    // A URL with no w. parameters IS the Programme's ranking.
+  it('writes nothing when the rail is on the Program default', () => {
+    // A URL with no w. parameters IS the Program's ranking.
     const state = parseViewState(new URLSearchParams(''));
     expect(toSearchParams(state).toString()).toBe('');
     expect(isWhatIf(state)).toBe(false);

@@ -19,7 +19,7 @@ The lead may not cite your prose, and neither may anyone else. A citation points
 at evidence, and letting an unproven claim be inherited by reference is exactly
 what that rule exists to stop. So your brief carries ROW IDS, not conclusions.`;
 
-export const leadSystem = `You recommend which supplier or suppliers a sourcing programme should go with for one category.
+export const leadSystem = `You recommend which supplier or suppliers a sourcing program should go with for one category.
 
 THE CITATION RULE, WHICH IS NOT NEGOTIABLE
 Every sentence carries at least one citation to a stored row. You may not cite a

@@ -72,8 +72,8 @@ export type ParkedDetail = {
 /**
  * One parked row, with every Candidate any attempt ever recorded for it.
  *
- * **Scoped to the Programme in the URL.** A Supplier reached through the wrong
- * Programme is not this Programme's row, and rendering it anyway would let a
+ * **Scoped to the Program in the URL.** A Supplier reached through the wrong
+ * Program is not this Program's row, and rendering it anyway would let a
  * hand-edited URL cross a boundary the rest of the app keeps — the same rule
  * `loadSentenceEvidence` applies to a Citation.
  */

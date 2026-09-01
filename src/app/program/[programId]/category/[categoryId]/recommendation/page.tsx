@@ -85,7 +85,7 @@ export default async function RecommendationPage({
     <main>
       <Breadcrumb
         trail={[
-          { label: program?.name ?? 'Programme', href: `/program/${programId}` },
+          { label: program?.name ?? 'Program', href: `/program/${programId}` },
           { label: category.name, href: `/program/${programId}/category/${categoryId}` },
           { label: 'Recommendation' },
         ]}

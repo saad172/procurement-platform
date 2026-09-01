@@ -10,13 +10,13 @@ import { activeRun, rosterWork, workerSeemsUp } from '@/db/queries/runs';
 import { LiveRefresh } from '@/components/live-refresh';
 import { CountryBreakdown, MatchOutcomes, SharedOwnership, SupplierMap } from './charts';
 import { RunPanel } from './run-panel';
-import { programmeAnswer } from '@/domain/programme-answer';
+import { programAnswer } from '@/domain/program-answer';
 import { loadRuns } from '@/db/queries/runs';
 import { nearestPlant, proximityBand } from '@/domain/geo';
 import { SupplierTable } from './supplier-table';
 
 /**
- * The Programme page (SPEC §13.2) — the top of the spine.
+ * The Program page (SPEC §13.2) — the top of the spine.
  *
  *     Program → Category → Supplier → Sayari entity → record
  *
@@ -262,7 +262,7 @@ export default async function ProgramPage({
 
   const awardable = recByCategory.size;
 
-  const answers = programmeAnswer({
+  const answers = programAnswer({
     workerUp,
     running: running
       ? {

@@ -322,7 +322,7 @@ export async function assessSupplier(
               role: 'user',
               content: assessPrompts.buildFirstUserMessage({
                 supplierName: supplier.rosterName ?? args.supplierId,
-                programName: program?.name ?? '(unnamed programme)',
+                programName: program?.name ?? '(unnamed program)',
                 roundN,
                 brief,
                 frozenInputs: JSON.stringify(frozenInputs, null, 2),
@@ -418,7 +418,7 @@ export async function assessSupplier(
               content: [
                 assessPrompts.buildFirstUserMessage({
                   supplierName: supplier.rosterName ?? args.supplierId,
-                  programName: program?.name ?? '(unnamed programme)',
+                  programName: program?.name ?? '(unnamed program)',
                   roundN,
                   brief,
                   frozenInputs: JSON.stringify(frozenInputs, null, 2),

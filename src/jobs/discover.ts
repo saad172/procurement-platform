@@ -92,7 +92,7 @@ export async function discoverLeads(
 
   const program = await db.query.program.findFirst({ where: eq(t.program.id, args.programId) });
 
-  // Shipments arriving in the Programme's territories. Both, because the
+  // Shipments arriving in the Program's territories. Both, because the
   // Mexican plant is a real destination even though one importer is stored.
   const arrivalCountries = [program?.importingCountry ?? 'USA', 'MEX'];
 
@@ -113,7 +113,7 @@ export async function discoverLeads(
     limit: DISCOVER_TRADE_LIMIT,
   });
 
-  // Everything already on this Programme's roster, by entity id.
+  // Everything already on this Program's roster, by entity id.
   const onRoster = new Set(
     (
       await db

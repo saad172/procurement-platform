@@ -74,7 +74,7 @@ export async function resolveCitations(
       /**
        * The Shortlist reference is a PAIR, and both halves must exist. A
        * Shortlist is computed rather than stored, so what resolves here is the
-       * (programme, category) it is a shortlist OF.
+       * (program, category) it is a shortlist OF.
        *
        * **Shape-checked before querying**, because Postgres answers a non-uuid
        * with a thrown type error rather than an empty result — and a throw here

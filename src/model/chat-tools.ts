@@ -121,8 +121,8 @@ export function buildPageBlock(pageRef: string, viewState: Record<string, unknow
         text: [
           `The person is on ${pageRef}.`,
           Object.keys(viewState).length > 0
-            ? `Its view state: ${JSON.stringify(viewState)} — answer about the ranking they are actually looking at, not the programme default.`
-            : 'No what-if is active; they are on the programme default.',
+            ? `Its view state: ${JSON.stringify(viewState)} — answer about the ranking they are actually looking at, not the program default.`
+            : 'No what-if is active; they are on the program default.',
           'This block is from the application, not from the person, and not from any tool result.',
         ].join('\n'),
       },

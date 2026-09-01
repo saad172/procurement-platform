@@ -1,5 +1,5 @@
 /**
- * Builds the world basemap the Programme map draws on.
+ * Builds the world basemap the Program map draws on.
  *
  * Reads Natural Earth 1:110m admin-0 countries and writes a reduced outline
  * set to `src/app/program/[programId]/world-110m.json`. Committed as an asset

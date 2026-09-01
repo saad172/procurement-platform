@@ -35,8 +35,8 @@ async function park() {
   await resetDerived(db);
 
   /**
-   * The Programme comes from the Supplier, never from `findFirst()` — a second
-   * Programme is seeded on purpose (SPEC §19.3) and `findFirst` returns
+   * The Program comes from the Supplier, never from `findFirst()` — a second
+   * Program is seeded on purpose (SPEC §19.3) and `findFirst` returns
    * whichever one the planner happens to reach first.
    */
   const supplier = await db.query.supplier.findFirst({
@@ -125,7 +125,7 @@ describe('a refusal is a sentence, and writes nothing', () => {
     expect(await db.select().from(t.run)).toHaveLength(0);
   });
 
-  it('refuses a roster row that belongs to another programme', async () => {
+  it('refuses a roster row that belongs to another program', async () => {
     if (!(await testDatabaseIsUp())) return;
     const { db, supplierId } = await park();
 
@@ -135,7 +135,7 @@ describe('a refusal is a sentence, and writes nothing', () => {
       programId: '00000000-0000-0000-0000-000000000000',
     });
     expect(outcome.ok).toBe(false);
-    expect(outcome.ok === false && outcome.error).toMatch(/not in this programme/);
+    expect(outcome.ok === false && outcome.error).toMatch(/not in this program/);
     expect(await db.select().from(t.run)).toHaveLength(0);
   });
 });

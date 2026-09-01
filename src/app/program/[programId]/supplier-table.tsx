@@ -3,7 +3,7 @@ import type * as t from '@/db/schema';
 import type { Facets } from '@/lib/view-state';
 
 /**
- * The Programme's Supplier table.
+ * The Program's Supplier table.
  *
  * **A filtered row keeps its true position and is dimmed, never removed**
  * (SPEC §13.6). The filter is presentation; removing rows would make the crop

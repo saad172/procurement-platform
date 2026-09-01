@@ -148,7 +148,7 @@ async function main(): Promise<void> {
          *
          * This hop did not exist. `resolve` chained into `enrich` and the chain
          * stopped there, so nothing in the app queued an `assess` for a roster
-         * — the Programme strip's *"N of 50 assessed"* could only ever be moved
+         * — the Program strip's *"N of 50 assessed"* could only ever be moved
          * one Supplier at a time, by hand, from a Supplier page.
          *
          * Only a `pipeline` Run chains. The Supplier page's Re-enrich asks *has

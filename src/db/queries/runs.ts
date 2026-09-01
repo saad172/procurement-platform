@@ -277,9 +277,9 @@ export async function loadJobActivity(
 }
 
 /**
- * Whether this Programme has a Run still moving, and which one.
+ * Whether this Program has a Run still moving, and which one.
  *
- * The Programme page shows the Run panel, and a click on it changes nothing
+ * The Program page shows the Run panel, and a click on it changes nothing
  * that page renders — the unresolved count only falls when a Match lands, so
  * without this the page re-renders identically and the click looks lost.
  */
@@ -310,7 +310,7 @@ export async function activeRun(
  * The pipeline is **resolve → enrich → assess**, and only the first hop is
  * chained: the worker queues an `enrich` when a Match is accepted, and nothing
  * queues an `assess` at all. So a roster can sit fully resolved with no
- * criterion values and no assessments, and the Programme page's only Run
+ * criterion values and no assessments, and the Program page's only Run
  * affordance — "N suppliers have no settled match yet" — goes quiet at exactly
  * the point there is most left to do.
  *
