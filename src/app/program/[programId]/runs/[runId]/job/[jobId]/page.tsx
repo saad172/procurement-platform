@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation';
-import { eq } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
-import * as t from '@/db/schema';
+import { loadJobPage } from '@/db/queries/job-page';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { LiveRefresh } from '@/components/live-refresh';
 
@@ -31,20 +30,16 @@ export default async function TracePage({
   params: Promise<{ programId: string; runId: string; jobId: string }>;
 }) {
   const { programId, runId, jobId } = await params;
-  const db = getPooledDb();
 
-  const job = await db.query.job.findFirst({ where: eq(t.job.id, jobId) });
-  const program = await db.query.program.findFirst({ where: eq(t.program.id, programId) });
-  if (!job || !program) notFound();
+  const data = await loadJobPage(getPooledDb(), { programId, runId, jobId });
+  if (!data) notFound();
 
-  const turns = await db
-    .select()
-    .from(t.traceTurn)
-    .where(eq(t.traceTurn.jobId, jobId))
-    .orderBy(t.traceTurn.n);
-
-  const usage = await db.select().from(t.usageEvent).where(eq(t.usageEvent.jobId, jobId));
-
+  const {
+    job,
+    program,
+    turns,
+    usage,
+  } = data;
   return (
     <main>
       <Breadcrumb

@@ -155,10 +155,10 @@ src/
 tests/          unit tests, and the replay fixtures exported from real runs
 ```
 
-### The five chokepoints
+### The six chokepoints
 
-The build's structural discipline is five places where a whole class of mistake
-is made **unrepresentable** rather than tested for. Four are ESLint rules,
+The build's structural discipline is six places where a whole class of mistake
+is made **unrepresentable** rather than tested for. Five are ESLint rules,
 checked by `pnpm lint`; the other throws at boot.
 
 | Chokepoint | Makes impossible |
@@ -168,9 +168,10 @@ checked by `pnpm lint`; the other throws at boot.
 | `settleMatch()` | a tool writing `match.status` or `match.entity_id` — the agents propose, our code settles |
 | `finalizeRegistry()` | handing a loop a tool it cannot reach — per-surface and per-Round tool lists are derived, never hand-written |
 | `src/jobs/runs.ts` | a second owner of the Job state machine — no other file in `src/` writes the `job` or `run` tables |
+| `db/queries/` | a page reaching past it — no `page.tsx` imports `@/db/schema` as a value, so a page renders and `db/queries` reads |
 
-The fifth is the newest and the only one added after a bug rather than before
-one. The UI had become a second writer: `retryJob` and `retryRun` each carried
+The last two are the newest, and the fifth is the only one added after a bug
+rather than before one. The UI had become a second writer: `retryJob` and `retryRun` each carried
 the same eight-field requeue payload verbatim, and `run-actions.ts` had grown
 its own `resumeRun` that disagreed with `jobs/runs.ts`'s about money. It is a
 `no-restricted-syntax` rule rather than an import boundary, because the schema

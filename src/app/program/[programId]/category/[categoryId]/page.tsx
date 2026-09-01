@@ -1,16 +1,11 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { desc, eq } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
-import * as t from '@/db/schema';
+import { loadCategoryPage } from '@/db/queries/category-page';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatDock } from '@/components/chat-dock';
 import { WeightRail } from '@/components/weight-rail';
-import { loadShortlist } from '@/db/queries/shortlist';
 import { CategoryActions } from './category-actions';
-import { categoryAnswer } from '@/domain/category-answer';
-import { parseViewState } from '@/lib/view-state';
-import { DEFAULT_WEIGHTS } from '@/domain/score';
 import { LeadsTable } from './leads';
 
 /**
@@ -36,65 +31,20 @@ export default async function CategoryPage({
 }) {
   const { programId, categoryId } = await params;
   const query = await searchParams;
-  const db = getPooledDb();
 
-  const program = await db.query.program.findFirst({
-    where: eq(t.program.id, programId),
-    with: { weights: true },
-  });
-  const category = await db.query.category.findFirst({
-    where: eq(t.category.id, categoryId),
-    with: { hsLines: true, flags: { with: { flag: true } } },
-  });
-  if (!program || !category) notFound();
+  const data = await loadCategoryPage(getPooledDb(), { programId, categoryId, query });
+  if (!data) notFound();
 
-  const programDefault = {
-    ...DEFAULT_WEIGHTS,
-    ...Object.fromEntries(program.weights.map((w) => [w.criterionKey, Number(w.weight)])),
-  };
-  const view = parseViewState(query, programDefault);
-
-  const shortlist = await loadShortlist(db, {
-    programId,
-    categoryId,
-    weights: view.weights,
-    facets: view.facets,
-  });
-
-  const recommendation = await db.query.recommendation.findFirst({
-    where: eq(t.recommendation.categoryId, categoryId),
-    with: { versions: { orderBy: [desc(t.recommendationVersion.n)], limit: 1 } },
-  });
-
-  const scoredLine = category.hsLines.find((l) => l.isDefault);
-
-  const leads = await db
-    .select({ lead: t.lead, entity: t.entity })
-    .from(t.lead)
-    .innerJoin(t.entity, eq(t.entity.id, t.lead.entityId))
-    .where(eq(t.lead.categoryId, categoryId));
-
-  const version = recommendation?.versions[0];
-  const answers = categoryAnswer({
-    categoryName: category.name,
-    // The UNFILTERED shortlist, always: a filtered set would let the crop
-    // decide what the page says leads.
-    ranked: shortlist.ranked.map((row) => ({
-      supplierId: row.supplierId,
-      displayName: row.displayName,
-      score: row.score,
-      coverage: row.coverage,
-      disqualifying: row.disqualifying,
-    })),
-    excluded: shortlist.excluded.map((e) => ({ reason: e.reason })),
-    recommendation: version
-      ? { versionN: version.n, evaluatorOutcome: version.evaluatorOutcome }
-      : undefined,
-    recommendationHref: `/program/${programId}/category/${categoryId}/recommendation`,
-    compareHref: null,
-    supplierHref: (supplierId) => `/program/${programId}/supplier/${supplierId}`,
-  });
-
+  const {
+    program,
+    category,
+    programDefault,
+    shortlist,
+    scoredLine,
+    leads,
+    version,
+    answers,
+  } = data;
   return (
     <main>
       <Breadcrumb

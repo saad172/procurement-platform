@@ -1,11 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { eq } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
-import * as t from '@/db/schema';
+import { loadCitationPage } from '@/db/queries/citation-page';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatDock } from '@/components/chat-dock';
-import { loadSentenceEvidence } from '@/db/queries/citations';
 
 /**
  * Where the `❡` lands (SPEC §13.7) — **the bottom of the assessment's spine**.
@@ -38,27 +36,16 @@ export default async function CitationPage({
   params: Promise<{ programId: string; sentenceId: string }>;
 }) {
   const { programId, sentenceId } = await params;
-  const db = getPooledDb();
 
-  const evidence = await loadSentenceEvidence(db, { programId, sentenceId });
-  if (!evidence) notFound();
+  const data = await loadCitationPage(getPooledDb(), { programId, sentenceId });
+  if (!data) notFound();
 
-  const program = await db.query.program.findFirst({ where: eq(t.program.id, programId) });
-  const { sentence, owner, citations } = evidence;
-
-  const trail =
-    owner.kind === 'assessment'
-      ? [
-          { label: program?.name ?? 'Program', href: `/program/${programId}` },
-          { label: owner.supplierName, href: `/program/${programId}/supplier/${owner.supplierId}` },
-          { label: 'Evidence' },
-        ]
-      : [
-          { label: program?.name ?? 'Program', href: `/program/${programId}` },
-          { label: owner.categoryName, href: `/program/${programId}/category/${owner.categoryId}` },
-          { label: 'Evidence' },
-        ];
-
+  const {
+    trail,
+    sentence,
+    owner,
+    citations,
+  } = data;
   return (
     <main>
       <Breadcrumb trail={trail} />

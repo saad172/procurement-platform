@@ -1,8 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { eq } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
-import * as t from '@/db/schema';
+import { loadRecordPage } from '@/db/queries/record-page';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatDock } from '@/components/chat-dock';
 
@@ -34,14 +33,10 @@ export default async function RecordPage({
   params: Promise<{ programId: string; recordId: string[] }>;
 }) {
   const { programId, recordId: segments } = await params;
-  // The id IS the path — rejoin exactly what the URL carried.
-  const recordId = segments.map(decodeURIComponent).join('/');
-  const db = getPooledDb();
 
-  const record = await db.query.record.findFirst({ where: eq(t.record.id, recordId) });
-  if (!record) notFound();
-
-  const program = await db.query.program.findFirst({ where: eq(t.program.id, programId) });
+  const data = await loadRecordPage(getPooledDb(), { programId, segments });
+  if (!data) notFound();
+  const { record, program } = data;
 
   return (
     <main>

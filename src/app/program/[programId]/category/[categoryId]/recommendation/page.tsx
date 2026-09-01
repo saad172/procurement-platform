@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { and, asc, desc, eq } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
-import * as t from '@/db/schema';
+import { loadRecommendationPage } from '@/db/queries/recommendation-page';
+import type * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatDock } from '@/components/chat-dock';
 
@@ -37,50 +37,18 @@ export default async function RecommendationPage({
   params: Promise<{ programId: string; categoryId: string }>;
 }) {
   const { programId, categoryId } = await params;
-  const db = getPooledDb();
 
-  const category = await db.query.category.findFirst({
-    where: and(eq(t.category.id, categoryId), eq(t.category.programId, programId)),
-  });
-  if (!category) notFound();
+  const data = await loadRecommendationPage(getPooledDb(), { programId, categoryId });
+  if (!data) notFound();
 
-  const program = await db.query.program.findFirst({ where: eq(t.program.id, programId) });
-
-  const recommendation = await db.query.recommendation.findFirst({
-    where: and(eq(t.recommendation.categoryId, categoryId), eq(t.recommendation.programId, programId)),
-    with: { versions: { orderBy: [desc(t.recommendationVersion.n)], limit: 1 } },
-  });
-  const version = recommendation?.versions[0];
-
-  const picks = version
-    ? await db
-        .select({
-          role: t.recommendationPick.role,
-          rank: t.recommendationPick.rank,
-          supplierId: t.supplier.id,
-          rosterName: t.supplier.rosterName,
-          entityLabel: t.entity.label,
-        })
-        .from(t.recommendationPick)
-        .innerJoin(t.supplier, eq(t.supplier.id, t.recommendationPick.supplierId))
-        .leftJoin(t.match, eq(t.match.supplierId, t.supplier.id))
-        .leftJoin(t.entity, eq(t.entity.id, t.match.entityId))
-        .where(eq(t.recommendationPick.recommendationVersionId, version.id))
-        .orderBy(asc(t.recommendationPick.rank))
-    : [];
-
-  const sentences = version
-    ? await db
-        .select()
-        .from(t.sentence)
-        .where(eq(t.sentence.recommendationVersionId, version.id))
-        .orderBy(t.sentence.section, t.sentence.ordinal)
-    : [];
-
-  const dissent = version
-    ? await db.select().from(t.round).where(eq(t.round.recommendationVersionId, version.id))
-    : [];
-
+  const {
+    category,
+    program,
+    version,
+    picks,
+    sentences,
+    dissent,
+  } = data;
   return (
     <main>
       <Breadcrumb

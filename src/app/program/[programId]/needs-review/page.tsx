@@ -1,10 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { eq } from 'drizzle-orm';
 import { getPooledDb } from '@/db/client';
-import * as t from '@/db/schema';
+import { loadNeedsReviewPage } from '@/db/queries/needs-review-page';
 import { Breadcrumb } from '@/components/breadcrumb';
-import { loadParked } from '@/db/queries/needs-review';
 
 /**
  * Needs Review (SPEC §6.8) — a branch off the Program page.
@@ -29,14 +27,15 @@ export default async function NeedsReviewPage({
   params: Promise<{ programId: string }>;
 }) {
   const { programId } = await params;
-  const db = getPooledDb();
 
-  const program = await db.query.program.findFirst({ where: eq(t.program.id, programId) });
-  if (!program) notFound();
+  const data = await loadNeedsReviewPage(getPooledDb(), { programId });
+  if (!data) notFound();
 
-  const waiting = await loadParked(db, programId);
-  const decidable = waiting.filter((row) => row.candidateCount > 0).length;
-
+  const {
+    program,
+    waiting,
+    decidable,
+  } = data;
   return (
     <main>
       <Breadcrumb

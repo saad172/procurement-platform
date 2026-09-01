@@ -168,6 +168,41 @@ export default tseslint.config(
     },
   },
 
+  /**
+   * ── A page reads through `db/queries`, never through the schema ───────────
+   *
+   * Eleven of thirteen pages ran drizzle inline while `db/queries` already held
+   * nineteen `loadX()` functions, and nothing said which a new page should use
+   * — so the answer was whichever the last person had copied. Two ways to read
+   * the same rows, and the only way to tell which a page used was to open it.
+   *
+   * Types are allowed through. `charts.tsx` and `supplier-table.tsx` take
+   * `typeof t.supplier.$inferSelect` for their props, which is the schema used
+   * as a vocabulary rather than as a database — it emits no query and cannot
+   * lose a `where` clause.
+   *
+   * Server actions and route handlers are deliberately not covered: they write,
+   * and what they may write is the rule above this one.
+   */
+  {
+    files: ['src/app/**/page.tsx'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@/db/schema',
+              allowTypeImports: true,
+              message:
+                'A page renders; db/queries reads. Put the query in src/db/queries as a named loadX() and call it here — that is what makes a page you can change without re-deriving what it fetches. Importing the schema for a type is fine: use `import type`.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // The worker, the seed, the migrator and the scripts are processes whose log
   // output IS their user interface, so `console` is the right call there.
   {

@@ -1,9 +1,7 @@
 import Link from 'next/link';
-import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getPooledDb } from '@/db/client';
-import * as t from '@/db/schema';
-import { PROGRAM } from '@/db/seed-data/program';
+import { loadApprovedProgram } from '@/db/queries/approved-program';
 
 /**
  * The root redirects to the **approved** Program, by name.
@@ -12,23 +10,11 @@ import { PROGRAM } from '@/db/seed-data/program';
  * reviewer's first action is Run, not an import**. A landing page asking which
  * program to open would be a step between a person and the one they came for.
  *
- * It used to be `findFirst()` with no `orderBy`, which was unambiguous while
- * exactly one Program existed. The arranged-fixtures Program (SPEC §19.3)
- * seeds alongside it, so an unordered read began returning whichever row
- * Postgres reached first — and half the time that is
- * `FIXTURE ARRANGEMENTS — test only`, which is not a program anybody wants to
- * land on.
- *
- * **The fix is a name, not an `ORDER BY`** — the same conclusion finding 81
- * reached when this bit the assess replay, and `tests/support/seeded-program.ts`
- * carries the other half of it. Ordering would make the answer stable; asking
- * for a specific Program makes it correct, and stays correct when a third one
- * arrives.
+ * Which Program that is, and why it is asked for by name rather than ordered,
+ * is in `loadApprovedProgram`.
  */
 export default async function HomePage() {
-  const program = await getPooledDb().query.program.findFirst({
-    where: eq(t.program.name, PROGRAM.name),
-  });
+  const program = await loadApprovedProgram(getPooledDb());
   if (program) redirect(`/program/${program.id}` as never);
 
   return (

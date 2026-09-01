@@ -1,10 +1,10 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getPooledDb } from '@/db/client';
+import { loadSettlePage } from '@/db/queries/settle-page';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { IDENTITY_STANDARD, IDENTITY_TRAPS } from '@/config/constants';
-import { loadParkedRow } from '@/db/queries/needs-review';
-import { settleAnswer, settleChoices, type Choice, type ChoiceVerdict } from '@/domain/settle-choices';
+import { type Choice, type ChoiceVerdict } from '@/domain/settle-choices';
 import { settleByHand } from '../actions';
 
 /**
@@ -35,22 +35,22 @@ export default async function SettleRowPage({
 }) {
   const { programId, supplierId } = await params;
   const query = await searchParams;
-  const db = getPooledDb();
 
-  const row = await loadParkedRow(db, { programId, supplierId });
-  if (!row) notFound();
+  const data = await loadSettlePage(getPooledDb(), { programId, supplierId, query });
+  if (!data) notFound();
 
-  const { supplier, match, candidates, attempts, programName } = row;
-  const answer = settleAnswer({ rosterName: supplier.rosterName ?? '', candidates });
-  const { shared, groups } = settleChoices({
-    rosterName: supplier.rosterName ?? '',
-    candidates,
-  });
-
-  const error = typeof query.error === 'string' ? query.error : undefined;
-  const settled = typeof query.settled === 'string' ? query.settled : undefined;
-  const done = match.status === 'accepted' || match.settledBy === 'human';
-
+  const {
+    answer,
+    error,
+    settled,
+    done,
+    supplier,
+    match,
+    attempts,
+    programName,
+    shared,
+    groups,
+  } = data;
   return (
     <main>
       {/*
