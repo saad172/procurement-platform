@@ -3,6 +3,7 @@
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { readServerSentEvents } from '@/lib/server-sent-events';
+import { RenderWidget } from '@/components/widgets';
 
 /**
  * The chat dock (SPEC §14).
@@ -177,27 +178,7 @@ function TurnWidgets({ widgets }: { widgets: Widget[] }) {
   return (
     <>
       {widgets.map((widget, widgetIndex) => (
-        <details
-          key={widgetIndex}
-          className="card"
-          style={{ marginTop: '0.4rem', padding: '0.5rem 0.7rem' }}
-          open
-        >
-          <summary className="note">
-            {widget.toolName} · {widget.widget.type}
-          </summary>
-          <pre
-            className="mono"
-            style={{
-              margin: '0.4rem 0 0',
-              whiteSpace: 'pre-wrap',
-              maxHeight: '14rem',
-              overflow: 'auto',
-            }}
-          >
-            {JSON.stringify(widget.widget.payload, null, 2).slice(0, 1800)}
-          </pre>
-        </details>
+        <RenderWidget key={widgetIndex} toolName={widget.toolName} widget={widget.widget} />
       ))}
     </>
   );
