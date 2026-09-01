@@ -77,10 +77,7 @@ export type EndpointDef<TParams extends Record<string, unknown>, TProjected> = {
   normalizeParams: (params: TParams) => Record<string, unknown>;
   timeoutMs: number;
   /** The live call. Returns the raw body and which path produced it. */
-  dispatch: (
-    params: TParams,
-    deps: DispatchDeps,
-  ) => Promise<{ body: unknown; via: UpstreamVia }>;
+  dispatch: (params: TParams, deps: DispatchDeps) => Promise<{ body: unknown; via: UpstreamVia }>;
   /**
    * Our own **lenient** zod projection, identical on both the SDK and raw
    * paths, so a caller never sees an SDK type. Lenient because the projection

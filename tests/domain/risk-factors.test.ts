@@ -43,7 +43,11 @@ const REAL_NAMES = [
   'soe_adjacent',
 ] as const;
 
-const factor = (name: string, level: RiskFactor['level'] = 'high', country: unknown = null): RiskFactor => ({
+const factor = (
+  name: string,
+  level: RiskFactor['level'] = 'high',
+  country: unknown = null,
+): RiskFactor => ({
   name,
   level,
   country,
@@ -62,7 +66,9 @@ describe('variantOf — the six-valued taxonomy', () => {
   it('does not read `_indirect` as `_direct`, though one contains the other', () => {
     // A substring search fails here, quietly, scoring a band too harshly.
     expect(variantOf('exports_bis_high_priority_items_indirect')).toBe('indirect');
-    expect(variantOf('exports_bis_high_priority_items_critical_components_indirect')).toBe('indirect');
+    expect(variantOf('exports_bis_high_priority_items_critical_components_indirect')).toBe(
+      'indirect',
+    );
     expect(variantOf('exports_bis_high_priority_items_direct')).toBe('direct');
   });
 
@@ -95,12 +101,16 @@ describe('variantOf — the six-valued taxonomy', () => {
 describe('effectiveLevel — the variant adjustment', () => {
   it('scores direct, bare and a Twin factor at its own variant’s band', () => {
     expect(effectiveLevel(factor('exports_bis_high_priority_items_direct', 'high'))).toBe('high');
-    expect(effectiveLevel(factor('owner_of_regulatory_action_entity', 'elevated'))).toBe('elevated');
+    expect(effectiveLevel(factor('owner_of_regulatory_action_entity', 'elevated'))).toBe(
+      'elevated',
+    );
     expect(effectiveLevel(factor('psa_owner_of_regulatory_action_entity', 'high'))).toBe('high');
   });
 
   it('scores indirect and adjacent one band down', () => {
-    expect(effectiveLevel(factor('exports_bis_high_priority_items_indirect', 'high'))).toBe('elevated');
+    expect(effectiveLevel(factor('exports_bis_high_priority_items_indirect', 'high'))).toBe(
+      'elevated',
+    );
     expect(effectiveLevel(factor('export_controls_adjacent', 'elevated'))).toBe('relevant');
   });
 
@@ -109,7 +119,9 @@ describe('effectiveLevel — the variant adjustment', () => {
   });
 
   it('never scores a subtier factor — it badges instead', () => {
-    expect(effectiveLevel(factor('forced_labor_aspi_origin_subtier_product_blueprint', 'high'))).toBeUndefined();
+    expect(
+      effectiveLevel(factor('forced_labor_aspi_origin_subtier_product_blueprint', 'high')),
+    ).toBeUndefined();
   });
 });
 
@@ -138,7 +150,9 @@ describe('isDisqualifying — a graph-reached fact may not move the award gate',
     // Measured on Gestamp: `psa_owned_by_sheffield_hallam_university_reports_
     // forced_labor_entity` at `high`, as an orphan. It deducts at full weight
     // and lights a badge; it does not bar an award.
-    expect(isDisqualifying(factor('psa_owned_by_sheffield_hallam_reports_forced_labor_entity', 'high'))).toBe(false);
+    expect(
+      isDisqualifying(factor('psa_owned_by_sheffield_hallam_reports_forced_labor_entity', 'high')),
+    ).toBe(false);
   });
 
   it('does NOT disqualify an indirect high, because one band down is no longer high', () => {
@@ -146,7 +160,9 @@ describe('isDisqualifying — a graph-reached fact may not move the award gate',
   });
 
   it('does NOT disqualify a subtier factor, which never deducts at all', () => {
-    expect(isDisqualifying(factor('forced_labor_aspi_origin_subtier_product_blueprint', 'high'))).toBe(false);
+    expect(
+      isDisqualifying(factor('forced_labor_aspi_origin_subtier_product_blueprint', 'high')),
+    ).toBe(false);
   });
 
   it('does not disqualify a high outside a pinning family', () => {
@@ -161,7 +177,9 @@ describe('country-derived factors are excluded, to avoid double-counting Country
     expect(isCountryDerived(factor('eu_high_risk_third', 'relevant', ['CHN']))).toBe(true);
     // A country-derived factor we have not seen before is excluded too.
     expect(isCountryDerived(factor('some_new_country_index', 'high', ['DEU']))).toBe(true);
-    expect(isCountryDerived(factor('exports_bis_high_priority_items_direct', 'high', null))).toBe(false);
+    expect(isCountryDerived(factor('exports_bis_high_priority_items_direct', 'high', null))).toBe(
+      false,
+    );
   });
 });
 
@@ -180,8 +198,12 @@ describe('psa_X dedupes against base X', () => {
   });
 
   it('strips only the psa_ prefix', () => {
-    expect(baseNameOf('psa_exports_bis_high_priority_items_direct')).toBe('exports_bis_high_priority_items_direct');
-    expect(baseNameOf('exports_bis_high_priority_items_direct')).toBe('exports_bis_high_priority_items_direct');
+    expect(baseNameOf('psa_exports_bis_high_priority_items_direct')).toBe(
+      'exports_bis_high_priority_items_direct',
+    );
+    expect(baseNameOf('exports_bis_high_priority_items_direct')).toBe(
+      'exports_bis_high_priority_items_direct',
+    );
   });
 });
 
@@ -189,12 +211,17 @@ describe('parseRiskObject', () => {
   it('reads a real Sayari risk block', () => {
     const parsed = parseRiskObject({
       cpi_score: { level: 'relevant', value: 27, metadata: { country: ['MEX'] } },
-      exports_bis_high_priority_items_direct: { level: 'high', metadata: { traversal_path: ['a', 'b'] } },
+      exports_bis_high_priority_items_direct: {
+        level: 'high',
+        metadata: { traversal_path: ['a', 'b'] },
+      },
       not_a_level: { level: 'nonsense' },
     });
     expect(parsed).toHaveLength(3);
     expect(parsed.find((f) => f.name === 'cpi_score')?.country).toEqual(['MEX']);
-    expect(parsed.find((f) => f.name === 'exports_bis_high_priority_items_direct')?.traversalPath).toEqual(['a', 'b']);
+    expect(
+      parsed.find((f) => f.name === 'exports_bis_high_priority_items_direct')?.traversalPath,
+    ).toEqual(['a', 'b']);
     // An unrecognised level is dropped rather than guessed at.
     expect(parsed.find((f) => f.name === 'not_a_level')?.level).toBeUndefined();
   });

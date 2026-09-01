@@ -109,14 +109,20 @@ describe('identifiers match as STRINGS, never as numbers', () => {
     // and hyphens, and a bare {22} length check rejected it as an unresolvable
     // entity id — a validator objecting to a word. Real Sayari ids mix cases
     // with digits, so all three classes are required.
-    expect(checkNumberFidelity('A state-owned-enterprise finding sits on the family.', candidates)).toEqual([]);
-    expect(checkNumberFidelity('It is a forced-labour-reporting entity here.', candidates)).toEqual([]);
+    expect(
+      checkNumberFidelity('A state-owned-enterprise finding sits on the family.', candidates),
+    ).toEqual([]);
+    expect(checkNumberFidelity('It is a forced-labour-reporting entity here.', candidates)).toEqual(
+      [],
+    );
   });
 
   it('still reads a real Sayari entity id as an identifier', () => {
     const withEntity = candidatesFrom({}, [{ entityId: 'LAtrDml3ulKGjNIIFGSNAg' }]);
     expect(checkNumberFidelity('The profile is LAtrDml3ulKGjNIIFGSNAg.', withEntity)).toEqual([]);
-    expect(checkNumberFidelity('The profile is bryNuZ2GwwXGB74Rm75-Zw.', withEntity)).toHaveLength(1);
+    expect(checkNumberFidelity('The profile is bryNuZ2GwwXGB74Rm75-Zw.', withEntity)).toHaveLength(
+      1,
+    );
   });
 
   it('accepts an LEI that appears on a cited row', () => {
@@ -169,7 +175,9 @@ describe('numbers inside a cited PROSE field are stored numbers too', () => {
   });
 
   it('accepts a figure inside a cited address', () => {
-    const withAddress = candidatesFrom({}, [{ addressLine: 'W Building, 8-15 Konan 1-chome, Tokyo 108-0075' }]);
+    const withAddress = candidatesFrom({}, [
+      { addressLine: 'W Building, 8-15 Konan 1-chome, Tokyo 108-0075' },
+    ]);
     expect(checkNumberFidelity('It is registered at Tokyo 108-0075.', withAddress)).toEqual([]);
   });
 

@@ -41,7 +41,11 @@ import type { CriterionOutcome, DataConfidenceBand, SupplierScoringInput } from 
  * explanation is that nobody looked under that name.
  */
 
-const UNKNOWN = (reason: string, rawInputs: Record<string, unknown>, anchorLine: string): CriterionOutcome => ({
+const UNKNOWN = (
+  reason: string,
+  rawInputs: Record<string, unknown>,
+  anchorLine: string,
+): CriterionOutcome => ({
   status: 'unknown',
   reason,
   rawInputs,
@@ -72,19 +76,32 @@ export const COMPLIANCE_ANCHOR_LINE =
  * only `_direct` made this Criterion a constant 100 across the roster — the
  * heaviest weight in the app, doing nothing.
  */
-export function complianceRisk(input: SupplierScoringInput, band: DataConfidenceBand): CriterionOutcome {
+export function complianceRisk(
+  input: SupplierScoringInput,
+  band: DataConfidenceBand,
+): CriterionOutcome {
   const raw: Record<string, unknown> = {};
 
   if (input.match.status !== 'accepted' || !input.profile) {
-    return UNKNOWN('the Match is not accepted, so there is no Profile to score', raw, COMPLIANCE_ANCHOR_LINE);
+    return UNKNOWN(
+      'the Match is not accepted, so there is no Profile to score',
+      raw,
+      COMPLIANCE_ANCHOR_LINE,
+    );
   }
   if (band === 'thin') {
     // The coverage precondition. Without it, a Supplier we know almost nothing
     // about would score 100 for having no recorded risk.
-    return UNKNOWN('data confidence is thin, so an absent risk factor is not evidence of absence', raw, COMPLIANCE_ANCHOR_LINE);
+    return UNKNOWN(
+      'data confidence is thin, so an absent risk factor is not evidence of absence',
+      raw,
+      COMPLIANCE_ANCHOR_LINE,
+    );
   }
 
-  const scored = dedupePsaAgainstBase(input.profile.riskFactors.filter((f) => !isCountryDerived(f)));
+  const scored = dedupePsaAgainstBase(
+    input.profile.riskFactors.filter((f) => !isCountryDerived(f)),
+  );
   const countryDerived = input.profile.riskFactors.filter(isCountryDerived).map((f) => f.name);
 
   // An empty `risk` object is never clean on its own — but with adequate or
@@ -109,16 +126,31 @@ export function complianceRisk(input: SupplierScoringInput, band: DataConfidence
 
   if (input.profile.sanctioned) {
     value -= DEDUCTION_BY_LEVEL.high;
-    deductions.push({ factor: 'sanctioned', level: 'high', variant: 'direct', points: DEDUCTION_BY_LEVEL.high });
+    deductions.push({
+      factor: 'sanctioned',
+      level: 'high',
+      variant: 'direct',
+      points: DEDUCTION_BY_LEVEL.high,
+    });
     disqualifying.push('sanctioned');
   }
   if (input.profile.pep) {
     value -= DEDUCTION_BY_LEVEL.elevated;
-    deductions.push({ factor: 'pep', level: 'elevated', variant: 'direct', points: DEDUCTION_BY_LEVEL.elevated });
+    deductions.push({
+      factor: 'pep',
+      level: 'elevated',
+      variant: 'direct',
+      points: DEDUCTION_BY_LEVEL.elevated,
+    });
   }
   if (input.profile.closed) {
     value -= DEDUCTION_BY_LEVEL.relevant;
-    deductions.push({ factor: 'closed', level: 'relevant', variant: 'direct', points: DEDUCTION_BY_LEVEL.relevant });
+    deductions.push({
+      factor: 'closed',
+      level: 'relevant',
+      variant: 'direct',
+      points: DEDUCTION_BY_LEVEL.relevant,
+    });
   }
 
   // A `high` in a pinning family pins to 0 outright rather than merely
@@ -127,16 +159,21 @@ export function complianceRisk(input: SupplierScoringInput, band: DataConfidence
   const pinned = disqualifying.length > 0;
   const { value: clampedValue, clamped } = clamp100(pinned ? 0 : value);
 
-  return VALUE(clampedValue, clamped, {
-    factorsScored: deductions,
-    subtierBadgedNotDeducted: badgedOnly,
-    countryDerivedExcluded: countryDerived,
-    disqualifyingFactors: disqualifying,
-    pinnedToZero: pinned,
-    sanctioned: input.profile.sanctioned,
-    pep: input.profile.pep,
-    closed: input.profile.closed,
-  }, COMPLIANCE_ANCHOR_LINE);
+  return VALUE(
+    clampedValue,
+    clamped,
+    {
+      factorsScored: deductions,
+      subtierBadgedNotDeducted: badgedOnly,
+      countryDerivedExcluded: countryDerived,
+      disqualifyingFactors: disqualifying,
+      pinnedToZero: pinned,
+      sanctioned: input.profile.sanctioned,
+      pep: input.profile.pep,
+      closed: input.profile.closed,
+    },
+    COMPLIANCE_ANCHOR_LINE,
+  );
 }
 
 export const OWNERSHIP_ANCHOR_LINE =
@@ -165,7 +202,11 @@ export const OWNERSHIP_ANCHOR_LINE =
 export function ownershipExposure(input: SupplierScoringInput): CriterionOutcome {
   const raw: Record<string, unknown> = {};
   if (input.match.status !== 'accepted' || !input.profile) {
-    return UNKNOWN('the Match is not accepted, so there is no Profile to score', raw, OWNERSHIP_ANCHOR_LINE);
+    return UNKNOWN(
+      'the Match is not accepted, so there is no Profile to score',
+      raw,
+      OWNERSHIP_ANCHOR_LINE,
+    );
   }
 
   const profile = input.profile;
@@ -190,12 +231,16 @@ export function ownershipExposure(input: SupplierScoringInput): CriterionOutcome
           ? `no owner edge on this record, but the company is split across ${profile.psaCount} records and the ownership may hang off another one`
           : 'the graph records no owner for this company';
 
-    return UNKNOWN(reason, {
-      ownerEdgeCount,
-      psaCount: profile.psaCount ?? 0,
-      relationshipsTruncated: profile.relationshipsTruncated,
-      relationshipCount: profile.relationshipCount ?? {},
-    }, OWNERSHIP_ANCHOR_LINE);
+    return UNKNOWN(
+      reason,
+      {
+        ownerEdgeCount,
+        psaCount: profile.psaCount ?? 0,
+        relationshipsTruncated: profile.relationshipsTruncated,
+        relationshipCount: profile.relationshipCount ?? {},
+      },
+      OWNERSHIP_ANCHOR_LINE,
+    );
   }
 
   let value = 100;
@@ -206,11 +251,19 @@ export function ownershipExposure(input: SupplierScoringInput): CriterionOutcome
     if (worst) {
       const points = DEDUCTION_BY_LEVEL[worst];
       value -= points;
-      deductions.push({ owner: owner.label, reason: `owner carries a ${worst} risk factor`, points });
+      deductions.push({
+        owner: owner.label,
+        reason: `owner carries a ${worst} risk factor`,
+        points,
+      });
     }
     if (owner.isStateOwned) {
       value -= STATE_OWNERSHIP_DEDUCTION;
-      deductions.push({ owner: owner.label, reason: 'state ownership', points: STATE_OWNERSHIP_DEDUCTION });
+      deductions.push({
+        owner: owner.label,
+        reason: 'state ownership',
+        points: STATE_OWNERSHIP_DEDUCTION,
+      });
     }
   }
 
@@ -219,15 +272,28 @@ export function ownershipExposure(input: SupplierScoringInput): CriterionOutcome
     if (!level) continue;
     const points = DEDUCTION_BY_LEVEL[level];
     value -= points;
-    deductions.push({ owner: `(twin) ${factor.name}`, reason: `ownership-family factor at ${level}`, points });
+    deductions.push({
+      owner: `(twin) ${factor.name}`,
+      reason: `ownership-family factor at ${level}`,
+      points,
+    });
   }
 
   const { value: clampedValue, clamped } = clamp100(value);
-  return VALUE(clampedValue, clamped, {
-    owners: input.owners.map((o) => ({ label: o.label, entityId: o.entityId, stateOwned: o.isStateOwned })),
-    ownershipPsaFactors: ownershipPsaFactors.map((f) => f.name),
-    deductions,
-  }, OWNERSHIP_ANCHOR_LINE);
+  return VALUE(
+    clampedValue,
+    clamped,
+    {
+      owners: input.owners.map((o) => ({
+        label: o.label,
+        entityId: o.entityId,
+        stateOwned: o.isStateOwned,
+      })),
+      ownershipPsaFactors: ownershipPsaFactors.map((f) => f.name),
+      deductions,
+    },
+    OWNERSHIP_ANCHOR_LINE,
+  );
 }
 
 function worstLevel(factors: readonly RiskFactor[]) {
@@ -274,23 +340,31 @@ export function countryResilience(input: SupplierScoringInput): CriterionOutcome
   );
   const { value, clamped } = clamp100(weighted / totalSubWeight);
 
-  return VALUE(value, clamped, {
-    country: country ?? null,
-    indicators: present.map((x) => ({
-      code: x.spec.code,
-      label: x.spec.label,
-      raw: x.row!.value,
-      normalised: normaliseIndicator(x.spec.scale, x.row!.value!),
-      subWeight: x.spec.subWeight,
-      year: x.row!.year ?? null,
-      // Overlapping bands are not a real difference, and on this roster most
-      // of them overlap — so the band is rendered, not just the point.
-      band: x.row!.lowerBound != null && x.row!.upperBound != null
-        ? [x.row!.lowerBound, x.row!.upperBound]
-        : null,
-    })),
-    indicatorsMissing: COUNTRY_INDICATORS.filter((s) => !byCode.get(s.code)?.value).map((s) => s.code),
-  }, COUNTRY_ANCHOR_LINE);
+  return VALUE(
+    value,
+    clamped,
+    {
+      country: country ?? null,
+      indicators: present.map((x) => ({
+        code: x.spec.code,
+        label: x.spec.label,
+        raw: x.row!.value,
+        normalised: normaliseIndicator(x.spec.scale, x.row!.value!),
+        subWeight: x.spec.subWeight,
+        year: x.row!.year ?? null,
+        // Overlapping bands are not a real difference, and on this roster most
+        // of them overlap — so the band is rendered, not just the point.
+        band:
+          x.row!.lowerBound != null && x.row!.upperBound != null
+            ? [x.row!.lowerBound, x.row!.upperBound]
+            : null,
+      })),
+      indicatorsMissing: COUNTRY_INDICATORS.filter((s) => !byCode.get(s.code)?.value).map(
+        (s) => s.code,
+      ),
+    },
+    COUNTRY_ANCHOR_LINE,
+  );
 }
 
 /**
@@ -315,15 +389,20 @@ export function tariffExposure(input: SupplierScoringInput): CriterionOutcome {
     );
   }
   const value = tariffScore(tariff.mfnRatePct);
-  return VALUE(value, tariff.mfnRatePct > 10, {
-    hsCode: tariff.hsCode,
-    mfnRatePct: tariff.mfnRatePct,
-    // Rendered beside the number, never folded into it.
-    mexicoRatePct: tariff.mexicoRatePct ?? null,
-    candidateLines: tariff.candidateLines ?? [],
-    originCountry: input.profile?.country ?? null,
-    importerCountry: 'USA',
-  }, TARIFF_ANCHOR_LINE);
+  return VALUE(
+    value,
+    tariff.mfnRatePct > 10,
+    {
+      hsCode: tariff.hsCode,
+      mfnRatePct: tariff.mfnRatePct,
+      // Rendered beside the number, never folded into it.
+      mexicoRatePct: tariff.mexicoRatePct ?? null,
+      candidateLines: tariff.candidateLines ?? [],
+      originCountry: input.profile?.country ?? null,
+      importerCountry: 'USA',
+    },
+    TARIFF_ANCHOR_LINE,
+  );
 }
 
 /**
@@ -344,12 +423,17 @@ export function proximity(input: SupplierScoringInput): CriterionOutcome {
     );
   }
   const km = input.nearestPlant.km;
-  return VALUE(proximityScore(km), km > 8_000, {
-    nearestPlant: input.nearestPlant.code,
-    nearestPlantCity: input.nearestPlant.city,
-    km: Math.round(km),
-    coordinatePrecision: input.profile?.coordinatePrecision ?? 'unknown',
-  }, PROXIMITY_ANCHOR_LINE);
+  return VALUE(
+    proximityScore(km),
+    km > 8_000,
+    {
+      nearestPlant: input.nearestPlant.code,
+      nearestPlantCity: input.nearestPlant.city,
+      km: Math.round(km),
+      coordinatePrecision: input.profile?.coordinatePrecision ?? 'unknown',
+    },
+    PROXIMITY_ANCHOR_LINE,
+  );
 }
 
 const MEDIA_UNKNOWN_NO_QUERY =
@@ -367,13 +451,20 @@ const MEDIA_UNKNOWN_NO_QUERY =
  * ours), and data confidence must not be thin. Zero articles under either
  * condition is not a clean result.
  */
-export function mediaSignal(input: SupplierScoringInput, band: DataConfidenceBand): CriterionOutcome {
+export function mediaSignal(
+  input: SupplierScoringInput,
+  band: DataConfidenceBand,
+): CriterionOutcome {
   const news = input.news;
   if (!news?.ranOnResolvedLegalName) {
     return UNKNOWN(MEDIA_UNKNOWN_NO_QUERY, { ran: false }, MEDIA_ANCHOR_LINE);
   }
   if (band === 'thin') {
-    return UNKNOWN('data confidence is thin, so an empty article set is not evidence of a clean record', { articleCount: news.articles.length }, MEDIA_ANCHOR_LINE);
+    return UNKNOWN(
+      'data confidence is thin, so an empty article set is not evidence of a clean record',
+      { articleCount: news.articles.length },
+      MEDIA_ANCHOR_LINE,
+    );
   }
 
   const weighted = news.articles.reduce((sum, article) => {
@@ -382,13 +473,18 @@ export function mediaSignal(input: SupplierScoringInput, band: DataConfidenceBan
     return sum + MEDIA_FLAG_WEIGHTS.unflagged;
   }, 0);
 
-  return VALUE(mediaScore(weighted), weighted > 20, {
-    // The raw count is shown as context beside the weighted figure, because a
-    // weighted count is not a number a reader can check against a headline.
-    articleCount: news.articles.length,
-    weightedCount: Number(weighted.toFixed(2)),
-    serious: news.articles.filter((a) => a.seriousFlags > 0).length,
-    moderate: news.articles.filter((a) => a.seriousFlags === 0 && a.moderateFlags > 0).length,
-    unflagged: news.articles.filter((a) => a.seriousFlags === 0 && a.moderateFlags === 0).length,
-  }, MEDIA_ANCHOR_LINE);
+  return VALUE(
+    mediaScore(weighted),
+    weighted > 20,
+    {
+      // The raw count is shown as context beside the weighted figure, because a
+      // weighted count is not a number a reader can check against a headline.
+      articleCount: news.articles.length,
+      weightedCount: Number(weighted.toFixed(2)),
+      serious: news.articles.filter((a) => a.seriousFlags > 0).length,
+      moderate: news.articles.filter((a) => a.seriousFlags === 0 && a.moderateFlags > 0).length,
+      unflagged: news.articles.filter((a) => a.seriousFlags === 0 && a.moderateFlags === 0).length,
+    },
+    MEDIA_ANCHOR_LINE,
+  );
 }

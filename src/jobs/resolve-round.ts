@@ -52,7 +52,11 @@ export type ResolveRoundDeps = {
 /** What each agent submits. The two tools are separate so the Trace names who spoke. */
 type Submission = {
   entityId: string | null;
-  verdicts: { discriminator: string; verdict: 'pass' | 'fail' | 'unavailable'; reasoning: string }[];
+  verdicts: {
+    discriminator: string;
+    verdict: 'pass' | 'fail' | 'unavailable';
+    reasoning: string;
+  }[];
   confidence: 'low' | 'medium' | 'high';
   reasoning: string;
 };
@@ -199,7 +203,11 @@ async function runAgent(args: {
   // The proposal is read from the MESSAGE, not from the tool's `run()`. A
   // terminal tool's handler is not guaranteed to have fired, and the agents
   // propose while our code settles.
-  return (result.toolUses.find((use) => use.name === args.submitToolName)?.input as Submission | undefined) ?? null;
+  return (
+    (result.toolUses.find((use) => use.name === args.submitToolName)?.input as
+      | Submission
+      | undefined) ?? null
+  );
 }
 
 /**
@@ -227,7 +235,9 @@ function verdictsFor(
   candidates: CandidateFacts[],
   entityId: string | null,
 ): ReturnType<typeof runDiscriminators> {
-  const picked = entityId ? candidates.find((candidate) => candidate.entityId === entityId) : undefined;
+  const picked = entityId
+    ? candidates.find((candidate) => candidate.entityId === entityId)
+    : undefined;
   return picked ? runDiscriminators(roster, picked) : [];
 }
 

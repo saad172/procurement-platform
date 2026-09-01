@@ -28,21 +28,25 @@ import { upstreamSource, upstreamVia } from './enums';
  * with keys sorted. Defaults are applied *before* hashing, so changing a
  * default is a deliberate cache miss rather than an invisible one.
  */
-export const upstreamResponse = pgTable('upstream_response', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  source: upstreamSource('source').notNull(),
-  endpoint: text('endpoint').notNull(),
-  paramsHash: text('params_hash').notNull(),
-  /** The canonical params the hash was taken over, so a miss can name them. */
-  params: jsonb('params').notNull(),
-  body: jsonb('body').notNull(),
-  bodyHash: text('body_hash').notNull(),
-  via: upstreamVia('via').notNull(),
-  fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [
-  // Latest-wins on read: the lookup is (source, endpoint, params_hash) ordered
-  // by fetched_at desc, so this index is the read path, not a constraint.
-  index('upstream_response_key_idx').on(t.source, t.endpoint, t.paramsHash, t.fetchedAt),
-]);
+export const upstreamResponse = pgTable(
+  'upstream_response',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    source: upstreamSource('source').notNull(),
+    endpoint: text('endpoint').notNull(),
+    paramsHash: text('params_hash').notNull(),
+    /** The canonical params the hash was taken over, so a miss can name them. */
+    params: jsonb('params').notNull(),
+    body: jsonb('body').notNull(),
+    bodyHash: text('body_hash').notNull(),
+    via: upstreamVia('via').notNull(),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Latest-wins on read: the lookup is (source, endpoint, params_hash) ordered
+    // by fetched_at desc, so this index is the read path, not a constraint.
+    index('upstream_response_key_idx').on(t.source, t.endpoint, t.paramsHash, t.fetchedAt),
+  ],
+);
 
 export const upstreamResponseRelations = relations(upstreamResponse, () => ({}));

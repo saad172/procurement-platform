@@ -33,7 +33,12 @@ async function main(): Promise<void> {
 
   const [run] = await db
     .insert(t.run)
-    .values({ programId: program.id, state: 'running', trigger: 'smoke', subjectLabel: 'model smoke check' })
+    .values({
+      programId: program.id,
+      state: 'running',
+      trigger: 'smoke',
+      subjectLabel: 'model smoke check',
+    })
     .returning({ id: t.run.id });
   const [job] = await db
     .insert(t.job)
@@ -52,7 +57,9 @@ async function main(): Promise<void> {
   const lookup = betaZodTool({
     name: 'lookup_supplier_country',
     description: 'Returns the roster country recorded for a supplier on this program.',
-    inputSchema: z.object({ supplierName: z.string().describe('The roster name, exactly as imported') }),
+    inputSchema: z.object({
+      supplierName: z.string().describe('The roster name, exactly as imported'),
+    }),
     run: async (input) => {
       toolRuns += 1;
       const row = await db.query.supplier.findFirst({
@@ -97,30 +104,44 @@ async function main(): Promise<void> {
   const spent = usage.reduce(
     (sum, u) =>
       sum +
-      ((u.inputTokens ?? 0) + (u.cacheCreationInputTokens ?? 0) + (u.cacheReadInputTokens ?? 0)) / 1e6 * 5 +
+      (((u.inputTokens ?? 0) + (u.cacheCreationInputTokens ?? 0) + (u.cacheReadInputTokens ?? 0)) /
+        1e6) *
+        5 +
       ((u.outputTokens ?? 0) / 1e6) * 25,
     0,
   );
 
   console.log(`  status        ${outcome.status}`);
   if (outcome.status === 'done') {
-    const final = outcome.finalMessage as { content: { type: string; text?: string }[] } | undefined;
-    const text = final?.content?.filter((b) => b.type === 'text').map((b) => b.text).join(' ');
+    const final = outcome.finalMessage as
+      | { content: { type: string; text?: string }[] }
+      | undefined;
+    const text = final?.content
+      ?.filter((b) => b.type === 'text')
+      .map((b) => b.text)
+      .join(' ');
     console.log(`  answer        ${text?.trim()}`);
-    console.log(`  turns         ${outcome.turns}   tool calls ${outcome.toolCalls}   tokens ${outcome.tokens}`);
+    console.log(
+      `  turns         ${outcome.turns}   tool calls ${outcome.toolCalls}   tokens ${outcome.tokens}`,
+    );
   } else if (outcome.status === 'failed') {
     console.log(`  error         ${outcome.error}`);
   }
   console.log(`  tool ran      ${toolRuns} time(s)`);
   console.log(`  trace_turn    ${turns.length} row(s)  — one per turn, whole BetaMessage verbatim`);
   console.log(`  usage_event   ${usage.length} row(s)  — usage has one home, not two`);
-  console.log(`  thinking      ${turns.some((x) => JSON.stringify(x.response).includes('"thinking"')) ? 'summarized blocks present' : 'none returned'}`);
+  console.log(
+    `  thinking      ${turns.some((x) => JSON.stringify(x.response).includes('"thinking"')) ? 'summarized blocks present' : 'none returned'}`,
+  );
   console.log(`  cost          $${spent.toFixed(4)} (from a committed price constant, not a bill)`);
   console.log('─'.repeat(72));
   console.log(`  Run ${run!.id}\n`);
 
   await db.update(t.job).set({ state: 'done' }).where(eq(t.job.id, job!.id));
-  await db.update(t.run).set({ state: 'done', finishedAt: new Date() }).where(eq(t.run.id, run!.id));
+  await db
+    .update(t.run)
+    .set({ state: 'done', finishedAt: new Date() })
+    .where(eq(t.run.id, run!.id));
   await closeDirectDb();
   process.exit(outcome.status === 'done' ? 0 : 1);
 }

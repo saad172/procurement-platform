@@ -71,7 +71,9 @@ export async function seedTestProgram(db: Database): Promise<string> {
     )
     .onConflictDoNothing({ target: [t.supplier.programId, t.supplier.rosterIndex] });
 
-  const suppliers = await db.query.supplier.findMany({ where: eq(t.supplier.programId, TEST_PROGRAM.id) });
+  const suppliers = await db.query.supplier.findMany({
+    where: eq(t.supplier.programId, TEST_PROGRAM.id),
+  });
   const links = suppliers
     .filter((row) => row.rosterIndex != null)
     .map((row) => ({ supplierId: row.id, categoryId: TEST_CATEGORY.id }));

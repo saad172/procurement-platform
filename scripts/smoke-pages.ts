@@ -114,13 +114,18 @@ async function findRunWithNamedSubject(db: Database, programId: string) {
     .select({ runId: t.job.runId })
     .from(t.job)
     .innerJoin(t.run, eq(t.run.id, t.job.runId))
-    .where(and(eq(t.run.programId, programId), inArray(t.job.subjectType, ['supplier', 'category'])))
+    .where(
+      and(eq(t.run.programId, programId), inArray(t.job.subjectType, ['supplier', 'category'])),
+    )
     .orderBy(desc(t.run.createdAt))
     .limit(1);
   const runId = named[0]?.runId;
   return runId
     ? await db.query.run.findFirst({ where: eq(t.run.id, runId) })
-    : await db.query.run.findFirst({ where: eq(t.run.programId, programId), orderBy: [desc(t.run.createdAt)] });
+    : await db.query.run.findFirst({
+        where: eq(t.run.programId, programId),
+        orderBy: [desc(t.run.createdAt)],
+      });
 }
 
 /**
@@ -144,7 +149,10 @@ async function findSubjects(db: Database, programId: string) {
   const sentence = await db.query.sentence.findFirst();
   const run = await findRunWithNamedSubject(db, p);
   const job = run
-    ? await db.query.job.findFirst({ where: eq(t.job.runId, run.id), orderBy: [desc(t.job.createdAt)] })
+    ? await db.query.job.findFirst({
+        where: eq(t.job.runId, run.id),
+        orderBy: [desc(t.job.createdAt)],
+      })
     : undefined;
 
   /**
@@ -153,7 +161,9 @@ async function findSubjects(db: Database, programId: string) {
    * round skipped a page that existed, because the first Category seeded is
    * rarely the one somebody ran `recommend` for.
    */
-  const recommendation = await db.query.recommendation.findFirst({ where: eq(t.recommendation.programId, p) });
+  const recommendation = await db.query.recommendation.findFirst({
+    where: eq(t.recommendation.programId, p),
+  });
   const recommendedCategory = recommendation
     ? await db.query.category.findFirst({ where: eq(t.category.id, recommendation.categoryId) })
     : undefined;
@@ -171,7 +181,19 @@ async function findSubjects(db: Database, programId: string) {
     ? await db.query.entity.findFirst({ where: eq(t.entity.id, assessedMatch.entityId) })
     : await db.query.entity.findFirst();
 
-  return { supplier, category, parked, record, sentence, run, job, recommendation, recommendedCategory, assessedSupplier, richEntity };
+  return {
+    supplier,
+    category,
+    parked,
+    record,
+    sentence,
+    run,
+    job,
+    recommendation,
+    recommendedCategory,
+    assessedSupplier,
+    richEntity,
+  };
 }
 
 type Subjects = Awaited<ReturnType<typeof findSubjects>>;
@@ -194,7 +216,8 @@ async function categoryMarkers(db: Database, programId: string, cat: Subjects['c
 async function supplierMarkers(db: Database, programId: string, supplierId: string) {
   const data = await loadSupplierPage(db, { programId, supplierId, query: {} });
   if (!data) return [];
-  const familyMarker = data.exposure.state === 'exposure_found' ? data.exposure.members[0]?.label : undefined;
+  const familyMarker =
+    data.exposure.state === 'exposure_found' ? data.exposure.members[0]?.label : undefined;
   return [
     data.described?.headline ?? undefined,
     data.sentences[0]?.text.slice(0, 30),
@@ -219,16 +242,19 @@ async function entityMarkers(db: Database, programId: string, entityId: string) 
 async function recommendationMarkers(db: Database, programId: string, categoryId: string) {
   const data = await loadRecommendationPage(db, { programId, categoryId });
   if (!data) return [];
-  return [data.picks[0]?.rosterName ?? data.picks[0]?.entityLabel, data.sentences[0]?.text.slice(0, 30)].filter(
-    (m): m is string => !!m,
-  );
+  return [
+    data.picks[0]?.rosterName ?? data.picks[0]?.entityLabel,
+    data.sentences[0]?.text.slice(0, 30),
+  ].filter((m): m is string => !!m);
 }
 
 /** The Run page's Jobs section — one Job whose subject resolved to a name. */
 async function runMarkers(db: Database, programId: string, runId: string) {
   const data = await loadRunPage(db, { programId, runId });
   if (!data) return [];
-  const named = data.jobs.map((job) => data.subjects.get(job.subjectId)).find((name): name is string => !!name);
+  const named = data.jobs
+    .map((job) => data.subjects.get(job.subjectId))
+    .find((name): name is string => !!name);
   return named ? [named] : [];
 }
 
@@ -245,9 +271,10 @@ async function settleMarkers(db: Database, programId: string, supplierId: string
   const data = await loadSettlePage(db, { programId, supplierId, query: {} });
   if (!data) return [];
   const candidate = data.groups.flatMap((g) => g.choices)[0]?.label;
-  return [data.shared[0] ? data.shared[0].discriminator.replace(/_/g, ' ') : undefined, candidate].filter(
-    (m): m is string => !!m,
-  );
+  return [
+    data.shared[0] ? data.shared[0].discriminator.replace(/_/g, ' ') : undefined,
+    candidate,
+  ].filter((m): m is string => !!m);
 }
 
 /** The Citation page's one section — the title of the first thing this sentence cites. */
@@ -347,12 +374,14 @@ function buildChecks(programId: string, name: string, s: Subjects, m: SectionMar
  * column readable as a list of pages, which is what it is.
  */
 function shorten(path: string): string {
-  return path
-    .replaceAll(UUID, ':id')
-    .replace('/program/:id', '/program')
-    // An entity id is base64url and a record id carries slashes, so neither
-    // is a uuid and both are just as unhelpful in this column.
-    .replace(/\/(entity|record|citation)\/.+$/, '/$1/:id');
+  return (
+    path
+      .replaceAll(UUID, ':id')
+      .replace('/program/:id', '/program')
+      // An entity id is base64url and a record id carries slashes, so neither
+      // is a uuid and both are just as unhelpful in this column.
+      .replace(/\/(entity|record|citation)\/.+$/, '/$1/:id')
+  );
 }
 
 /** Fetches every check, prints one line each, and reports how many of each outcome there were. */
@@ -377,7 +406,9 @@ async function runChecks(checks: Check[]): Promise<{ failed: number; skipped: nu
       body = decode(await response.text());
     } catch (error) {
       failed += 1;
-      console.log(`  FAIL  ${shown.padEnd(46)} ${error instanceof Error ? error.message : String(error)}`);
+      console.log(
+        `  FAIL  ${shown.padEnd(46)} ${error instanceof Error ? error.message : String(error)}`,
+      );
       console.log(`        is the app running? pnpm dev`);
       continue;
     }
@@ -391,7 +422,9 @@ async function runChecks(checks: Check[]): Promise<{ failed: number; skipped: nu
       console.log(`  FAIL  ${shown.padEnd(46)} ${status}, wanted ${wantRedirect ? '3xx' : '200'}`);
     } else if (missing.length > 0) {
       failed += 1;
-      console.log(`  FAIL  ${shown.padEnd(46)} ${status}, missing ${missing.map((m) => `"${m}"`).join(', ')}`);
+      console.log(
+        `  FAIL  ${shown.padEnd(46)} ${status}, missing ${missing.map((m) => `"${m}"`).join(', ')}`,
+      );
     } else {
       console.log(`  ok    ${shown.padEnd(46)} ${status}`);
     }
@@ -416,7 +449,9 @@ async function main(): Promise<void> {
     console.log(`\nPages against ${BASE}\n` + '─'.repeat(78));
     const { failed, skipped } = await runChecks(checks);
     console.log('─'.repeat(78));
-    console.log(`  ${checks.length - skipped - failed} passed · ${failed} failed · ${skipped} skipped\n`);
+    console.log(
+      `  ${checks.length - skipped - failed} passed · ${failed} failed · ${skipped} skipped\n`,
+    );
     if (failed > 0) process.exitCode = 1;
   } finally {
     await closeDirectDb();

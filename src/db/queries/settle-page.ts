@@ -10,7 +10,11 @@ import { settleAnswer, settleChoices } from '@/domain/settle-choices';
  */
 export async function loadSettlePage(
   db: Database,
-  args: { programId: string, supplierId: string; query: Record<string, string | string[] | undefined> },
+  args: {
+    programId: string;
+    supplierId: string;
+    query: Record<string, string | string[] | undefined>;
+  },
 ) {
   const { programId, supplierId, query } = args;
 

@@ -48,7 +48,10 @@ async function park() {
     [ENTITY_B, 'NSK LTD /ADR/'],
     [ELSEWHERE, 'SOMEBODY ELSE LTD.'],
   ]) {
-    await db.insert(t.entity).values({ id: id!, label: label!, country: 'JPN' }).onConflictDoNothing();
+    await db
+      .insert(t.entity)
+      .values({ id: id!, label: label!, country: 'JPN' })
+      .onConflictDoNothing();
   }
 
   // Parked by an agent, with two candidates — the state the page renders.
@@ -178,7 +181,10 @@ describe('settling on a listed candidate', () => {
     expect(runs[0]!.trigger).toBe('settlement');
     expect(runs[0]!.subjectLabel).toBe('settle NSK');
 
-    const jobs = await db.select().from(t.job).where(eq(t.job.runId, outcome.ok ? outcome.runId : ''));
+    const jobs = await db
+      .select()
+      .from(t.job)
+      .where(eq(t.job.runId, outcome.ok ? outcome.runId : ''));
     expect(jobs.map((job) => job.kind)).toEqual(['enrich']);
   });
 });

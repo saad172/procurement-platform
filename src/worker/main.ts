@@ -247,11 +247,7 @@ async function fetchEntityJobHandler(
  * classifier costs no additional Sayari calls because a trade result is
  * already a full entity.
  */
-async function discoverJobHandler(
-  job: JobRow,
-  database: Database,
-  env: Env,
-): Promise<JobOutcome> {
+async function discoverJobHandler(job: JobRow, database: Database, env: Env): Promise<JobOutcome> {
   const category = await database.query.category.findFirst({
     where: (row, { eq: equals }) => equals(row.id, job.subjectId),
   });
@@ -380,11 +376,7 @@ async function assessJobHandler(job: JobRow, database: Database, env: Env): Prom
   return { state: 'done' };
 }
 
-async function recommendJobHandler(
-  job: JobRow,
-  database: Database,
-  env: Env,
-): Promise<JobOutcome> {
+async function recommendJobHandler(job: JobRow, database: Database, env: Env): Promise<JobOutcome> {
   const category = await database.query.category.findFirst({
     where: (row, { eq: equals }) => equals(row.id, job.subjectId),
   });

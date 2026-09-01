@@ -39,7 +39,12 @@ async function main(): Promise<void> {
   if (!program) throw new Error('Seed the database first: pnpm db:seed');
   const [run] = await db
     .insert(t.run)
-    .values({ programId: program.id, state: 'running', trigger: 'check', subjectLabel: 'founding example' })
+    .values({
+      programId: program.id,
+      state: 'running',
+      trigger: 'check',
+      subjectLabel: 'founding example',
+    })
     .returning({ id: t.run.id });
 
   const upstream = createUpstream({
@@ -56,7 +61,11 @@ async function main(): Promise<void> {
     { label: 'the roster row as imported (trade name only)', body: { name: [ROSTER_ROW.name] } },
     {
       label: 'the roster row with its address and country — what the pre-pass sends',
-      body: { name: [ROSTER_ROW.name], address: [ROSTER_ROW.address], country: [ROSTER_ROW.country] },
+      body: {
+        name: [ROSTER_ROW.name],
+        address: [ROSTER_ROW.address],
+        country: [ROSTER_ROW.country],
+      },
     },
     { label: 'the legal name alone', body: { name: ['Robert Bosch GmbH'] } },
   ];
@@ -92,7 +101,7 @@ async function main(): Promise<void> {
       hasLei
         ? '  → it could clear the auto-accept gate, if it also passes all eight Discriminators.'
         : '  → it can NEVER be auto-accepted: the gate requires a GLEIF exact-LEI join as a\n' +
-          '    second witness, and that is the safe direction of failure (SPEC §6.3).',
+            '    second witness, and that is the safe direction of failure (SPEC §6.3).',
     );
   }
 

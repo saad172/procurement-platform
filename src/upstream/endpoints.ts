@@ -169,7 +169,10 @@ export const sayariResolve = defineEndpoint({
       () => ({
         path: '/v1/resolution',
         method: 'POST' as const,
-        query: { limit: params.limit as number, enable_llm_clean: params.enableLlmClean as boolean },
+        query: {
+          limit: params.limit as number,
+          enable_llm_clean: params.enableLlmClean as boolean,
+        },
         body: params.body,
       }),
       deps,
@@ -232,7 +235,10 @@ export const sayariTraversalOwnership = defineEndpoint({
       () => client.traversal.ownership(String(id), rest as never, requestOptions(deps)),
       // `ownership` is `/v1/downstream/{id}` in the SDK — which is itself the
       // clearest statement that the Corporate family read is downward-only.
-      () => ({ path: `/v1/downstream/${encodeURIComponent(String(id))}`, query: { limit: rest.limit as number } }),
+      () => ({
+        path: `/v1/downstream/${encodeURIComponent(String(id))}`,
+        query: { limit: rest.limit as number },
+      }),
       deps,
     );
   },
@@ -433,7 +439,10 @@ export const gleifSearchByName = defineEndpoint({
     return { body: await response.json(), via: 'raw' as const };
   },
   projection: gleifManySchema,
-} as EndpointDef<{ name: string; country?: string; pageSize?: number }, z.infer<typeof gleifManySchema>>);
+} as EndpointDef<
+  { name: string; country?: string; pageSize?: number },
+  z.infer<typeof gleifManySchema>
+>);
 
 /**
  * The roster is ISO3 and GLEIF is ISO2. Only the roster's eleven origins are
@@ -442,8 +451,17 @@ export const gleifSearchByName = defineEndpoint({
  * than sending a code that silently matches nothing.
  */
 const ISO3_TO_ISO2: Record<string, string> = {
-  USA: 'US', DEU: 'DE', JPN: 'JP', KOR: 'KR', FRA: 'FR',
-  ESP: 'ES', CAN: 'CA', CHN: 'CN', MEX: 'MX', IND: 'IN', GBR: 'GB',
+  USA: 'US',
+  DEU: 'DE',
+  JPN: 'JP',
+  KOR: 'KR',
+  FRA: 'FR',
+  ESP: 'ES',
+  CAN: 'CA',
+  CHN: 'CN',
+  MEX: 'MX',
+  IND: 'IN',
+  GBR: 'GB',
 };
 
 export function iso3ToIso2(iso3: string | undefined): string | undefined {
@@ -482,7 +500,10 @@ export const worldBankIndicator = defineEndpoint({
     return { body: await response.json(), via: 'raw' as const };
   },
   projection: worldBankSchema,
-} as EndpointDef<{ country: string; indicator: string; mrnev?: number; format?: string }, z.infer<typeof worldBankSchema>>);
+} as EndpointDef<
+  { country: string; indicator: string; mrnev?: number; format?: string },
+  z.infer<typeof worldBankSchema>
+>);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // USITC HTS

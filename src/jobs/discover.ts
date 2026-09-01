@@ -52,9 +52,25 @@ import { upsertEntity } from './resolve';
  * fail rather than the classifier catching it.
  */
 const FORWARDER_MARKERS = [
-  'logistics', 'forwarding', 'freight', 'shipping', 'transport', 'express',
-  'cargo', 'customs', 'broker', 'warehous', 'damco', 'kuehne', 'expeditors',
-  'panalpina', 'schenker', 'agility', 'ceva', 'dsv', '3pl',
+  'logistics',
+  'forwarding',
+  'freight',
+  'shipping',
+  'transport',
+  'express',
+  'cargo',
+  'customs',
+  'broker',
+  'warehous',
+  'damco',
+  'kuehne',
+  'expeditors',
+  'panalpina',
+  'schenker',
+  'agility',
+  'ceva',
+  'dsv',
+  '3pl',
 ];
 
 /** Cheap, and it only ever *reorders* — it never removes a row. */
@@ -161,7 +177,10 @@ async function searchTradeCandidates(
   );
 
   const rosterNames = (
-    await db.select({ name: t.supplier.rosterName }).from(t.supplier).where(eq(t.supplier.programId, args.programId))
+    await db
+      .select({ name: t.supplier.rosterName })
+      .from(t.supplier)
+      .where(eq(t.supplier.programId, args.programId))
   )
     .map((row) => row.name)
     .filter((name): name is string => name != null);
@@ -177,7 +196,11 @@ async function searchTradeCandidates(
 
   const rows = trade.data.data ?? [];
   let alreadyOnRoster = 0;
-  const candidates: { entity: SayariEntity; shipments: number | null; latestShipmentDate: string | null }[] = [];
+  const candidates: {
+    entity: SayariEntity;
+    shipments: number | null;
+    latestShipmentDate: string | null;
+  }[] = [];
 
   /**
    * Each row IS an entity; the trade figures hang off `metadata`.
@@ -320,7 +343,10 @@ export function sharesNameToken(label: string, rosterNames: readonly string[]): 
       .filter((token) => token.length > 3),
   );
   for (const name of rosterNames) {
-    const nameTokens = name.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 3);
+    const nameTokens = name
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length > 3);
     if (nameTokens.some((token) => tokens.has(token))) return name;
   }
   return null;

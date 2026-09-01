@@ -147,10 +147,7 @@ async function seedCriteria(db: Database, programId: string): Promise<void> {
     });
 }
 
-async function seedFlags(
-  db: Database,
-  categoriesByCode: Map<string, string>,
-): Promise<void> {
+async function seedFlags(db: Database, categoriesByCode: Map<string, string>): Promise<void> {
   await db
     .insert(t.tariffFlag)
     .values(
@@ -214,7 +211,9 @@ async function seedSuppliers(
     .onConflictDoNothing({ target: [t.supplier.programId, t.supplier.rosterIndex] });
 
   const rows = await db.query.supplier.findMany({ where: eq(t.supplier.programId, programId) });
-  const byIndex = new Map(rows.filter((r) => r.rosterIndex != null).map((r) => [r.rosterIndex!, r.id]));
+  const byIndex = new Map(
+    rows.filter((r) => r.rosterIndex != null).map((r) => [r.rosterIndex!, r.id]),
+  );
 
   const links: { supplierId: string; categoryId: string }[] = [];
   for (const row of ROSTER) {

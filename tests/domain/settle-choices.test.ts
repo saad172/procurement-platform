@@ -33,7 +33,8 @@ const V = (spec: string, reportedBy = 'rules') =>
   });
 
 /** All eight passing except the two that need a witness nobody supplied. */
-const CLEAN = 'alias_context=pass business_purpose=pass country=pass lei_witness=unavailable liveness=unavailable locality=pass name_cover=pass street=pass';
+const CLEAN =
+  'alias_context=pass business_purpose=pass country=pass lei_witness=unavailable liveness=unavailable locality=pass name_cover=pass street=pass';
 
 const nsk = (): CandidateForChoice[] => [
   {
@@ -266,14 +267,54 @@ describe('Nemak — eight records the shared-verdict hoist still helps', () => {
    */
   const nemak = (): CandidateForChoice[] =>
     [
-      ['l5pSi--fXqgm5N8s4bxv8g', 'NEMAK MEXICO SA', 21, 'alias_context=pass business_purpose=pass country=pass lei_witness=unavailable liveness=unavailable locality=fail name_cover=pass street=fail'],
-      ['D8GMaegMcydep5QWv6TXAw', 'NEMAK S A B DE C V', 16, 'alias_context=pass business_purpose=pass country=pass lei_witness=unavailable liveness=unavailable locality=pass name_cover=pass street=pass'],
-      ['cor4FogEfrau8vamZfNdKQ', 'NEMAK AUTOMOTIVE SA DE CV', 4, 'alias_context=pass business_purpose=pass country=pass lei_witness=unavailable liveness=unavailable locality=unavailable name_cover=pass street=unavailable'],
-      ['_uqICvrXPDzUmVmshlMVEQ', 'NEMAK MEXICO, S.A.', 1, 'alias_context=pass business_purpose=pass country=pass lei_witness=unavailable liveness=unavailable locality=fail name_cover=pass street=fail'],
-      ['xEYHOxCUcVl9Zfeg0EFzLw', 'NEMAK, S.A.B. DE C.V.', 1, 'alias_context=pass business_purpose=pass country=pass lei_witness=unavailable liveness=unavailable locality=fail name_cover=pass street=fail'],
-      ['rvEB1jlEZctwGy050XxP1w', 'NEMAK, S.A.B. DE C.V.', 1, 'alias_context=pass business_purpose=unavailable country=pass lei_witness=unavailable liveness=unavailable locality=pass name_cover=pass street=pass'],
-      ['8CfTfGdnbgY3ElsLXGkroA', 'Nemak S A De C V Libramiento Arco Vial Km 3 8 Garcia Nuevo Leon 66000 Mexico', 1, 'alias_context=pass business_purpose=unavailable country=unavailable lei_witness=unavailable liveness=unavailable locality=unavailable name_cover=pass street=unavailable'],
-      ['fdPQsF4QelrW9kot65QcyA', 'Nemak, S.A. De C.V. Libramiento Arco Vial Km. 3.8 Garcia Nuevo Leon 66000 Mexico', 1, 'alias_context=pass business_purpose=unavailable country=unavailable lei_witness=unavailable liveness=unavailable locality=unavailable name_cover=pass street=unavailable'],
+      [
+        'l5pSi--fXqgm5N8s4bxv8g',
+        'NEMAK MEXICO SA',
+        21,
+        'alias_context=pass business_purpose=pass country=pass lei_witness=unavailable liveness=unavailable locality=fail name_cover=pass street=fail',
+      ],
+      [
+        'D8GMaegMcydep5QWv6TXAw',
+        'NEMAK S A B DE C V',
+        16,
+        'alias_context=pass business_purpose=pass country=pass lei_witness=unavailable liveness=unavailable locality=pass name_cover=pass street=pass',
+      ],
+      [
+        'cor4FogEfrau8vamZfNdKQ',
+        'NEMAK AUTOMOTIVE SA DE CV',
+        4,
+        'alias_context=pass business_purpose=pass country=pass lei_witness=unavailable liveness=unavailable locality=unavailable name_cover=pass street=unavailable',
+      ],
+      [
+        '_uqICvrXPDzUmVmshlMVEQ',
+        'NEMAK MEXICO, S.A.',
+        1,
+        'alias_context=pass business_purpose=pass country=pass lei_witness=unavailable liveness=unavailable locality=fail name_cover=pass street=fail',
+      ],
+      [
+        'xEYHOxCUcVl9Zfeg0EFzLw',
+        'NEMAK, S.A.B. DE C.V.',
+        1,
+        'alias_context=pass business_purpose=pass country=pass lei_witness=unavailable liveness=unavailable locality=fail name_cover=pass street=fail',
+      ],
+      [
+        'rvEB1jlEZctwGy050XxP1w',
+        'NEMAK, S.A.B. DE C.V.',
+        1,
+        'alias_context=pass business_purpose=unavailable country=pass lei_witness=unavailable liveness=unavailable locality=pass name_cover=pass street=pass',
+      ],
+      [
+        '8CfTfGdnbgY3ElsLXGkroA',
+        'Nemak S A De C V Libramiento Arco Vial Km 3 8 Garcia Nuevo Leon 66000 Mexico',
+        1,
+        'alias_context=pass business_purpose=unavailable country=unavailable lei_witness=unavailable liveness=unavailable locality=unavailable name_cover=pass street=unavailable',
+      ],
+      [
+        'fdPQsF4QelrW9kot65QcyA',
+        'Nemak, S.A. De C.V. Libramiento Arco Vial Km. 3.8 Garcia Nuevo Leon 66000 Mexico',
+        1,
+        'alias_context=pass business_purpose=unavailable country=unavailable lei_witness=unavailable liveness=unavailable locality=unavailable name_cover=pass street=unavailable',
+      ],
     ].map(([entityId, label, src, spec]) => ({
       entityId: entityId as string,
       label: label as string,
@@ -335,7 +376,9 @@ describe('two reporters disagreeing is the interesting artefact, and survives', 
     const candidates = [nsk()[2]!, nsk()[3]!];
     candidates[0]!.verdicts = [...V('street=pass'), ...V('street=fail', 'evaluator')];
     const { groups } = settleChoices({ rosterName: 'NSK', candidates });
-    const row = groups.flatMap((g) => g.choices).find((c) => c.entityId === 'M_bKIsKm8M7jv0xju_VcAw')!;
+    const row = groups
+      .flatMap((g) => g.choices)
+      .find((c) => c.entityId === 'M_bKIsKm8M7jv0xju_VcAw')!;
     const street = row.verdicts.find((v) => v.discriminator === 'street')!;
     expect(street.disputed).toBe(true);
     expect(street.reportedBy.sort()).toEqual(['evaluator', 'rules']);
@@ -351,7 +394,9 @@ describe('what the settle page says before the apparatus', () => {
    */
   it('leads with the size of the tie the checks could not break', () => {
     const answer = settleAnswer({ rosterName: 'NSK', candidates: nsk() });
-    expect(answer.said).toBe('Nine candidates, and the eight checks read identically on six of them.');
+    expect(answer.said).toBe(
+      'Nine candidates, and the eight checks read identically on six of them.',
+    );
     expect(answer.tone).toBe('you');
   });
 
@@ -368,7 +413,9 @@ describe('what the settle page says before the apparatus', () => {
 
   it('does not claim a tie when one record stands alone', () => {
     const answer = settleAnswer({ rosterName: 'NSK', candidates: [nsk()[2]!] });
-    expect(answer.said).toBe('One candidate, and it did not reach the bar for an automatic accept.');
+    expect(answer.said).toBe(
+      'One candidate, and it did not reach the bar for an automatic accept.',
+    );
   });
 
   /** When every record reads differently, the sentence must not invent a tie. */

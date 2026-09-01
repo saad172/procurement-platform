@@ -72,7 +72,11 @@ export function programAnswer(input: ProgramAnswerInput): ProgramAnswer[] {
       said: `${n === 1 ? 'One supplier is' : `${n} suppliers are`} waiting on a decision only you can make.`,
       because: `For ${list(named)}${names.length > named.length ? ` and ${names.length - named.length} more` : ''} we found several companies with the same name and could not tell which one the roster row means. Nobody else will resolve these — two independent reads disagreed, which is the software declining to guess rather than failing.`,
       actions: [
-        { label: n === 1 ? 'Decide it' : `Decide these ${n}`, href: input.needsReviewHref, primary: true },
+        {
+          label: n === 1 ? 'Decide it' : `Decide these ${n}`,
+          href: input.needsReviewHref,
+          primary: true,
+        },
       ],
     });
   }

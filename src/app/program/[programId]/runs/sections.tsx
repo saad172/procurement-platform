@@ -124,7 +124,8 @@ export function TheWorking({ data }: { data: Data }) {
         <section className="card">
           <h3 style={{ marginTop: 0 }}>Settled without a model</h3>
           <p style={{ fontSize: '1.3rem', fontWeight: 620, margin: '0 0 0.3rem' }}>
-            {insights.settledByRules.rules} of {insights.settledByRules.total} settled by rules — 0 tokens
+            {insights.settledByRules.rules} of {insights.settledByRules.total} settled by rules — 0
+            tokens
           </p>
           <p className="note" style={{ margin: 0 }}>
             Each of these passed all eight discriminators and was independently confirmed by a GLEIF
@@ -136,7 +137,8 @@ export function TheWorking({ data }: { data: Data }) {
         <section className="card">
           <h3 style={{ marginTop: 0 }}>Rounds</h3>
           <p style={{ fontSize: '1.3rem', fontWeight: 620, margin: '0 0 0.3rem' }}>
-            {insights.rounds.total} rounds · {insights.rounds.codeRejections} spent on code rejections
+            {insights.rounds.total} rounds · {insights.rounds.codeRejections} spent on code
+            rejections
           </p>
           <p className="note" style={{ margin: 0 }}>
             {/*
@@ -144,9 +146,9 @@ export function TheWorking({ data }: { data: Data }) {
               cost one: a code rejection is the citation, number-fidelity or
               caveat checks refusing a draft before it was written anywhere.
             */}
-            A code rejection is the citation, number-fidelity, caveat or pick-legality checks refusing
-            a draft before anything was inserted. Rounds spent that way are the validator working,
-            not waste.
+            A code rejection is the citation, number-fidelity, caveat or pick-legality checks
+            refusing a draft before anything was inserted. Rounds spent that way are the validator
+            working, not waste.
           </p>
         </section>
       </div>
@@ -154,14 +156,15 @@ export function TheWorking({ data }: { data: Data }) {
       <h3>Your Sayari account</h3>
       <section className="card">
         <p className="note" style={{ marginTop: 0 }}>
-          Sayari reports seven endpoint-class counters, <strong>account-wide</strong>, over a rolling
-          year — with no program dimension and no dollar figure. It is a different number from the
-          count above, scoped differently and lagging, so the two are never netted against each other.
+          Sayari reports seven endpoint-class counters, <strong>account-wide</strong>, over a
+          rolling year — with no program dimension and no dollar figure. It is a different number
+          from the count above, scoped differently and lagging, so the two are never netted against
+          each other.
         </p>
         <p className="note" style={{ marginBottom: 0 }}>
-          <code className="mono">negativeNews</code> has no bucket there at all, so it does not appear
-          in Sayari&rsquo;s figure however many times it ran. And no per-class price is published, so
-          any &ldquo;credits in dollars&rdquo; number would be one we invented.
+          <code className="mono">negativeNews</code> has no bucket there at all, so it does not
+          appear in Sayari&rsquo;s figure however many times it ran. And no per-class price is
+          published, so any &ldquo;credits in dollars&rdquo; number would be one we invented.
         </p>
       </section>
 

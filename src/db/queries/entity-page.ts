@@ -10,10 +10,7 @@ import { deriveEdgeGroups } from '@/domain/derive-entity-page';
  * A page reads through `db/queries`, never through the schema — see
  * `supplier-page.ts` for why.
  */
-export async function loadEntityPage(
-  db: Database,
-  args: { programId: string, entityId: string },
-) {
+export async function loadEntityPage(db: Database, args: { programId: string; entityId: string }) {
   const { programId, entityId } = args;
 
   const entity = await db.query.entity.findFirst({ where: eq(t.entity.id, entityId) });
@@ -23,7 +20,12 @@ export async function loadEntityPage(
   const edges = await db
     .select()
     .from(t.entityRelationship)
-    .where(or(eq(t.entityRelationship.fromEntityId, entityId), eq(t.entityRelationship.toEntityId, entityId)));
+    .where(
+      or(
+        eq(t.entityRelationship.fromEntityId, entityId),
+        eq(t.entityRelationship.toEntityId, entityId),
+      ),
+    );
 
   /**
    * The body this row was projected from, when this company was fetched on its

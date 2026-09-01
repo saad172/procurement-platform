@@ -35,7 +35,9 @@ export function clamp100(value: number): { value: number; clamped: boolean } {
 export const TARIFF_ANCHOR_MAX_RATE_PCT = 10;
 
 export function tariffScore(mfnRatePct: number): number {
-  return clamp100(100 * (1 - Math.min(mfnRatePct, TARIFF_ANCHOR_MAX_RATE_PCT) / TARIFF_ANCHOR_MAX_RATE_PCT)).value;
+  return clamp100(
+    100 * (1 - Math.min(mfnRatePct, TARIFF_ANCHOR_MAX_RATE_PCT) / TARIFF_ANCHOR_MAX_RATE_PCT),
+  ).value;
 }
 
 export const TARIFF_ANCHOR_LINE = `0–${TARIFF_ANCHOR_MAX_RATE_PCT}% MFN, linear — 0% scores 100, ${TARIFF_ANCHOR_MAX_RATE_PCT}% or more scores 0`;
@@ -54,7 +56,8 @@ export const TARIFF_ANCHOR_LINE = `0–${TARIFF_ANCHOR_MAX_RATE_PCT}% MFN, linea
 export const PROXIMITY_ANCHOR_MAX_KM = 8_000;
 
 export function proximityScore(km: number): number {
-  return clamp100(100 * (1 - Math.min(km, PROXIMITY_ANCHOR_MAX_KM) / PROXIMITY_ANCHOR_MAX_KM)).value;
+  return clamp100(100 * (1 - Math.min(km, PROXIMITY_ANCHOR_MAX_KM) / PROXIMITY_ANCHOR_MAX_KM))
+    .value;
 }
 
 export const PROXIMITY_ANCHOR_LINE = `0–${PROXIMITY_ANCHOR_MAX_KM.toLocaleString('en-US')} km to the nearest Plant, linear — measured from a registered address, which is not a factory`;
@@ -72,7 +75,9 @@ export const MEDIA_ANCHOR_MAX_WEIGHTED = 20;
 export const MEDIA_FLAG_WEIGHTS = { serious: 3, moderate: 1, unflagged: 0.5 } as const;
 
 export function mediaScore(weightedCount: number): number {
-  return clamp100(100 * (1 - Math.min(weightedCount, MEDIA_ANCHOR_MAX_WEIGHTED) / MEDIA_ANCHOR_MAX_WEIGHTED)).value;
+  return clamp100(
+    100 * (1 - Math.min(weightedCount, MEDIA_ANCHOR_MAX_WEIGHTED) / MEDIA_ANCHOR_MAX_WEIGHTED),
+  ).value;
 }
 
 export const MEDIA_ANCHOR_LINE = `flag-weighted article count 0–${MEDIA_ANCHOR_MAX_WEIGHTED} (serious ×${MEDIA_FLAG_WEIGHTS.serious}, moderate ×${MEDIA_FLAG_WEIGHTS.moderate}, unflagged ×${MEDIA_FLAG_WEIGHTS.unflagged})`;

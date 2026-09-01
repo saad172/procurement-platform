@@ -13,7 +13,9 @@ import { RUBRIC_ITEMS, parseObjections } from '@/jobs/assess';
 
 describe('anchored on the six item names, not on the word "fail"', () => {
   it('finds a failed item', () => {
-    expect(parseObjections('support — fail: the cited row does not carry the claim')).toHaveLength(1);
+    expect(parseObjections('support — fail: the cited row does not carry the claim')).toHaveLength(
+      1,
+    );
   });
 
   it('does NOT fire on a passing verdict that mentions failing', () => {
@@ -30,7 +32,9 @@ describe('anchored on the six item names, not on the word "fail"', () => {
 
   it('reads markdown emphasis and list markers', () => {
     expect(parseObjections('- **number fidelity** — fail: 800 matches nothing')).toHaveLength(1);
-    expect(parseObjections('2. eligibility: fail — picked without an accepted match')).toHaveLength(1);
+    expect(parseObjections('2. eligibility: fail — picked without an accepted match')).toHaveLength(
+      1,
+    );
   });
 
   it('returns nothing when every item passes', () => {

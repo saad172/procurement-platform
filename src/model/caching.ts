@@ -95,7 +95,10 @@ export function isSystemRoleUnsupported(error: unknown): boolean {
   return /role\s+'?system'?\s+is not supported/i.test(message);
 }
 
-export function pageBlockAsUserTurn(pageRef: string, viewState: Record<string, unknown>): BetaMessageParam {
+export function pageBlockAsUserTurn(
+  pageRef: string,
+  viewState: Record<string, unknown>,
+): BetaMessageParam {
   const block = pageBlock(pageRef, viewState) as { content: BetaTextBlockParam[] };
   return { role: 'user', content: block.content };
 }

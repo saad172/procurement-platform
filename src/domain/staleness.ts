@@ -48,7 +48,10 @@ export type FrozenInputs = {
    * change what the Assessment was written about, and the staleness hash should
    * notice.
    */
-  rosterRows: Record<string, { index: number | null; name: string | null; address: string | null; country: string | null }>;
+  rosterRows: Record<
+    string,
+    { index: number | null; name: string | null; address: string | null; country: string | null }
+  >;
   /**
    * The tariff flags on every Category these Suppliers bid in.
    *
@@ -125,14 +128,17 @@ export function hashFrozenInputs(inputs: FrozenInputs): string {
     }
     return value;
   };
-  return createHash('sha256').update(JSON.stringify(canonical(inputs))).digest('hex');
+  return createHash('sha256')
+    .update(JSON.stringify(canonical(inputs)))
+    .digest('hex');
 }
 
 /** Flattens one level of the frozen inputs into comparable paths. */
 function flatten(inputs: FrozenInputs): Map<string, unknown> {
   const out = new Map<string, unknown>();
   for (const [key, value] of Object.entries(inputs.weights)) out.set(`weights.${key}`, value);
-  for (const [key, value] of Object.entries(inputs.criterionValues)) out.set(`criterionValues.${key}`, value);
+  for (const [key, value] of Object.entries(inputs.criterionValues))
+    out.set(`criterionValues.${key}`, value);
   for (const [key, value] of Object.entries(inputs.scores)) out.set(`scores.${key}`, value);
   out.set('shortlistOrder', inputs.shortlistOrder.join('|'));
   for (const [key, value] of Object.entries(inputs.supplierVerdicts)) {

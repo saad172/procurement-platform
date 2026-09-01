@@ -1,6 +1,11 @@
 import { Breadcrumb } from '@/components/breadcrumb';
 import type { loadEntityPage } from '@/db/queries/entity-page';
-import { effectiveLevel, isCountryDerived, isTwinFactor, variantOf } from '@/domain/scoring/risk-factors';
+import {
+  effectiveLevel,
+  isCountryDerived,
+  isTwinFactor,
+  variantOf,
+} from '@/domain/scoring/risk-factors';
 import { fetchOwnRecord } from './entity-actions';
 
 /**
@@ -43,10 +48,22 @@ export function Attributes({ data }: { data: Data }) {
       <h3 style={{ marginTop: 0 }}>Attributes</h3>
       <table>
         <tbody>
-          <tr><td>Type</td><td>{entity.entityType ?? '—'}</td></tr>
-          <tr><td>Address</td><td>{entity.addressLine ?? '—'}</td></tr>
-          <tr><td>City</td><td>{entity.city ?? '—'}</td></tr>
-          <tr><td>Postcode</td><td className="mono">{entity.postcode ?? '—'}</td></tr>
+          <tr>
+            <td>Type</td>
+            <td>{entity.entityType ?? '—'}</td>
+          </tr>
+          <tr>
+            <td>Address</td>
+            <td>{entity.addressLine ?? '—'}</td>
+          </tr>
+          <tr>
+            <td>City</td>
+            <td>{entity.city ?? '—'}</td>
+          </tr>
+          <tr>
+            <td>Postcode</td>
+            <td className="mono">{entity.postcode ?? '—'}</td>
+          </tr>
           <tr>
             <td>Coordinates</td>
             <td>
@@ -107,7 +124,9 @@ export function Attributes({ data }: { data: Data }) {
               {entity.sanctioned ? <span className="badge bad">sanctioned</span> : null}
               {entity.pep ? <span className="badge warn">PEP</span> : null}
               {entity.closed ? <span className="badge warn">closed</span> : null}
-              {!entity.sanctioned && !entity.pep && !entity.closed ? <span className="note">none</span> : null}
+              {!entity.sanctioned && !entity.pep && !entity.closed ? (
+                <span className="note">none</span>
+              ) : null}
             </td>
           </tr>
         </tbody>
@@ -141,8 +160,8 @@ export function RelationshipCounts({ data }: { data: Data }) {
       </table>
       {entity.relationshipsTruncated ? (
         <p className="note">
-          The returned window was smaller than these counts, so the graph read here is incomplete
-          by construction — which is a different thing from an absent relationship.
+          The returned window was smaller than these counts, so the graph read here is incomplete by
+          construction — which is a different thing from an absent relationship.
         </p>
       ) : null}
       <p className="note">{edges.length} edge(s) stored locally.</p>
@@ -164,13 +183,15 @@ export function Sources({ data }: { data: Data }) {
       <h2>
         Sources{' '}
         <span className="note">
-          {sources.length} distinct, {sources.reduce((sum, s) => sum + s.count, 0).toLocaleString('en-US')}{' '}
-          mentions in total
+          {sources.length} distinct,{' '}
+          {sources.reduce((sum, s) => sum + s.count, 0).toLocaleString('en-US')} mentions in total
         </span>
       </h2>
       {sources.length === 0 ? (
         <div className="card">
-          <p className="note" style={{ margin: 0 }}>No source breakdown stored for this company.</p>
+          <p className="note" style={{ margin: 0 }}>
+            No source breakdown stored for this company.
+          </p>
         </div>
       ) : (
         <div className="card scroll-x">
@@ -242,7 +263,9 @@ function RiskFactorRow({ factor }: { factor: Data['factors'][number] }) {
   return (
     <tr>
       <td className="mono">{factor.name}</td>
-      <td><span className="badge">{factor.level ?? '—'}</span></td>
+      <td>
+        <span className="badge">{factor.level ?? '—'}</span>
+      </td>
       <td>
         {country ? (
           <span className="note">excluded</span>
@@ -280,7 +303,9 @@ export function Relationships({ data }: { data: Data }) {
       */}
       <h2>
         Relationships{' '}
-        <span className="note">{edges.length.toLocaleString('en-US')} stored, as the source states them</span>
+        <span className="note">
+          {edges.length.toLocaleString('en-US')} stored, as the source states them
+        </span>
       </h2>
       {edges.length === 0 ? (
         <div className="card">
@@ -321,7 +346,15 @@ export function Relationships({ data }: { data: Data }) {
 }
 
 /** ── The payload, so every figure above can be checked against it ── */
-export function SourcePayload({ data, programId, entityId }: { data: Data; programId: string; entityId: string }) {
+export function SourcePayload({
+  data,
+  programId,
+  entityId,
+}: {
+  data: Data;
+  programId: string;
+  entityId: string;
+}) {
   const { source } = data;
   return (
     <>
@@ -357,7 +390,11 @@ export function SourcePayload({ data, programId, entityId }: { data: Data; progr
             <form action={fetchOwnRecord}>
               <input type="hidden" name="programId" value={programId} />
               <input type="hidden" name="entityId" value={entityId} />
-              <button type="submit" className="badge" style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}>
+              <button
+                type="submit"
+                className="badge"
+                style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}
+              >
                 Fetch this company&rsquo;s own record
               </button>
               <span className="note" style={{ marginLeft: '0.6rem' }}>
@@ -367,8 +404,8 @@ export function SourcePayload({ data, programId, entityId }: { data: Data; progr
                   calls — about seven times every Sayari call this project has
                   made — mostly for companies nobody opens.
                 */}
-                One Sayari call, and it runs no model. It reads this
-                company&rsquo;s relationships too.
+                One Sayari call, and it runs no model. It reads this company&rsquo;s relationships
+                too.
               </span>
             </form>
           </>

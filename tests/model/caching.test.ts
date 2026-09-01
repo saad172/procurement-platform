@@ -31,7 +31,13 @@ describe('the Round boundary breakpoint', () => {
   it('marks the last block of the last message', () => {
     const messages: BetaMessageParam[] = [
       { role: 'user', content: [{ type: 'text', text: 'one' }] },
-      { role: 'assistant', content: [{ type: 'text', text: 'two' }, { type: 'text', text: 'three' }] },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'two' },
+          { type: 'text', text: 'three' },
+        ],
+      },
     ];
     const marked = markRoundBoundary(messages);
     const last = marked[1]!.content as { cache_control?: unknown }[];
@@ -42,7 +48,9 @@ describe('the Round boundary breakpoint', () => {
   it('does not mutate the input, so a retry starts from the same array', () => {
     const messages: BetaMessageParam[] = [{ role: 'user', content: [{ type: 'text', text: 'x' }] }];
     markRoundBoundary(messages);
-    expect((messages[0]!.content as { cache_control?: unknown }[])[0]!.cache_control).toBeUndefined();
+    expect(
+      (messages[0]!.content as { cache_control?: unknown }[])[0]!.cache_control,
+    ).toBeUndefined();
   });
 
   it('leaves a string-content message alone rather than reshaping it', () => {
@@ -75,7 +83,9 @@ describe('the chat page block', () => {
   });
 
   it('has a documented fallback into a user turn', () => {
-    expect(isSystemRoleUnsupported(new Error("role 'system' is not supported on this model"))).toBe(true);
+    expect(isSystemRoleUnsupported(new Error("role 'system' is not supported on this model"))).toBe(
+      true,
+    );
     expect(isSystemRoleUnsupported(new Error('rate limited'))).toBe(false);
     const fallback = pageBlockAsUserTurn('/x', { a: 1 });
     expect(fallback.role).toBe('user');

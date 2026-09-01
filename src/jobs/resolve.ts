@@ -2,15 +2,20 @@ import { eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { MAX_ROUNDS } from '@/config/constants';
+import { evaluateAutoAccept, type CandidateAssessment } from '@/domain/match/auto-accept';
 import {
-  evaluateAutoAccept,
-  type CandidateAssessment,
-} from '@/domain/match/auto-accept';
-import { runDiscriminators, type CandidateFacts, type RosterRow } from '@/domain/match/discriminators';
+  runDiscriminators,
+  type CandidateFacts,
+  type RosterRow,
+} from '@/domain/match/discriminators';
 import { seedFor, shuffleCandidates } from '@/domain/match/shuffle';
 import { settleMatch, type CandidateRecord } from '@/domain/match/settle-match';
 import type { Upstream } from '@/upstream';
-import { attributeTexts, matchStrengthValue, type SayariEntity } from '@/upstream/projections/sayari';
+import {
+  attributeTexts,
+  matchStrengthValue,
+  type SayariEntity,
+} from '@/upstream/projections/sayari';
 
 /**
  * The resolve Job (SPEC §6).
@@ -39,7 +44,10 @@ import { attributeTexts, matchStrengthValue, type SayariEntity } from '@/upstrea
  */
 
 /** Projects a Sayari entity into the flat facts the Discriminators read. */
-export function toCandidateFacts(entity: SayariEntity, gleif?: CandidateFacts['gleif']): CandidateFacts {
+export function toCandidateFacts(
+  entity: SayariEntity,
+  gleif?: CandidateFacts['gleif'],
+): CandidateFacts {
   // EVERY address, not just the first: a large company carries many, and the
   // roster's city is often not the one listed first.
   const addressBlocks = entity.attributes?.address?.data ?? [];
@@ -55,7 +63,7 @@ export function toCandidateFacts(entity: SayariEntity, gleif?: CandidateFacts['g
 
   const latestStatus =
     entity.latest_status && typeof entity.latest_status === 'object'
-      ? ((entity.latest_status as { status?: unknown }).status as string | undefined) ?? null
+      ? (((entity.latest_status as { status?: unknown }).status as string | undefined) ?? null)
       : null;
 
   return {
@@ -64,7 +72,10 @@ export function toCandidateFacts(entity: SayariEntity, gleif?: CandidateFacts['g
     // From `attributes.address`, NEVER the first entry of the multi-valued
     // `countries[]` — one seeded company returned eight.
     country: properties?.country ?? entity.countries?.[0] ?? null,
-    addresses: addresses.length > 0 ? addresses : [{ city: null, postcode: null, country: entity.countries?.[0] ?? null }],
+    addresses:
+      addresses.length > 0
+        ? addresses
+        : [{ city: null, postcode: null, country: entity.countries?.[0] ?? null }],
     aliases: attributeTexts(aliasBlock),
     businessPurposes: attributeTexts(entity.attributes?.business_purpose?.data),
     companyType: entity.company_type ?? null,
@@ -231,7 +242,13 @@ async function runAutoAcceptGate(
       candidates: ruleCandidateRecords,
     });
     return {
-      outcome: { status: 'accepted', entityId: gate.entityId, settledBy: 'rules', rounds: 0, reason: gate.reason },
+      outcome: {
+        status: 'accepted',
+        entityId: gate.entityId,
+        settledBy: 'rules',
+        rounds: 0,
+        reason: gate.reason,
+      },
     };
   }
 
@@ -286,7 +303,9 @@ async function settleWithoutAgent(
     note: gate.gateReason,
     candidates: gate.ruleCandidateRecords,
   });
-  return { outcome: { status, entityId: null, settledBy: 'rules', rounds: 0, reason: gate.gateReason } };
+  return {
+    outcome: { status, entityId: null, settledBy: 'rules', rounds: 0, reason: gate.gateReason },
+  };
 }
 
 async function runRoundLadder(
@@ -476,7 +495,9 @@ async function settleNonConvergence(
  */
 function sawCandidateInCountry(roster: RosterRow, candidates: readonly CandidateFacts[]): boolean {
   if (!roster.country) return candidates.length > 0;
-  return candidates.some((c) => c.country && c.country.toUpperCase() === roster.country!.toUpperCase());
+  return candidates.some(
+    (c) => c.country && c.country.toUpperCase() === roster.country!.toUpperCase(),
+  );
 }
 
 /**
@@ -595,9 +616,9 @@ function relationshipsTruncated(entity: SayariEntity): boolean {
 }
 
 /** Reads the batch pre-pass into per-row candidate id lists. */
-export function prepassCandidateIds(
-  resolution: { data?: { entity_id?: string; match_strength?: unknown }[] | null | undefined },
-): { entityId: string; matchStrength: string | undefined }[] {
+export function prepassCandidateIds(resolution: {
+  data?: { entity_id?: string; match_strength?: unknown }[] | null | undefined;
+}): { entityId: string; matchStrength: string | undefined }[] {
   return (resolution.data ?? [])
     .filter((row): row is { entity_id: string; match_strength?: unknown } => Boolean(row.entity_id))
     .map((row) => ({

@@ -60,7 +60,8 @@ const CATCH_ALL = /\bn\.?e\.?c\.?\b|not elsewhere classified/i;
 export function describeSupplier(entity: SayariEntity): SupplierDescription {
   const purposeEntries = entity.attributes?.business_purpose?.data ?? [];
 
-  const all: { label: string; code: string | null; standard: string | null; records: number }[] = [];
+  const all: { label: string; code: string | null; standard: string | null; records: number }[] =
+    [];
   for (const entry of purposeEntries) {
     const label = attributeText(entry);
     if (!label) continue;
@@ -173,7 +174,10 @@ function groupByActivity(
   // the national labels stand in when there is no converted one.
   const source = common.length > 0 ? common : rows;
 
-  const out = new Map<string, { label: string; code: string | null; standard: string | null; records: number }>();
+  const out = new Map<
+    string,
+    { label: string; code: string | null; standard: string | null; records: number }
+  >();
   for (const row of source) {
     const key = row.code ?? row.label.toLowerCase();
     const existing = out.get(key);

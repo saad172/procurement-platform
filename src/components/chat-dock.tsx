@@ -97,8 +97,7 @@ function useChatThread(programId: string) {
        */
       let streamed = '';
       setTurns((previous) => [...previous, { role: 'assistant', text: '' }]);
-      const replaceLast = (turn: Turn) =>
-        setTurns((previous) => [...previous.slice(0, -1), turn]);
+      const replaceLast = (turn: Turn) => setTurns((previous) => [...previous.slice(0, -1), turn]);
 
       for await (const event of readServerSentEvents(response.body)) {
         if (event.event === 'open') {
@@ -139,7 +138,10 @@ function useChatThread(programId: string) {
       // before the empty assistant turn was ever added.
       setTurns((previous) => [
         ...previous,
-        { role: 'assistant', text: `The request failed: ${error instanceof Error ? error.message : String(error)}` },
+        {
+          role: 'assistant',
+          text: `The request failed: ${error instanceof Error ? error.message : String(error)}`,
+        },
       ]);
     } finally {
       setBusy(false);
@@ -156,7 +158,15 @@ function useChatThread(programId: string) {
  */
 function ChatDisclosure() {
   return (
-    <p className="note" style={{ margin: 0, padding: '0.5rem 1rem', background: '#fff7e6', borderBottom: '1px solid var(--rule)' }}>
+    <p
+      className="note"
+      style={{
+        margin: 0,
+        padding: '0.5rem 1rem',
+        background: '#fff7e6',
+        borderBottom: '1px solid var(--rule)',
+      }}
+    >
       Chat is not citation-checked. The record is the Assessment.
     </p>
   );
@@ -167,9 +177,24 @@ function TurnWidgets({ widgets }: { widgets: Widget[] }) {
   return (
     <>
       {widgets.map((widget, widgetIndex) => (
-        <details key={widgetIndex} className="card" style={{ marginTop: '0.4rem', padding: '0.5rem 0.7rem' }} open>
-          <summary className="note">{widget.toolName} · {widget.widget.type}</summary>
-          <pre className="mono" style={{ margin: '0.4rem 0 0', whiteSpace: 'pre-wrap', maxHeight: '14rem', overflow: 'auto' }}>
+        <details
+          key={widgetIndex}
+          className="card"
+          style={{ marginTop: '0.4rem', padding: '0.5rem 0.7rem' }}
+          open
+        >
+          <summary className="note">
+            {widget.toolName} · {widget.widget.type}
+          </summary>
+          <pre
+            className="mono"
+            style={{
+              margin: '0.4rem 0 0',
+              whiteSpace: 'pre-wrap',
+              maxHeight: '14rem',
+              overflow: 'auto',
+            }}
+          >
             {JSON.stringify(widget.widget.payload, null, 2).slice(0, 1800)}
           </pre>
         </details>
@@ -190,7 +215,9 @@ function ChatTranscript({ turns }: { turns: Turn[] }) {
 
       {turns.map((turn, index) => (
         <div key={index} style={{ marginBottom: '1rem' }}>
-          <p className="note" style={{ margin: 0 }}>{turn.role}</p>
+          <p className="note" style={{ margin: 0 }}>
+            {turn.role}
+          </p>
           <p style={{ margin: '0.2rem 0', whiteSpace: 'pre-wrap' }}>{turn.text}</p>
           {turn.widgets ? <TurnWidgets widgets={turn.widgets} /> : null}
           {turn.proposals?.map((proposal, proposalIndex) => (
@@ -214,16 +241,31 @@ function ChatComposer({
   onSend: () => void;
 }) {
   return (
-    <div style={{ borderTop: '1px solid var(--rule)', padding: '0.7rem 1rem', display: 'flex', gap: '0.5rem' }}>
+    <div
+      style={{
+        borderTop: '1px solid var(--rule)',
+        padding: '0.7rem 1rem',
+        display: 'flex',
+        gap: '0.5rem',
+      }}
+    >
       <input
         value={input}
         onChange={(event) => onChange(event.target.value)}
-        onKeyDown={(event) => { if (event.key === 'Enter') onSend(); }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') onSend();
+        }}
         disabled={busy}
         placeholder={busy ? 'Thinking…' : 'Ask something'}
         style={{ flex: 1, padding: '0.45rem', border: '1px solid var(--rule)', borderRadius: 4 }}
       />
-      <button type="button" onClick={onSend} disabled={busy} className="badge" style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}>
+      <button
+        type="button"
+        onClick={onSend}
+        disabled={busy}
+        className="badge"
+        style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}
+      >
         Send
       </button>
     </div>
@@ -240,7 +282,14 @@ export function ChatDock({ programId }: { programId: string }) {
         type="button"
         onClick={() => setOpen(true)}
         className="badge"
-        style={{ position: 'fixed', right: '1.25rem', bottom: '1.25rem', padding: '0.5rem 0.9rem', cursor: 'pointer', background: 'var(--paper)' }}
+        style={{
+          position: 'fixed',
+          right: '1.25rem',
+          bottom: '1.25rem',
+          padding: '0.5rem 0.9rem',
+          cursor: 'pointer',
+          background: 'var(--paper)',
+        }}
       >
         Ask about this program
       </button>
@@ -250,14 +299,32 @@ export function ChatDock({ programId }: { programId: string }) {
   return (
     <aside
       style={{
-        position: 'fixed', right: 0, top: 0, bottom: 0, width: 'min(30rem, 100vw)',
-        background: 'var(--paper)', borderLeft: '1px solid var(--rule)',
-        display: 'flex', flexDirection: 'column', zIndex: 10,
+        position: 'fixed',
+        right: 0,
+        top: 0,
+        bottom: 0,
+        width: 'min(30rem, 100vw)',
+        background: 'var(--paper)',
+        borderLeft: '1px solid var(--rule)',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 10,
       }}
     >
-      <header style={{ padding: '0.8rem 1rem', borderBottom: '1px solid var(--rule)', display: 'flex', justifyContent: 'space-between' }}>
+      <header
+        style={{
+          padding: '0.8rem 1rem',
+          borderBottom: '1px solid var(--rule)',
+          display: 'flex',
+          justifyContent: 'space-between',
+        }}
+      >
         <strong>Chat</strong>
-        <button type="button" onClick={() => setOpen(false)} style={{ border: 0, background: 'none', cursor: 'pointer' }}>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          style={{ border: 0, background: 'none', cursor: 'pointer' }}
+        >
           close
         </button>
       </header>
@@ -288,15 +355,18 @@ function ConfirmGate({ proposal }: { proposal: Proposal }) {
           which is the difference between a gate people read and a gate people
           click through.
         */}
-        {proposal.estimate.cached ? (
-          <strong>cached — no credits, no wait. </strong>
-        ) : null}
+        {proposal.estimate.cached ? <strong>cached — no credits, no wait. </strong> : null}
         {Object.entries(proposal.estimate.spends)
           .filter(([, value]) => value != null)
-          .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
+          .map(
+            ([key, value]) =>
+              `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`,
+          )
           .join(' · ')}
       </p>
-      <p className="note" style={{ margin: '0.3rem 0' }}>{proposal.estimate.basis}</p>
+      <p className="note" style={{ margin: '0.3rem 0' }}>
+        {proposal.estimate.basis}
+      </p>
       {proposal.estimate.caveats.length > 0 ? (
         <ul className="note" style={{ margin: '0.3rem 0', paddingLeft: '1.1rem' }}>
           {proposal.estimate.caveats.map((caveat) => (
@@ -307,10 +377,20 @@ function ConfirmGate({ proposal }: { proposal: Proposal }) {
 
       {state === 'proposed' ? (
         <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem' }}>
-          <button type="button" className="badge good" style={{ cursor: 'pointer' }} onClick={() => setState('accepted')}>
+          <button
+            type="button"
+            className="badge good"
+            style={{ cursor: 'pointer' }}
+            onClick={() => setState('accepted')}
+          >
             Run it
           </button>
-          <button type="button" className="badge mute" style={{ cursor: 'pointer' }} onClick={() => setState('declined')}>
+          <button
+            type="button"
+            className="badge mute"
+            style={{ cursor: 'pointer' }}
+            onClick={() => setState('declined')}
+          >
             No
           </button>
         </div>

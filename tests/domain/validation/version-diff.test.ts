@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { describeWhyWritten, diffVersions, type DiffPick, type DiffSentence } from '@/domain/version-diff';
+import {
+  describeWhyWritten,
+  diffVersions,
+  type DiffPick,
+  type DiffSentence,
+} from '@/domain/version-diff';
 import type { FrozenInputs } from '@/domain/staleness';
 
 /** SPEC §10.6 — one of the nine unit tests §19.6 asks for. */
@@ -30,7 +35,11 @@ const pick = (id: string, role: string, rank: number): DiffPick => ({
 
 describe('the three parts, in order, with the cause first', () => {
   it('reports an empty diff when nothing moved', () => {
-    const version = { frozen: frozen(), picks: [pick('a', 'award', 1)], sentences: [sentence('headline', 'Award A.', ['cv-1'])] };
+    const version = {
+      frozen: frozen(),
+      picks: [pick('a', 'award', 1)],
+      sentences: [sentence('headline', 'Award A.', ['cv-1'])],
+    };
     const diff = diffVersions({ before: version, after: version });
     expect(diff.empty).toBe(true);
   });
@@ -84,11 +93,17 @@ describe('sentences align on (section, citation set), not on position or text', 
     // Two versions of the same claim about the same evidence line up even when
     // the wording changed entirely — which is exactly what a reader wants.
     const diff = diffVersions({
-      before: { frozen: frozen(), picks: [], sentences: [sentence('compliance', 'It scores 92.', ['cv-1'])] },
+      before: {
+        frozen: frozen(),
+        picks: [],
+        sentences: [sentence('compliance', 'It scores 92.', ['cv-1'])],
+      },
       after: {
         frozen: frozen(),
         picks: [],
-        sentences: [sentence('compliance', 'Compliance risk stands at 92 after one deduction.', ['cv-1'])],
+        sentences: [
+          sentence('compliance', 'Compliance risk stands at 92 after one deduction.', ['cv-1']),
+        ],
       },
     });
     expect(diff.sentences).toHaveLength(1);
@@ -98,8 +113,16 @@ describe('sentences align on (section, citation set), not on position or text', 
   it('calls a same-wording claim about DIFFERENT evidence an add and a remove', () => {
     // The evidence changed, so it is not the same claim however it reads.
     const diff = diffVersions({
-      before: { frozen: frozen(), picks: [], sentences: [sentence('compliance', 'It is clean.', ['cv-1'])] },
-      after: { frozen: frozen(), picks: [], sentences: [sentence('compliance', 'It is clean.', ['cv-2'])] },
+      before: {
+        frozen: frozen(),
+        picks: [],
+        sentences: [sentence('compliance', 'It is clean.', ['cv-1'])],
+      },
+      after: {
+        frozen: frozen(),
+        picks: [],
+        sentences: [sentence('compliance', 'It is clean.', ['cv-2'])],
+      },
     });
     // Text similarity is the tiebreak, so identical text still aligns them.
     expect(diff.sentences[0]!.change).toBe('unchanged');
@@ -108,14 +131,24 @@ describe('sentences align on (section, citation set), not on position or text', 
   it('reports a genuinely new sentence as added', () => {
     const diff = diffVersions({
       before: { frozen: frozen(), picks: [], sentences: [] },
-      after: { frozen: frozen(), picks: [], sentences: [sentence('limits', 'Proximity is unknown.', ['cv-9'])] },
+      after: {
+        frozen: frozen(),
+        picks: [],
+        sentences: [sentence('limits', 'Proximity is unknown.', ['cv-9'])],
+      },
     });
-    expect(diff.sentences).toEqual([{ section: 'limits', change: 'added', to: 'Proximity is unknown.' }]);
+    expect(diff.sentences).toEqual([
+      { section: 'limits', change: 'added', to: 'Proximity is unknown.' },
+    ]);
   });
 
   it('reports a dropped sentence as removed', () => {
     const diff = diffVersions({
-      before: { frozen: frozen(), picks: [], sentences: [sentence('media', 'Nine articles.', ['e-1'])] },
+      before: {
+        frozen: frozen(),
+        picks: [],
+        sentences: [sentence('media', 'Nine articles.', ['e-1'])],
+      },
       after: { frozen: frozen(), picks: [], sentences: [] },
     });
     expect(diff.sentences[0]!.change).toBe('removed');
@@ -123,8 +156,16 @@ describe('sentences align on (section, citation set), not on position or text', 
 
   it('does not align across sections', () => {
     const diff = diffVersions({
-      before: { frozen: frozen(), picks: [], sentences: [sentence('compliance', 'It is clean.', ['cv-1'])] },
-      after: { frozen: frozen(), picks: [], sentences: [sentence('media', 'It is clean.', ['cv-1'])] },
+      before: {
+        frozen: frozen(),
+        picks: [],
+        sentences: [sentence('compliance', 'It is clean.', ['cv-1'])],
+      },
+      after: {
+        frozen: frozen(),
+        picks: [],
+        sentences: [sentence('media', 'It is clean.', ['cv-1'])],
+      },
     });
     expect(diff.sentences.map((s) => s.change).sort()).toEqual(['added', 'removed']);
   });

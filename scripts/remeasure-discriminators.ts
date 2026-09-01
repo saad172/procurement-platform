@@ -140,7 +140,8 @@ function remeasure(rows: Row[]): Measurement {
     const results = runDiscriminators(roster, facts);
     measured += 1;
     for (const r of results) {
-      (now[r.discriminator] ??= {})[r.verdict] = ((now[r.discriminator] ??= {})[r.verdict] ?? 0) + 1;
+      (now[r.discriminator] ??= {})[r.verdict] =
+        ((now[r.discriminator] ??= {})[r.verdict] ?? 0) + 1;
     }
 
     const recorded = row.recorded;
@@ -170,7 +171,8 @@ function remeasure(rows: Row[]): Measurement {
 
 /** Prints the counts, the per-Discriminator then/now table, and the named flips. */
 function printReport(judgedCount: number, measurement: Measurement) {
-  const { now, then, flips, noPayload, noRecorded, measured, aliasesGained, purposesGained } = measurement;
+  const { now, then, flips, noPayload, noRecorded, measured, aliasesGained, purposesGained } =
+    measurement;
 
   console.log(`judged Candidates       ${judgedCount}`);
   console.log(`  re-measured           ${measured}`);
@@ -186,7 +188,9 @@ function printReport(judgedCount: number, measurement: Measurement) {
       `\nstored a rules verdict, "now" is all ${measured} re-measured. Read the percentages,` +
       `\nnot the counts. lei_witness is unavailable throughout by construction — see the source.`,
   );
-  console.log(`\n${'discriminator'.padEnd(18)} ${`recorded then (n=${comparable})`.padEnd(34)} now (n=${measured})`);
+  console.log(
+    `\n${'discriminator'.padEnd(18)} ${`recorded then (n=${comparable})`.padEnd(34)} now (n=${measured})`,
+  );
   for (const name of Object.keys(now).sort()) {
     const fmt = (counts: Record<string, number> | undefined) => {
       if (!counts) return '—';

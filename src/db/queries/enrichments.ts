@@ -20,10 +20,7 @@ export type EnrichmentRow = typeof t.enrichment.$inferSelect & {
   needsCaveat: boolean;
 };
 
-export async function loadEnrichments(
-  db: Database,
-  subjectKey: string,
-): Promise<EnrichmentRow[]> {
+export async function loadEnrichments(db: Database, subjectKey: string): Promise<EnrichmentRow[]> {
   const rows = await db
     .select()
     .from(t.enrichment)

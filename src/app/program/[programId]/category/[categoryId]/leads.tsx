@@ -76,13 +76,14 @@ export function LeadsTable({
 
       <p className="note">
         <Link
-          href={`/program/${programId}/category/${categoryId}${showDismissed ? '' : '?dismissed=1'}` as never}
+          href={
+            `/program/${programId}/category/${categoryId}${showDismissed ? '' : '?dismissed=1'}` as never
+          }
         >
           {showDismissed ? 'hide dismissed' : 'show dismissed'}
         </Link>
-        {' · '}
-        A promoted lead is recorded as <strong>discovered</strong>, never as <em>verified</em>: no name
-        matching happened for it to be strong or weak at.
+        {' · '}A promoted lead is recorded as <strong>discovered</strong>, never as{' '}
+        <em>verified</em>: no name matching happened for it to be strong or weak at.
       </p>
     </>
   );
@@ -133,7 +134,12 @@ function LeadRow({
         )}
       </td>
       <td>
-        <LeadActions lead={lead} programId={programId} categoryId={categoryId} categoryCode={categoryCode} />
+        <LeadActions
+          lead={lead}
+          programId={programId}
+          categoryId={categoryId}
+          categoryCode={categoryCode}
+        />
       </td>
     </tr>
   );
@@ -153,7 +159,9 @@ function LeadActions({
 }) {
   if (lead.promotedSupplierId) {
     return (
-      <Link href={`/program/${programId}/supplier/${lead.promotedSupplierId}` as never}>promoted</Link>
+      <Link href={`/program/${programId}/supplier/${lead.promotedSupplierId}` as never}>
+        promoted
+      </Link>
     );
   }
   if (lead.dismissed) {

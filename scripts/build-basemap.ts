@@ -36,10 +36,7 @@ import { resolve } from 'node:path';
 const SOURCE_URL =
   'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson';
 
-const OUTPUT_PATH = resolve(
-  import.meta.dirname,
-  '../src/app/program/[programId]/world-110m.json',
-);
+const OUTPUT_PATH = resolve(import.meta.dirname, '../src/app/program/[programId]/world-110m.json');
 
 const RDP_EPSILON_DEG = 0.1;
 const COORDINATE_DECIMALS = 2;

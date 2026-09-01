@@ -10,7 +10,7 @@ import * as t from '@/db/schema';
  */
 export async function loadJobPage(
   db: Database,
-  args: { programId: string, runId: string, jobId: string },
+  args: { programId: string; runId: string; jobId: string },
 ) {
   const { programId, jobId } = args;
 

@@ -47,7 +47,10 @@ export default async function RecordPage({
       <div className="card">
         <table>
           <tbody>
-            <tr><td>Source</td><td>{record.source ?? '—'}</td></tr>
+            <tr>
+              <td>Source</td>
+              <td>{record.source ?? '—'}</td>
+            </tr>
             <tr>
               <td>Collected</td>
               <td>{record.collectedAt?.toISOString().slice(0, 10) ?? '—'}</td>

@@ -100,7 +100,10 @@ async function loadTurnRows(
 }
 
 /** Maps `trace_turn` rows to the fixture's own shape, refusing any turn replay cannot key on. */
-function toFixtureTurns(turnRows: Awaited<ReturnType<typeof loadTurnRows>>, jobId: string): FixtureTurn[] {
+function toFixtureTurns(
+  turnRows: Awaited<ReturnType<typeof loadTurnRows>>,
+  jobId: string,
+): FixtureTurn[] {
   const turns: FixtureTurn[] = turnRows.map((row) => {
     const request = row.request as {
       loop?: string;
@@ -157,7 +160,9 @@ async function loadFixtureUpstream(db: Database, jobId: string): Promise<Fixture
     .where(eq(t.usageEvent.jobId, jobId));
 
   const upstreamIds: string[] = [
-    ...new Set(usageRows.map((row) => row.upstreamResponseId).filter((id): id is string => id != null)),
+    ...new Set(
+      usageRows.map((row) => row.upstreamResponseId).filter((id): id is string => id != null),
+    ),
   ];
 
   // `inArray` with an empty list is a query with no legal shape, so the empty
@@ -165,7 +170,10 @@ async function loadFixtureUpstream(db: Database, jobId: string): Promise<Fixture
   const upstreamRows =
     upstreamIds.length === 0
       ? []
-      : await db.select().from(t.upstreamResponse).where(inArray(t.upstreamResponse.id, upstreamIds));
+      : await db
+          .select()
+          .from(t.upstreamResponse)
+          .where(inArray(t.upstreamResponse.id, upstreamIds));
 
   return upstreamRows.map((row) => ({
     source: row.source,

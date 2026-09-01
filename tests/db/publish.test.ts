@@ -78,8 +78,12 @@ describe.skipIf(!up)(`publishing a version (needs: ${START_TEST_DB_HINT})`, () =
       const whole = { shortlist: { programId, categoryId } };
       expect((await resolveCitations(db, [whole])).get(citationKey(whole))).toBeDefined();
 
-      const mismatched = { shortlist: { programId, categoryId: '00000000-0000-0000-0000-000000000000' } };
-      expect((await resolveCitations(db, [mismatched])).get(citationKey(mismatched))).toBeUndefined();
+      const mismatched = {
+        shortlist: { programId, categoryId: '00000000-0000-0000-0000-000000000000' },
+      };
+      expect(
+        (await resolveCitations(db, [mismatched])).get(citationKey(mismatched)),
+      ).toBeUndefined();
     });
 
     it('returns undefined for a citation with no target group at all', async () => {
@@ -94,7 +98,11 @@ describe.skipIf(!up)(`publishing a version (needs: ${START_TEST_DB_HINT})`, () =
       const { versionId, n } = await publishVersion(db, {
         target: { kind: 'assessment', supplierId, programId, verdict: 'recommend' },
         sentences: [
-          { section: 'identity', text: 'Alpha is the company at the roster address.', citations: [{ criterionValueId }] },
+          {
+            section: 'identity',
+            text: 'Alpha is the company at the roster address.',
+            citations: [{ criterionValueId }],
+          },
           { section: 'limits', text: 'Proximity is unknown.', citations: [{ criterionValueId }] },
         ],
         rounds: [
@@ -107,13 +115,19 @@ describe.skipIf(!up)(`publishing a version (needs: ${START_TEST_DB_HINT})`, () =
       });
 
       expect(n).toBe(1);
-      const sentences = await db.select().from(t.sentence).where(eq(t.sentence.assessmentVersionId, versionId));
+      const sentences = await db
+        .select()
+        .from(t.sentence)
+        .where(eq(t.sentence.assessmentVersionId, versionId));
       expect(sentences).toHaveLength(2);
       const citations = await testSql()`
         SELECT count(*)::int AS n FROM citation c
         JOIN sentence s ON s.id = c.sentence_id WHERE s.assessment_version_id = ${versionId}`;
       expect(citations[0]!.n).toBe(2);
-      const rounds = await db.select().from(t.round).where(eq(t.round.assessmentVersionId, versionId));
+      const rounds = await db
+        .select()
+        .from(t.round)
+        .where(eq(t.round.assessmentVersionId, versionId));
       expect(rounds).toHaveLength(2);
     });
 
@@ -134,7 +148,10 @@ describe.skipIf(!up)(`publishing a version (needs: ${START_TEST_DB_HINT})`, () =
         .select()
         .from(t.sentence)
         .where(eq(t.sentence.assessmentVersionId, versionId));
-      const ordinals = limits.filter((s) => s.section === 'limits').map((s) => s.ordinal).sort();
+      const ordinals = limits
+        .filter((s) => s.section === 'limits')
+        .map((s) => s.ordinal)
+        .sort();
       expect(ordinals).toEqual([1, 2]);
     });
 
@@ -154,7 +171,10 @@ describe.skipIf(!up)(`publishing a version (needs: ${START_TEST_DB_HINT})`, () =
         }),
       ).rejects.toThrow();
 
-      const assessments = await db.select().from(t.assessment).where(eq(t.assessment.programId, programId));
+      const assessments = await db
+        .select()
+        .from(t.assessment)
+        .where(eq(t.assessment.programId, programId));
       expect(assessments).toHaveLength(0);
     });
 
@@ -177,14 +197,22 @@ describe.skipIf(!up)(`publishing a version (needs: ${START_TEST_DB_HINT})`, () =
 
     it('allows a null verdict, which is what a Dossier needs', async () => {
       const { versionId } = await publishVersion(db, {
-        target: { kind: 'assessment', supplierId, programId, verdict: null, assessmentKind: 'dossier' },
+        target: {
+          kind: 'assessment',
+          supplierId,
+          programId,
+          verdict: null,
+          assessmentKind: 'dossier',
+        },
         sentences: [{ section: 'identity', text: 'A dossier.', citations: [{ criterionValueId }] }],
         rounds: [],
         dissent: [],
         frozenInputs: {},
         evaluatorOutcome: 'passed',
       });
-      const version = await db.query.assessmentVersion.findFirst({ where: eq(t.assessmentVersion.id, versionId) });
+      const version = await db.query.assessmentVersion.findFirst({
+        where: eq(t.assessmentVersion.id, versionId),
+      });
       expect(version!.verdict).toBeNull();
     });
   });
@@ -192,7 +220,12 @@ describe.skipIf(!up)(`publishing a version (needs: ${START_TEST_DB_HINT})`, () =
   describe('a recommendation version', () => {
     it('writes typed picks and attaches conditions to them', async () => {
       const { versionId } = await publishVersion(db, {
-        target: { kind: 'recommendation', programId, categoryId, picks: [{ supplierId, role: 'award', rank: 1 }] },
+        target: {
+          kind: 'recommendation',
+          programId,
+          categoryId,
+          picks: [{ supplierId, role: 'award', rank: 1 }],
+        },
         sentences: [
           { section: 'headline', text: 'Award Alpha.', citations: [{ criterionValueId }] },
           {
@@ -271,9 +304,17 @@ describe.skipIf(!up)(`publishing a version (needs: ${START_TEST_DB_HINT})`, () =
         target: { kind: 'assessment', supplierId, programId, verdict: 'recommend' },
         sentences: [{ section: 'identity', text: 'Alpha.', citations: [{ criterionValueId }] }],
         rounds: [
-          { n: 3, role: 'evaluator', source: 'model', objection: 'the ownership claim is beyond the record', reply: 'we softened it' },
+          {
+            n: 3,
+            role: 'evaluator',
+            source: 'model',
+            objection: 'the ownership claim is beyond the record',
+            reply: 'we softened it',
+          },
         ],
-        dissent: [{ objection: 'the ownership claim is beyond the record', reply: 'we softened it' }],
+        dissent: [
+          { objection: 'the ownership claim is beyond the record', reply: 'we softened it' },
+        ],
         frozenInputs: {},
         evaluatorOutcome: 'published_with_objections',
       });
@@ -287,7 +328,10 @@ describe.skipIf(!up)(`publishing a version (needs: ${START_TEST_DB_HINT})`, () =
       expect(rounds[0]!.reply).toBe('we softened it');
 
       // There is no `dissent` sentence: nobody writes dissent.
-      const sentences = await db.select().from(t.sentence).where(eq(t.sentence.assessmentVersionId, versionId));
+      const sentences = await db
+        .select()
+        .from(t.sentence)
+        .where(eq(t.sentence.assessmentVersionId, versionId));
       expect(sentences.some((s) => s.section === 'dissent')).toBe(false);
     });
   });

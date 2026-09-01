@@ -20,18 +20,33 @@ type Data = NonNullable<Awaited<ReturnType<typeof loadRunPage>>>;
  * because a reviewer who has just pressed Run is asking one question, and the
  * cost line above it is not the answer to it.
  */
-export function Progress({ data, programId, runId }: { data: Data; programId: string; runId: string }) {
+export function Progress({
+  data,
+  programId,
+  runId,
+}: {
+  data: Data;
+  programId: string;
+  runId: string;
+}) {
   const { progress, phases, stuck, workerUp } = data;
   return (
     <section className="card" aria-label="Progress">
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+      <div
+        style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}
+      >
         <strong>
           {progress.settled} of {progress.total} job{progress.total === 1 ? '' : 's'}{' '}
-          {progress.cancelled > 0 && progress.cancelled === progress.total - progress.done - progress.failed - progress.terminated
+          {progress.cancelled > 0 &&
+          progress.cancelled ===
+            progress.total - progress.done - progress.failed - progress.terminated
             ? 'settled'
             : 'finished'}
         </strong>
-        <LiveRefresh active={progress.active} idle="Nothing left to watch — this is the final state." />
+        <LiveRefresh
+          active={progress.active}
+          idle="Nothing left to watch — this is the final state."
+        />
       </div>
 
       {/*
@@ -41,7 +56,9 @@ export function Progress({ data, programId, runId }: { data: Data; programId: st
         ground. Split by phase and every bar only fills.
       */}
       {phases.length === 0 ? (
-        <p className="note" style={{ margin: '0.6rem 0 0' }}>This run spawned no jobs.</p>
+        <p className="note" style={{ margin: '0.6rem 0 0' }}>
+          This run spawned no jobs.
+        </p>
       ) : (
         <div style={{ display: 'grid', gap: '0.5rem', margin: '0.7rem 0 0' }}>
           {phases.map((phase) => (
@@ -54,7 +71,11 @@ export function Progress({ data, programId, runId }: { data: Data; programId: st
         <form action={cancelRun} style={{ marginTop: '0.8rem' }}>
           <input type="hidden" name="programId" value={programId} />
           <input type="hidden" name="runId" value={runId} />
-          <button type="submit" className="badge bad" style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}>
+          <button
+            type="submit"
+            className="badge bad"
+            style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}
+          >
             {/*
               Named by what it will actually do. With nothing queued there is
               nothing to cancel — the button still marks the run stopped, but
@@ -82,7 +103,11 @@ export function Progress({ data, programId, runId }: { data: Data; programId: st
         <form action={retryRun} style={{ marginTop: '0.8rem' }}>
           <input type="hidden" name="programId" value={programId} />
           <input type="hidden" name="runId" value={runId} />
-          <button type="submit" className="badge warn" style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}>
+          <button
+            type="submit"
+            className="badge warn"
+            style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}
+          >
             Retry {stuck.length} stopped job{stuck.length === 1 ? '' : 's'}
           </button>
           <span className="note" style={{ marginLeft: '0.6rem' }}>
@@ -117,7 +142,15 @@ export function Progress({ data, programId, runId }: { data: Data; programId: st
  * decision a person may revise; a per-Job ceiling is a correctness backstop
  * they may not.
  */
-export function PausedOnBudget({ data, programId, runId }: { data: Data; programId: string; runId: string }) {
+export function PausedOnBudget({
+  data,
+  programId,
+  runId,
+}: {
+  data: Data;
+  programId: string;
+  runId: string;
+}) {
   const { run, unfinished } = data;
   if (run.state !== 'paused_on_budget') return null;
   return (
@@ -137,7 +170,11 @@ export function PausedOnBudget({ data, programId, runId }: { data: Data; program
       <form action={resumeRun} style={{ marginTop: '0.7rem' }}>
         <input type="hidden" name="programId" value={programId} />
         <input type="hidden" name="runId" value={runId} />
-        <button type="submit" className="badge" style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}>
+        <button
+          type="submit"
+          className="badge"
+          style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}
+        >
           Continue · adds ${(RUN_BUDGET_USD_PER_SUPPLIER * unfinished).toFixed(2)} for the{' '}
           {unfinished} job{unfinished === 1 ? '' : 's'} left
         </button>
@@ -167,7 +204,11 @@ export function Jobs({ data, programId, runId }: { data: Data; programId: string
           </thead>
           <tbody>
             {jobs.length === 0 ? (
-              <tr><td colSpan={7} className="empty">This run spawned no jobs.</td></tr>
+              <tr>
+                <td colSpan={7} className="empty">
+                  This run spawned no jobs.
+                </td>
+              </tr>
             ) : (
               jobs.map((job) => (
                 <JobRow
@@ -218,8 +259,12 @@ function JobRow({
         */}
         <Subject programId={programId} job={job} subjects={subjects} />
       </td>
-      <td><JobState job={job} stranded={stranded} /></td>
-      <td className="note"><Doing job={job} activity={activity} /></td>
+      <td>
+        <JobState job={job} stranded={stranded} />
+      </td>
+      <td className="note">
+        <Doing job={job} activity={activity} />
+      </td>
       <td className="num note">
         {/*
           The ceiling counts outbound attempts, so that is what is shown
@@ -229,7 +274,9 @@ function JobRow({
         */}
         {activity?.upstreamCalls ?? 0} / {job.toolCallCap}
         {activity?.toolCalls ? (
-          <div className="note">{activity.toolCalls} model tool call{activity.toolCalls === 1 ? '' : 's'}</div>
+          <div className="note">
+            {activity.toolCalls} model tool call{activity.toolCalls === 1 ? '' : 's'}
+          </div>
         ) : null}
       </td>
       <td className="num note">
@@ -239,7 +286,9 @@ function JobRow({
       </td>
       <td>
         <Link href={`/program/${programId}/runs/${runId}/job/${job.id}` as never}>
-          {activity?.turns ? `${activity.turns} turn${activity.turns === 1 ? '' : 's'}` : 'timeline'}
+          {activity?.turns
+            ? `${activity.turns} turn${activity.turns === 1 ? '' : 's'}`
+            : 'timeline'}
         </Link>
         {stranded ? (
           <form action={retryJob} style={{ marginTop: '0.3rem' }}>

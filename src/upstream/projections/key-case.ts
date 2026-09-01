@@ -21,7 +21,10 @@
  */
 
 const camelToSnake = (key: string): string =>
-  key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2').toLowerCase();
+  key
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .toLowerCase();
 
 export function snakeKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(snakeKeys);

@@ -235,9 +235,7 @@ function Dot({
         onSelect(mark);
       }}
     >
-      {selected ? (
-        <circle className="map-dot-halo" cx={cx} cy={cy} r={r * 2.1} />
-      ) : null}
+      {selected ? <circle className="map-dot-halo" cx={cx} cy={cy} r={r * 2.1} /> : null}
       <circle
         className="map-dot"
         cx={cx}

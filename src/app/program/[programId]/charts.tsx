@@ -88,10 +88,19 @@ export function CountryBreakdown({
         <Link
           key={country}
           href={facetHref(programId, 'country', country, active, search) as never}
-          style={{ display: 'block', color: 'inherit', textDecoration: 'none', marginBottom: '0.3rem' }}
+          style={{
+            display: 'block',
+            color: 'inherit',
+            textDecoration: 'none',
+            marginBottom: '0.3rem',
+          }}
         >
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.85rem' }}>
-            <span style={{ width: '3rem', fontWeight: active.includes(country) ? 700 : 400 }}>{country}</span>
+          <div
+            style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.85rem' }}
+          >
+            <span style={{ width: '3rem', fontWeight: active.includes(country) ? 700 : 400 }}>
+              {country}
+            </span>
             <span className="bar" style={{ flex: 1 }}>
               <i
                 style={{
@@ -100,7 +109,9 @@ export function CountryBreakdown({
                 }}
               />
             </span>
-            <span className="num" style={{ width: '2rem', textAlign: 'right' }}>{count}</span>
+            <span className="num" style={{ width: '2rem', textAlign: 'right' }}>
+              {count}
+            </span>
           </div>
         </Link>
       ))}
@@ -127,7 +138,12 @@ export function MatchOutcomes({
   active: string[];
   search: string;
 }) {
-  const buckets: Record<string, number> = { accepted: 0, needs_review: 0, not_found: 0, unresolved: 0 };
+  const buckets: Record<string, number> = {
+    accepted: 0,
+    needs_review: 0,
+    not_found: 0,
+    unresolved: 0,
+  };
   const settledBy: Record<string, number> = {};
   for (const supplier of suppliers) {
     const match = matchBySupplier.get(supplier.id);
@@ -149,9 +165,16 @@ export function MatchOutcomes({
         <Link
           key={status}
           href={facetHref(programId, 'matchStatus', status, active, search) as never}
-          style={{ display: 'block', color: 'inherit', textDecoration: 'none', marginBottom: '0.3rem' }}
+          style={{
+            display: 'block',
+            color: 'inherit',
+            textDecoration: 'none',
+            marginBottom: '0.3rem',
+          }}
         >
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.85rem' }}>
+          <div
+            style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.85rem' }}
+          >
             <span style={{ width: '7rem', fontWeight: active.includes(status) ? 700 : 400 }}>
               {label[status]}
             </span>
@@ -163,7 +186,9 @@ export function MatchOutcomes({
                 }}
               />
             </span>
-            <span className="num" style={{ width: '2rem', textAlign: 'right' }}>{count}</span>
+            <span className="num" style={{ width: '2rem', textAlign: 'right' }}>
+              {count}
+            </span>
           </div>
         </Link>
       ))}
@@ -225,8 +250,10 @@ const BAND_FILL: Record<ProximityBand, string> = {
   far: 'var(--bad)',
 };
 
-const lonToWorld = (lon: number) => ((lon - WORLD_BOX[0]) / (WORLD_BOX[2] - WORLD_BOX[0])) * WORLD_W;
-const latToWorld = (lat: number) => ((WORLD_BOX[3] - lat) / (WORLD_BOX[3] - WORLD_BOX[1])) * WORLD_H;
+const lonToWorld = (lon: number) =>
+  ((lon - WORLD_BOX[0]) / (WORLD_BOX[2] - WORLD_BOX[0])) * WORLD_W;
+const latToWorld = (lat: number) =>
+  ((WORLD_BOX[3] - lat) / (WORLD_BOX[3] - WORLD_BOX[1])) * WORLD_H;
 
 /** A region box as a camera in world units, with the world's aspect kept. */
 function cameraFor(box: readonly [number, number, number, number]): Camera {
@@ -271,7 +298,11 @@ function projectCountryPaths(features: { id: string; r: number[][] }[]): string[
 }
 
 type PlantPoint = { code: string; city: string; lat: number; lon: number };
-type Placed = { supplier: SupplierPoint; nearest: ReturnType<typeof nearestPlant>; band: ProximityBand | undefined };
+type Placed = {
+  supplier: SupplierPoint;
+  nearest: ReturnType<typeof nearestPlant>;
+  band: ProximityBand | undefined;
+};
 
 /** Each Supplier matched to its nearest Plant and the band that distance falls in. */
 function placeSuppliers(suppliers: SupplierPoint[], plantPoints: PlantPoint[]): Placed[] {
@@ -311,13 +342,22 @@ function toMarks(placed: Placed[]): Mark[] {
  */
 function ProximityRings({ plants }: { plants: (typeof t.plant.$inferSelect)[] }) {
   return (
-    <g className="map-bands" fill="none" stroke="var(--accent)" strokeOpacity={0.4} strokeDasharray="1.2 1.2">
+    <g
+      className="map-bands"
+      fill="none"
+      stroke="var(--accent)"
+      strokeOpacity={0.4}
+      strokeDasharray="1.2 1.2"
+    >
       {plants.map((plant) => (
         <ellipse
           key={plant.id}
           cx={lonToWorld(plant.lon)}
           cy={latToWorld(plant.lat)}
-          rx={(NEAR_BAND_MAX_KM / (KM_PER_DEGREE * Math.cos((plant.lat * Math.PI) / 180))) * UNITS_PER_DEGREE}
+          rx={
+            (NEAR_BAND_MAX_KM / (KM_PER_DEGREE * Math.cos((plant.lat * Math.PI) / 180))) *
+            UNITS_PER_DEGREE
+          }
           ry={(NEAR_BAND_MAX_KM / KM_PER_DEGREE) * UNITS_PER_DEGREE}
           strokeWidth={0.6}
           vectorEffect="non-scaling-stroke"
@@ -340,9 +380,23 @@ function PlantMarkers({ plants }: { plants: (typeof t.plant.$inferSelect)[] }) {
           key={plant.id}
           className="map-mark map-plant"
           aria-hidden="true"
-          style={{ '--x': `${lonToWorld(plant.lon)}px`, '--y': `${latToWorld(plant.lat)}px` } as React.CSSProperties}
+          style={
+            {
+              '--x': `${lonToWorld(plant.lon)}px`,
+              '--y': `${latToWorld(plant.lat)}px`,
+            } as React.CSSProperties
+          }
         >
-          <rect x={-1} y={-1} width={2} height={2} rx={0.36} fill="var(--accent)" stroke="var(--paper)" strokeWidth={0.4} />
+          <rect
+            x={-1}
+            y={-1}
+            width={2}
+            height={2}
+            rx={0.36}
+            fill="var(--accent)"
+            stroke="var(--paper)"
+            strokeWidth={0.4}
+          />
           <text y={3.4} textAnchor="middle" fontSize={1.7} fontWeight={650}>
             {plant.code}
           </text>
@@ -397,7 +451,12 @@ function SupplierFallbackDots({
             */}
             <circle
               className="map-mark"
-              style={{ '--x': `${lonToWorld(supplier.lon)}px`, '--y': `${latToWorld(supplier.lat)}px` } as React.CSSProperties}
+              style={
+                {
+                  '--x': `${lonToWorld(supplier.lon)}px`,
+                  '--y': `${latToWorld(supplier.lat)}px`,
+                } as React.CSSProperties
+              }
               r={0.62}
               fill={band ? BAND_FILL[band] : 'var(--ink-3)'}
               fillOpacity={dimmed ? 0.12 : 0.8}
@@ -431,7 +490,12 @@ function PlantHitTargets({ plants }: { plants: (typeof t.plant.$inferSelect)[] }
         <rect
           key={plant.id}
           className="map-mark"
-          style={{ '--x': `${lonToWorld(plant.lon)}px`, '--y': `${latToWorld(plant.lat)}px` } as React.CSSProperties}
+          style={
+            {
+              '--x': `${lonToWorld(plant.lon)}px`,
+              '--y': `${latToWorld(plant.lat)}px`,
+            } as React.CSSProperties
+          }
           x={-1}
           y={-1}
           width={2}
@@ -455,7 +519,14 @@ type SupplierMapProps = {
   activeBands: string[];
 };
 
-export function SupplierMap({ plants, suppliers, supplierTotal, region, programId, activeBands }: SupplierMapProps) {
+export function SupplierMap({
+  plants,
+  suppliers,
+  supplierTotal,
+  region,
+  programId,
+  activeBands,
+}: SupplierMapProps) {
   const active = REGIONS.find((r) => r.key === region) ?? REGIONS[0];
   const paths = projectCountryPaths(world as { id: string; r: number[][] }[]);
 
@@ -489,14 +560,26 @@ export function SupplierMap({ plants, suppliers, supplierTotal, region, programI
         minWidth={(MIN_CAMERA_DEG / (WORLD_BOX[2] - WORLD_BOX[0])) * WORLD_W}
         regions={REGIONS.map((r) => ({ key: r.key, label: r.label, camera: cameraFor(r.box) }))}
         activeRegion={active.key}
-        bands={PROXIMITY_BANDS.map((band) => ({ key: band, label: proximityBandLabel(band), fill: BAND_FILL[band] }))}
+        bands={PROXIMITY_BANDS.map((band) => ({
+          key: band,
+          label: proximityBandLabel(band),
+          fill: BAND_FILL[band],
+        }))}
         marks={marks}
-        plantPoints={plants.map((plant) => ({ x: lonToWorld(plant.lon), y: latToWorld(plant.lat) }))}
+        plantPoints={plants.map((plant) => ({
+          x: lonToWorld(plant.lon),
+          y: latToWorld(plant.lat),
+        }))}
         programId={programId}
         activeBands={activeBands}
       >
         <Coastlines paths={paths} />
-        <SupplierFallbackDots placed={placed} filtering={filtering} activeBands={activeBands} programId={programId} />
+        <SupplierFallbackDots
+          placed={placed}
+          filtering={filtering}
+          activeBands={activeBands}
+          programId={programId}
+        />
         <PlantHitTargets plants={plants} />
       </MapViewport>
 
@@ -509,7 +592,9 @@ export function SupplierMap({ plants, suppliers, supplierTotal, region, programI
       */}
       <p className="note map-note">
         {suppliers.length} of {supplierTotal} placed
-        {unplaced > 0 ? ` · ${unplaced} without a coordinate, unknown on proximity rather than distant` : ''}{' '}
+        {unplaced > 0
+          ? ` · ${unplaced} without a coordinate, unknown on proximity rather than distant`
+          : ''}{' '}
         · city centroids, ±5 km
       </p>
     </>
@@ -540,8 +625,8 @@ export function SharedOwnership({
       <h3>Which “competing” bidders are the same company</h3>
       {groups.length === 0 ? (
         <p className="note">
-          No two suppliers have resolved to one company yet. This chart is kept despite having only a
-          few real groups on this roster, because those groups are the finding — not the volume.
+          No two suppliers have resolved to one company yet. This chart is kept despite having only
+          a few real groups on this roster, because those groups are the finding — not the volume.
         </p>
       ) : (
         <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.87rem' }}>

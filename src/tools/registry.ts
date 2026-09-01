@@ -67,7 +67,8 @@ export const DOSSIER_PROFILE = [
   'submit_dossier',
 ] as const;
 
-const NAME_SCHEME = /^(get|list|compare|find|join|submit|enqueue|navigate|sayari|gleif|worldbank|usitc|nominatim)_[a-z0-9_]+$/;
+const NAME_SCHEME =
+  /^(get|list|compare|find|join|submit|enqueue|navigate|sayari|gleif|worldbank|usitc|nominatim)_[a-z0-9_]+$/;
 
 class RegistryError extends Error {
   constructor(problems: string[]) {
@@ -95,6 +96,20 @@ export function finalizeRegistry(tools: readonly ToolDefinition[]): Registry {
   const problems: string[] = [];
   const byName = new Map<string, ToolDefinition>();
 
+  checkEachTool(tools, byName, problems);
+  checkDossierProfile(byName, problems);
+  checkRoundRungs(byName, problems);
+
+  if (problems.length > 0) throw new RegistryError(problems);
+
+  return buildRegistry(tools, byName);
+}
+
+function checkEachTool(
+  tools: readonly ToolDefinition[],
+  byName: Map<string, ToolDefinition>,
+  problems: string[],
+): void {
   for (const tool of tools) {
     // 1. Names are unique.
     if (byName.has(tool.name)) problems.push(`duplicate tool name "${tool.name}"`);
@@ -102,7 +117,9 @@ export function finalizeRegistry(tools: readonly ToolDefinition[]): Registry {
 
     // 2. Names match the scheme.
     if (!NAME_SCHEME.test(tool.name)) {
-      problems.push(`"${tool.name}" does not match the naming scheme (source-prefixed for raw lookups, effect-prefixed otherwise)`);
+      problems.push(
+        `"${tool.name}" does not match the naming scheme (source-prefixed for raw lookups, effect-prefixed otherwise)`,
+      );
     }
 
     const onChat = tool.surfaces.includes('chat');
@@ -111,16 +128,22 @@ export function finalizeRegistry(tools: readonly ToolDefinition[]): Registry {
     //    because chat proposes and never does.
     if (tool.effect === 'write' && onChat) {
       if (!tool.name.startsWith('enqueue_')) {
-        problems.push(`"${tool.name}" writes and is reachable from chat, so it must be named enqueue_*`);
+        problems.push(
+          `"${tool.name}" writes and is reachable from chat, so it must be named enqueue_*`,
+        );
       }
       if (!tool.confirm) {
-        problems.push(`"${tool.name}" writes and is reachable from chat, so it must carry a confirm gate`);
+        problems.push(
+          `"${tool.name}" writes and is reachable from chat, so it must carry a confirm gate`,
+        );
       }
     }
 
     // 4. Anything that spends and is reachable from chat is confirm-gated.
     if (tool.spends.length > 0 && onChat && !tool.confirm) {
-      problems.push(`"${tool.name}" spends ${tool.spends.join('/')} and is reachable from chat, so it must carry a confirm gate`);
+      problems.push(
+        `"${tool.name}" spends ${tool.spends.join('/')} and is reachable from chat, so it must carry a confirm gate`,
+      );
     }
 
     // 5. A slow tool is barred from chat, whether or not it fans out.
@@ -137,21 +160,31 @@ export function finalizeRegistry(tools: readonly ToolDefinition[]): Registry {
     if (tool.name.startsWith('submit_')) {
       const expected = tool.name === 'submit_dossier' ? ['mcp'] : ['job'];
       if (tool.surfaces.length !== expected.length || tool.surfaces[0] !== expected[0]) {
-        problems.push(`"${tool.name}" must have surfaces exactly ${JSON.stringify(expected)}, so there is one path into a Match or an Assessment and it is owned by a Job`);
+        problems.push(
+          `"${tool.name}" must have surfaces exactly ${JSON.stringify(expected)}, so there is one path into a Match or an Assessment and it is owned by a Job`,
+        );
       }
     }
 
     // 8. No write reaches MCP except submit_dossier.
-    if (tool.effect === 'write' && tool.surfaces.includes('mcp') && tool.name !== 'submit_dossier') {
+    if (
+      tool.effect === 'write' &&
+      tool.surfaces.includes('mcp') &&
+      tool.name !== 'submit_dossier'
+    ) {
       problems.push(`"${tool.name}" writes and is exposed over MCP; only submit_dossier may be`);
     }
 
     // 9. An estimator no human ever sees is dead code.
     if (tool.confirm && !onChat) {
-      problems.push(`"${tool.name}" carries a confirm gate but is not reachable from chat, so nobody would ever see it`);
+      problems.push(
+        `"${tool.name}" carries a confirm gate but is not reachable from chat, so nobody would ever see it`,
+      );
     }
   }
+}
 
+function checkDossierProfile(byName: Map<string, ToolDefinition>, problems: string[]): void {
   // 10. The Dossier profile is exactly six named tools, all present, all mcp.
   for (const name of DOSSIER_PROFILE) {
     const tool = byName.get(name);
@@ -161,20 +194,27 @@ export function finalizeRegistry(tools: readonly ToolDefinition[]): Registry {
       problems.push(`the Dossier profile names "${name}", which does not carry the mcp surface`);
     }
   }
+}
 
+function checkRoundRungs(byName: Map<string, ToolDefinition>, problems: string[]): void {
   // 11. Every rung named per Round exists. (The lists themselves are derived
   //     below; this checks the names they are derived from.)
   for (const [round, rungs] of Object.entries(MATCH_RUNGS_BY_ROUND)) {
     for (const rung of rungs) {
-      if (!byName.has(rung)) problems.push(`Round ${round} names rung "${rung}", which is not in the registry`);
+      if (!byName.has(rung))
+        problems.push(`Round ${round} names rung "${rung}", which is not in the registry`);
     }
   }
   for (const name of MATCH_COMMON_TOOLS) {
-    if (!byName.has(name)) problems.push(`the Match loop needs "${name}", which is not in the registry`);
+    if (!byName.has(name))
+      problems.push(`the Match loop needs "${name}", which is not in the registry`);
   }
+}
 
-  if (problems.length > 0) throw new RegistryError(problems);
-
+function buildRegistry(
+  tools: readonly ToolDefinition[],
+  byName: Map<string, ToolDefinition>,
+): Registry {
   const digest = (subset: readonly ToolDefinition[]) => {
     // Sorted by name, because the tool list is the very front of the cached
     // prefix and a set-ordering wobble at position 0 invalidates everything.

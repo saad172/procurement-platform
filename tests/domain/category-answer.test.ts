@@ -13,12 +13,7 @@ import { categoryAnswer, type CategoryAnswerInput } from '@/domain/category-answ
  * being read as one.
  */
 
-const row = (
-  displayName: string,
-  score: number | null,
-  computed = 5,
-  disqualifying = false,
-) => ({
+const row = (displayName: string, score: number | null, computed = 5, disqualifying = false) => ({
   supplierId: displayName.toLowerCase(),
   displayName,
   score,
@@ -52,7 +47,10 @@ describe('who leads, and whether that means anything', () => {
       'Flex-N-Gate leads Battery enclosures — but by 1.0, which is not a settled first place.',
     );
     expect(lead!.because).toMatch(/inside what changes when you move a weight/);
-    expect(lead!.actions[0]).toMatchObject({ label: 'Compare the top two side by side', primary: true });
+    expect(lead!.actions[0]).toMatchObject({
+      label: 'Compare the top two side by side',
+      primary: true,
+    });
   });
 
   it('calls a wide lead what it is', () => {
@@ -71,7 +69,9 @@ describe('who leads, and whether that means anything', () => {
     const [lead] = answers({
       ranked: [row('Flex-N-Gate', 80.7, 3), row('Benteler', 79.7, 6)],
     });
-    expect(lead!.because).toMatch(/the leader rests on less: 3 of 6 criteria .* against Benteler's 6/);
+    expect(lead!.because).toMatch(
+      /the leader rests on less: 3 of 6 criteria .* against Benteler's 6/,
+    );
     expect(lead!.because).toMatch(/A higher score over fewer measurements is not the same claim/);
   });
 
@@ -110,7 +110,9 @@ describe('nothing to rank is two different pieces of news', () => {
     });
 
     expect(nobodyBids[0]!.because).toMatch(/No supplier bids on this category/);
-    expect(nobodyScored[0]!.because).toMatch(/2 suppliers bid on this category and none of them has a score/);
+    expect(nobodyScored[0]!.because).toMatch(
+      /2 suppliers bid on this category and none of them has a score/,
+    );
   });
 
   /** With nothing to recommend from, the second answer would be noise. */

@@ -51,7 +51,8 @@ export async function promoteLead(
   // The seeding Category is pre-checked in the promote dialog and CONFIRMED BY
   // A PERSON, which keeps `supplier_category` hand-authored in the only sense
   // the seed cared about.
-  const categoryIds = args.confirmedCategoryIds.length > 0 ? args.confirmedCategoryIds : [lead.categoryId];
+  const categoryIds =
+    args.confirmedCategoryIds.length > 0 ? args.confirmedCategoryIds : [lead.categoryId];
   for (const categoryId of categoryIds) {
     await db
       .insert(t.supplierCategory)
@@ -61,7 +62,10 @@ export async function promoteLead(
 
   await settleDiscoveredLead(db, { supplierId: supplier!.id, entityId: lead.entityId });
 
-  await db.update(t.lead).set({ promotedSupplierId: supplier!.id }).where(eq(t.lead.id, args.leadId));
+  await db
+    .update(t.lead)
+    .set({ promotedSupplierId: supplier!.id })
+    .where(eq(t.lead.id, args.leadId));
 
   void entity;
   return { supplierId: supplier!.id };

@@ -103,7 +103,9 @@ describe('toEntityView', () => {
     // The metadata shape varies by factor — a country-derived one carries
     // `{ country: [...] }` and no path at all.
     const view = toEntityView(
-      entity({ risk: { cpi_score: { level: 'relevant', metadata: { country: ['NGA'] } } } as never }),
+      entity({
+        risk: { cpi_score: { level: 'relevant', metadata: { country: ['NGA'] } } } as never,
+      }),
     );
     expect(view.risk[0]!.traversalPath).toBeNull();
   });

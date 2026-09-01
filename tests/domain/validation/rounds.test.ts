@@ -15,8 +15,15 @@ import { MAX_FREE_RETRIES_PER_ROUND, MAX_ROUNDS } from '@/config/constants';
 
 type Draft = { id: string };
 
-const draft = (id: string): ProposalResult<Draft> => ({ kind: 'draft', draft: { id }, text: `draft ${id}` });
-const refinementFailure = (message: string): ProposalResult<Draft> => ({ kind: 'refinement_failure', message });
+const draft = (id: string): ProposalResult<Draft> => ({
+  kind: 'draft',
+  draft: { id },
+  text: `draft ${id}`,
+});
+const refinementFailure = (message: string): ProposalResult<Draft> => ({
+  kind: 'refinement_failure',
+  message,
+});
 
 describe('a refinement failure retries FREE, and the counter does not advance', () => {
   it('retries and still converges inside round 1', async () => {
@@ -75,7 +82,8 @@ describe('a validator failure COSTS a round', () => {
     let round = 0;
     const outcome = await runProposerEvaluatorLoop<Draft>({
       propose: async () => draft(`round-${++round}`),
-      validate: async (d) => (d.id === 'round-1' ? [{ check: 'citations', message: 'a citation dangles' }] : []),
+      validate: async (d) =>
+        d.id === 'round-1' ? [{ check: 'citations', message: 'a citation dangles' }] : [],
       evaluate: async () => ({ kind: 'pass', rubric: {}, text: 'ok' }),
     });
 
@@ -94,7 +102,8 @@ describe('a validator failure COSTS a round', () => {
         seen.push(objections);
         return draft(`round-${++round}`);
       },
-      validate: async (d) => (d.id === 'round-1' ? [{ check: 'caveats', message: 'the tariff caveat is missing' }] : []),
+      validate: async (d) =>
+        d.id === 'round-1' ? [{ check: 'caveats', message: 'the tariff caveat is missing' }] : [],
       evaluate: async () => ({ kind: 'pass', rubric: {}, text: 'ok' }),
     });
     expect(seen[0]).toEqual([]);
@@ -163,7 +172,12 @@ describe('non-convergence PUBLISHES — a run must complete', () => {
         return { kind: 'draft', draft: { id: `r${round}` }, text: `reply in round ${round}` };
       },
       validate: async () => [],
-      evaluate: async () => ({ kind: 'objections', objections: ['unresolved'], rubric: {}, text: 'no' }),
+      evaluate: async () => ({
+        kind: 'objections',
+        objections: ['unresolved'],
+        rubric: {},
+        text: 'no',
+      }),
     });
     expect(outcome.dissent[0]!.reply).toMatch(/reply in round/);
   });
@@ -187,7 +201,9 @@ describe('convergence', () => {
       validate: async () => [],
       evaluate: async () => ({ kind: 'pass', rubric: { support: 'pass' }, text: 'ok' }),
     });
-    expect(outcome.rounds.find((r) => r.role === 'evaluator' && r.source === 'model')!.rubric).toEqual({
+    expect(
+      outcome.rounds.find((r) => r.role === 'evaluator' && r.source === 'model')!.rubric,
+    ).toEqual({
       support: 'pass',
     });
   });

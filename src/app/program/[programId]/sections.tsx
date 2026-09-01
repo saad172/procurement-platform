@@ -49,7 +49,17 @@ export function Answers({ data }: { data: Data }) {
 
 /** ── Where you stand ── */
 export function WhereYouStand({ data, programId }: { data: Data; programId: string }) {
-  const { program, awardable, assessedIds, suppliers, waitingOnYou, matches, uncategorised, spent, runs } = data;
+  const {
+    program,
+    awardable,
+    assessedIds,
+    suppliers,
+    waitingOnYou,
+    matches,
+    uncategorised,
+    spent,
+    runs,
+  } = data;
   return (
     <>
       <h2>Where you stand</h2>
@@ -134,7 +144,9 @@ function CategoryLedger({ data, programId }: { data: Data; programId: string }) 
                 programId={programId}
                 bidders={biddersByCategory.get(category.id) ?? 0}
                 rec={recByCategory.get(category.id)}
-                attempt={recByCategory.has(category.id) ? undefined : attemptByCategory.get(category.id)}
+                attempt={
+                  recByCategory.has(category.id) ? undefined : attemptByCategory.get(category.id)
+                }
               />
             ))}
           </tbody>
@@ -246,7 +258,8 @@ function CategoryRow({
 
 /** ── The working ── */
 export function TheWorking({ data, programId }: { data: Data; programId: string }) {
-  const { program, work, workerUp, view, supplierPoints, suppliers, search, matchBySupplier } = data;
+  const { program, work, workerUp, view, supplierPoints, suppliers, search, matchBySupplier } =
+    data;
   const { assessedIds, uncategorised, bandBySupplier } = data;
   return (
     <>
@@ -298,7 +311,8 @@ export function TheWorking({ data, programId }: { data: Data; programId: string 
       <h3>
         Every company on the roster{' '}
         <span className="note">
-          {uncategorised.length} of {suppliers.length} are not mapped to any category, and reach no shortlist
+          {uncategorised.length} of {suppliers.length} are not mapped to any category, and reach no
+          shortlist
         </span>
       </h3>
       <SupplierTable

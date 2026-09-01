@@ -44,23 +44,36 @@ export async function resolveCitations(
     if (resolved.has(key)) continue;
 
     if (citation.entityId) {
-      resolved.set(key, await first(db.select().from(t.entity).where(eq(t.entity.id, citation.entityId))));
+      resolved.set(
+        key,
+        await first(db.select().from(t.entity).where(eq(t.entity.id, citation.entityId))),
+      );
     } else if (citation.recordId) {
-      resolved.set(key, await first(db.select().from(t.record).where(eq(t.record.id, citation.recordId))));
+      resolved.set(
+        key,
+        await first(db.select().from(t.record).where(eq(t.record.id, citation.recordId))),
+      );
     } else if (citation.enrichmentId) {
       // Every id below is a uuid column, so a malformed value THROWS rather
       // than missing — see the shortlist branch for why that matters.
       resolved.set(
         key,
         isDatabaseId(citation.enrichmentId)
-          ? await first(db.select().from(t.enrichment).where(eq(t.enrichment.id, citation.enrichmentId)))
+          ? await first(
+              db.select().from(t.enrichment).where(eq(t.enrichment.id, citation.enrichmentId)),
+            )
           : undefined,
       );
     } else if (citation.criterionValueId) {
       resolved.set(
         key,
         isDatabaseId(citation.criterionValueId)
-          ? await first(db.select().from(t.criterionValue).where(eq(t.criterionValue.id, citation.criterionValueId)))
+          ? await first(
+              db
+                .select()
+                .from(t.criterionValue)
+                .where(eq(t.criterionValue.id, citation.criterionValueId)),
+            )
           : undefined,
       );
     } else if (citation.matchId) {
@@ -84,7 +97,10 @@ export async function resolveCitations(
        * the model invented because the field said what it was FOR and not where
        * it comes FROM.
        */
-      if (!isDatabaseId(citation.shortlist.programId) || !isDatabaseId(citation.shortlist.categoryId)) {
+      if (
+        !isDatabaseId(citation.shortlist.programId) ||
+        !isDatabaseId(citation.shortlist.categoryId)
+      ) {
         resolved.set(key, undefined);
         continue;
       }
@@ -94,7 +110,10 @@ export async function resolveCitations(
           .select()
           .from(t.category)
           .where(
-            and(eq(t.category.id, citation.shortlist.categoryId), eq(t.category.programId, citation.shortlist.programId)),
+            and(
+              eq(t.category.id, citation.shortlist.categoryId),
+              eq(t.category.programId, citation.shortlist.programId),
+            ),
           ),
       );
       resolved.set(key, category);
@@ -183,7 +202,9 @@ export async function publishVersion(
           section: sentence.section as never,
           ordinal,
           text: sentence.text,
-          pickId: sentence.pickSupplierId ? (pickIdBySupplier.get(sentence.pickSupplierId) ?? null) : null,
+          pickId: sentence.pickSupplierId
+            ? (pickIdBySupplier.get(sentence.pickSupplierId) ?? null)
+            : null,
         })
         .returning({ id: t.sentence.id });
 
@@ -308,12 +329,20 @@ async function insertRecommendationVersion(
   return version!.id;
 }
 
-async function currentN(tx: Tx, target: PublishAssessment | PublishRecommendation, versionId: string): Promise<number> {
+async function currentN(
+  tx: Tx,
+  target: PublishAssessment | PublishRecommendation,
+  versionId: string,
+): Promise<number> {
   if (target.kind === 'assessment') {
-    const row = await tx.query.assessmentVersion.findFirst({ where: eq(t.assessmentVersion.id, versionId) });
+    const row = await tx.query.assessmentVersion.findFirst({
+      where: eq(t.assessmentVersion.id, versionId),
+    });
     return row?.n ?? 1;
   }
-  const row = await tx.query.recommendationVersion.findFirst({ where: eq(t.recommendationVersion.id, versionId) });
+  const row = await tx.query.recommendationVersion.findFirst({
+    where: eq(t.recommendationVersion.id, versionId),
+  });
   return row?.n ?? 1;
 }
 

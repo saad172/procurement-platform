@@ -146,10 +146,16 @@ export function dataConfidence(input: SupplierScoringInput): DataConfidenceBand 
   const present = new Set(input.presentEnrichments);
   const expectedPresent = EXPECTED_ENRICHMENTS.filter((e) => present.has(e)).length;
 
-  if (sources >= DATA_CONFIDENCE.strong.minDistinctSources && expectedPresent === EXPECTED_ENRICHMENTS.length) {
+  if (
+    sources >= DATA_CONFIDENCE.strong.minDistinctSources &&
+    expectedPresent === EXPECTED_ENRICHMENTS.length
+  ) {
     return 'strong';
   }
-  if (sources >= DATA_CONFIDENCE.adequate.minDistinctSources && expectedPresent >= DATA_CONFIDENCE.adequate.minEnrichments) {
+  if (
+    sources >= DATA_CONFIDENCE.adequate.minDistinctSources &&
+    expectedPresent >= DATA_CONFIDENCE.adequate.minEnrichments
+  ) {
     return 'adequate';
   }
   return 'thin';
@@ -234,9 +240,11 @@ export function scoreSupplier(
   if (input.profile?.sanctioned) disqualifyingFactors.push('sanctioned');
 
   const scoreAbsentReason =
-    input.match.status !== 'accepted' ? ('no_match' as const)
-    : !options.hasCategory ? ('no_category' as const)
-    : undefined;
+    input.match.status !== 'accepted'
+      ? ('no_match' as const)
+      : !options.hasCategory
+        ? ('no_category' as const)
+        : undefined;
 
   const score =
     scoreAbsentReason || totalWeight === 0
@@ -306,7 +314,8 @@ export function scoreFromStoredValues(
   // Tariff exposure is stored per Category; the other five at `category = null`.
   const byKey = new Map<string, StoredCriterionValue>();
   for (const value of args.values) {
-    if (value.categoryId != null && args.categoryId != null && value.categoryId !== args.categoryId) continue;
+    if (value.categoryId != null && args.categoryId != null && value.categoryId !== args.categoryId)
+      continue;
     const existing = byKey.get(value.criterionKey);
     // Prefer the Category-specific row where both exist.
     if (!existing || (value.categoryId != null && existing.categoryId == null)) {
@@ -372,7 +381,10 @@ export function scoreFromStoredValues(
   return {
     supplierId: args.supplierId,
     displayName: args.displayName,
-    score: scoreAbsentReason || totalWeight === 0 ? null : criteria.reduce((sum, c) => sum + c.contribution, 0),
+    score:
+      scoreAbsentReason || totalWeight === 0
+        ? null
+        : criteria.reduce((sum, c) => sum + c.contribution, 0),
     ...(scoreAbsentReason ? { scoreAbsentReason } : {}),
     criteria: [...criteria].sort((a, b) => b.contribution - a.contribution),
     coverage: { computed: computedKeys.length, total: WEIGHTED_CRITERIA.length },

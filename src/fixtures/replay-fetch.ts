@@ -112,10 +112,13 @@ export function replayFetch(fixture: Fixture): typeof fetch {
     const turn = bucket?.find((candidate) => !served.includes(candidate.n));
     if (!turn) {
       const miss = new ReplayMissError(fixture.manifest.name, hash, served, fixture.turns);
-      return new Response(JSON.stringify({ type: 'error', error: { type: 'replay_miss', message: miss.message } }), {
-        status: 400,
-        headers: { 'content-type': 'application/json' },
-      });
+      return new Response(
+        JSON.stringify({ type: 'error', error: { type: 'replay_miss', message: miss.message } }),
+        {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
     }
     served.push(turn.n);
 

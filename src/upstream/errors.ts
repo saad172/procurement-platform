@@ -62,12 +62,7 @@ export class UpstreamError extends Error {
  * mechanisms depends on this being loud.
  */
 export class UpstreamCacheMissError extends Error {
-  constructor(init: {
-    source: string;
-    endpoint: string;
-    paramsHash: string;
-    params: unknown;
-  }) {
+  constructor(init: { source: string; endpoint: string; paramsHash: string; params: unknown }) {
     super(
       [
         `No cached ${init.source} response for ${init.endpoint}.`,
@@ -103,9 +98,7 @@ export class UpstreamCapExceededError extends Error {
     readonly cap: number,
     readonly endpoint: string,
   ) {
-    super(
-      `stopped at its ${cap}-upstream-call ceiling, reaching for ${endpoint}`,
-    );
+    super(`stopped at its ${cap}-upstream-call ceiling, reaching for ${endpoint}`);
     this.name = 'UpstreamCapExceededError';
   }
 }

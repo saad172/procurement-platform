@@ -288,10 +288,13 @@ export async function settleRunState(db: Database, runId: string): Promise<void>
 
   const has = (state: (typeof jobs)[number]['state']) => jobs.some((j) => j.state === state);
   const nextState =
-    has('queued') || has('running') ? 'running'
-    : has('paused_on_budget') ? 'paused_on_budget'
-    : has('failed') ? 'failed'
-    : 'done';
+    has('queued') || has('running')
+      ? 'running'
+      : has('paused_on_budget')
+        ? 'paused_on_budget'
+        : has('failed')
+          ? 'failed'
+          : 'done';
 
   await db
     .update(t.run)

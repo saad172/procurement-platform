@@ -51,7 +51,10 @@ describe.skipIf(!up)(`resolving what a sentence cites (needs: ${START_TEST_DB_HI
     await sql`DELETE FROM program WHERE id IN (${PROGRAM}, ${OTHER_PROGRAM})`;
     await sql`DELETE FROM entity WHERE id = ${ENTITY}`;
 
-    for (const [id, name] of [[PROGRAM, 'Citation fixture'], [OTHER_PROGRAM, 'Another program']]) {
+    for (const [id, name] of [
+      [PROGRAM, 'Citation fixture'],
+      [OTHER_PROGRAM, 'Another program'],
+    ]) {
       await sql`INSERT INTO program (id, name, importing_country, vehicle_class, sourcing_horizon)
                 VALUES (${id!}, ${name!}, 'USA', 'BEV', 'FY2027')`;
     }
@@ -183,7 +186,9 @@ describe.skipIf(!up)(`resolving what a sentence cites (needs: ${START_TEST_DB_HI
    */
   it('refuses a sentence belonging to another program', async () => {
     const db = await getTestDb();
-    expect(await loadSentenceEvidence(db, { programId: PROGRAM, sentenceId: OTHER_SENTENCE })).toBeNull();
+    expect(
+      await loadSentenceEvidence(db, { programId: PROGRAM, sentenceId: OTHER_SENTENCE }),
+    ).toBeNull();
     // And it is genuinely reachable from its own.
     expect(
       await loadSentenceEvidence(db, { programId: OTHER_PROGRAM, sentenceId: OTHER_SENTENCE }),

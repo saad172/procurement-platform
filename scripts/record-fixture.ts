@@ -33,7 +33,9 @@ function jobKindOf(name: string): string {
 async function main(): Promise<void> {
   const name = process.argv[2];
   if (!name) {
-    console.error('Usage: pnpm fixtures:record <name> [jobId]\n  e.g. pnpm fixtures:record resolve/agree-r1');
+    console.error(
+      'Usage: pnpm fixtures:record <name> [jobId]\n  e.g. pnpm fixtures:record resolve/agree-r1',
+    );
     process.exitCode = 1;
     return;
   }
@@ -68,7 +70,9 @@ async function main(): Promise<void> {
         return;
       }
       jobId = latest.id;
-      console.warn(`Using the latest ${kind} job ${jobId} (${latest.state}, ${latest.createdAt.toISOString()}).`);
+      console.warn(
+        `Using the latest ${kind} job ${jobId} (${latest.state}, ${latest.createdAt.toISOString()}).`,
+      );
     }
 
     // Passed in rather than read inside, so the export is a pure function of

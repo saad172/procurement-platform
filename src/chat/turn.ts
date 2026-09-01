@@ -78,7 +78,13 @@ export async function runChatTurn(
   const upstream = createUpstream({ db, runId, credentials: deps.upstreamCredentials });
 
   // ── The tools this turn may call ────────────────────────────────────────────
-  const { chatTools, tools, proposals, widgets } = buildChatTools(registry, db, upstream, runId, request);
+  const { chatTools, tools, proposals, widgets } = buildChatTools(
+    registry,
+    db,
+    upstream,
+    runId,
+    request,
+  );
 
   // …history, {role:'user'}, {role:'system', <page block>}
   const messages = [
@@ -106,7 +112,10 @@ export async function runChatTurn(
 
   const text =
     outcome.status === 'done'
-      ? ((outcome.finalMessage as { content?: { type: string; text?: string }[] } | undefined)?.content ?? [])
+      ? (
+          (outcome.finalMessage as { content?: { type: string; text?: string }[] } | undefined)
+            ?.content ?? []
+        )
           .filter((block) => block.type === 'text')
           .map((block) => block.text ?? '')
           .join('\n')
@@ -179,10 +188,15 @@ async function ensureThread(
  * lookups never reach a dequeue point or a Round boundary. **The confirm gate
  * is the bound, and it is the stronger one.**
  */
-async function ensureRun(db: Database, request: ChatTurnRequest, threadId: string): Promise<string> {
+async function ensureRun(
+  db: Database,
+  request: ChatTurnRequest,
+  threadId: string,
+): Promise<string> {
   const existingRun = await db.query.run.findFirst({ where: eq(t.run.threadId, threadId) });
   return (
-    existingRun?.id ?? (await openRun(db, { programId: request.programId, trigger: 'thread', threadId }))
+    existingRun?.id ??
+    (await openRun(db, { programId: request.programId, trigger: 'thread', threadId }))
   );
 }
 
@@ -265,7 +279,11 @@ async function writeTranscript(
       threadId,
       role: 'assistant',
       text: proposal.estimate.what,
-      confirm: { toolName: proposal.toolName, input: proposal.input, estimate: proposal.estimate } as never,
+      confirm: {
+        toolName: proposal.toolName,
+        input: proposal.input,
+        estimate: proposal.estimate,
+      } as never,
       confirmState: 'proposed',
       pageRef,
     });

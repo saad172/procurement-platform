@@ -72,7 +72,9 @@ async function main(): Promise<void> {
     { programId: program.id, categoryId: category.id },
   );
 
-  console.log(`  proposed ${result.proposed} · classified ${result.classified} · ${result.alreadyOnRoster} already on the roster\n`);
+  console.log(
+    `  proposed ${result.proposed} · classified ${result.classified} · ${result.alreadyOnRoster} already on the roster\n`,
+  );
 
   const leads = await db
     .select({ lead: t.lead, entity: t.entity })
@@ -95,7 +97,9 @@ async function main(): Promise<void> {
   console.log('\n' + '─'.repeat(78));
   console.log('  ' + [...counts.entries()].map(([k, n]) => `${k}: ${n}`).join(' · '));
   const noDate = leads.filter((l) => !l.lead.latestShipmentDate).length;
-  console.log(`  ${noDate} of ${leads.length} carry no latest-shipment date — which is why it is a column, not a filter.`);
+  console.log(
+    `  ${noDate} of ${leads.length} carry no latest-shipment date — which is why it is a column, not a filter.`,
+  );
   console.log(`  cost $${(await runSpendUsd(db, runId)).toFixed(4)}`);
   console.log('═'.repeat(78) + '\n');
 

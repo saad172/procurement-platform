@@ -27,12 +27,16 @@ async function main(): Promise<void> {
 
   const program = await db.query.program.findFirst({ where: eq(t.program.name, PROGRAM.name) });
   if (!program) throw new Error('Seed the database first: pnpm db:seed');
-  const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.rosterName, rosterName) });
+  const supplier = await db.query.supplier.findFirst({
+    where: eq(t.supplier.rosterName, rosterName),
+  });
   if (!supplier) throw new Error(`No roster row named "${rosterName}"`);
 
   const match = await db.query.match.findFirst({ where: eq(t.match.supplierId, supplier.id) });
   if (match?.status !== 'accepted') {
-    throw new Error(`${rosterName} has no accepted match — run pnpm smoke:enrich ${rosterName} <entityId> first.`);
+    throw new Error(
+      `${rosterName} has no accepted match — run pnpm smoke:enrich ${rosterName} <entityId> first.`,
+    );
   }
 
   const runId = await openRun(db, {
@@ -60,7 +64,9 @@ async function main(): Promise<void> {
   });
 
   console.log(`\nAssessing "${rosterName}"\n` + '═'.repeat(78));
-  console.log(`  caps: ${JOB_CAPS.assess.toolCalls} tool calls, ${JOB_CAPS.assess.tokens.toLocaleString('en-US')} tokens\n`);
+  console.log(
+    `  caps: ${JOB_CAPS.assess.toolCalls} tool calls, ${JOB_CAPS.assess.tokens.toLocaleString('en-US')} tokens\n`,
+  );
 
   const result = await assessSupplier(
     {
@@ -79,7 +85,9 @@ async function main(): Promise<void> {
     { supplierId: supplier.id, programId: program.id },
   );
 
-  console.log(`  version ${result.n} · ${result.evaluatorOutcome} · ${result.roundsUsed} round(s)\n`);
+  console.log(
+    `  version ${result.n} · ${result.evaluatorOutcome} · ${result.roundsUsed} round(s)\n`,
+  );
 
   const sentences = await db
     .select()
@@ -107,7 +115,9 @@ async function main(): Promise<void> {
 
   console.log('\n' + '─'.repeat(78));
   console.log(`  sentences        ${sentences.length}`);
-  console.log(`  rounds           ${rounds.length} · ${codeRejections.length} spent on code rejections`);
+  console.log(
+    `  rounds           ${rounds.length} · ${codeRejections.length} spent on code rejections`,
+  );
   for (const rejection of codeRejections) {
     console.log(`    ✗ ${rejection.objection?.split('\n')[0]}`);
   }

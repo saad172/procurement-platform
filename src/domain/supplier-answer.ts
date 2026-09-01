@@ -168,7 +168,10 @@ function assessmentAnswer(input: SupplierAnswerInput): SupplierAnswer | undefine
       tone: 'you',
       said: `Escalate — ${name} needs a person, and the write-up says why.`,
       because: `The analysis was published with ${assessment.objections.length === 1 ? 'an unresolved objection' : `${assessment.objections.length} unresolved objections`}: the reviewer disagreed with the author and neither backed down. That is not a failure — it is the system declining to paper over a disagreement — but it means nobody has signed off on ${name}.`,
-      actions: [{ label: 'Read the objection', href: input.assessmentHref, primary: true }, ...compare],
+      actions: [
+        { label: 'Read the objection', href: input.assessmentHref, primary: true },
+        ...compare,
+      ],
     };
   }
 
@@ -188,7 +191,10 @@ function assessmentAnswer(input: SupplierAnswerInput): SupplierAnswer | undefine
         said: `Escalate — ${name} needs a person.`,
         because:
           'The analysis reached no recommendation it was willing to stand behind. The reasoning below says what it could not settle.',
-        actions: [{ label: 'Read the reasoning', href: input.assessmentHref, primary: true }, ...compare],
+        actions: [
+          { label: 'Read the reasoning', href: input.assessmentHref, primary: true },
+          ...compare,
+        ],
       };
     case 'recommend_with_conditions':
       return {

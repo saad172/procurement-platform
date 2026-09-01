@@ -10,7 +10,7 @@ import * as t from '@/db/schema';
  */
 export async function loadRecommendationPage(
   db: Database,
-  args: { programId: string, categoryId: string },
+  args: { programId: string; categoryId: string },
 ) {
   const { programId, categoryId } = args;
 
@@ -22,7 +22,10 @@ export async function loadRecommendationPage(
   const program = await db.query.program.findFirst({ where: eq(t.program.id, programId) });
 
   const recommendation = await db.query.recommendation.findFirst({
-    where: and(eq(t.recommendation.categoryId, categoryId), eq(t.recommendation.programId, programId)),
+    where: and(
+      eq(t.recommendation.categoryId, categoryId),
+      eq(t.recommendation.programId, programId),
+    ),
     with: { versions: { orderBy: [desc(t.recommendationVersion.n)], limit: 1 } },
   });
   const version = recommendation?.versions[0];

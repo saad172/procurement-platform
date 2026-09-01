@@ -89,7 +89,11 @@ export function checkAssessment(args: {
 
   // Check 7: the disqualifying badge FORCES the verdict, and code does not
   // choose between the two — that is a judgement.
-  if (supplier?.disqualifying && args.verdict !== 'do_not_shortlist' && args.verdict !== 'escalate') {
+  if (
+    supplier?.disqualifying &&
+    args.verdict !== 'do_not_shortlist' &&
+    args.verdict !== 'escalate'
+  ) {
     objections.push({
       check: 'disqualifying_badge',
       message:
@@ -125,7 +129,9 @@ export function checkRecommendation(args: {
   objections.push(...checkCitationsResolve(args.sentences, args.evidence));
   objections.push(...checkNumbers(args.sentences, args.evidence));
   objections.push(...checkCaveats(args.sentences, args.evidence));
-  objections.push(...checkRequiredSections(args.sentences, RECOMMENDATION_REQUIRED, 'recommendation'));
+  objections.push(
+    ...checkRequiredSections(args.sentences, RECOMMENDATION_REQUIRED, 'recommendation'),
+  );
 
   // Exactly one headline.
   const headlines = args.sentences.filter((s) => s.section === 'headline');
@@ -191,14 +197,20 @@ function checkCitationsResolve(
 
 // ── Check 2: number fidelity ────────────────────────────────────────────────
 
-function checkNumbers(sentences: readonly SubmittedSentence[], evidence: ResolvedEvidence): Objection[] {
+function checkNumbers(
+  sentences: readonly SubmittedSentence[],
+  evidence: ResolvedEvidence,
+): Objection[] {
   const objections: Objection[] = [];
   for (const sentence of sentences) {
     const citedRows = sentence.citations
       .map((c) => evidence.rowsByCitation.get(citationKey(c)))
       .filter((row): row is Record<string, unknown> => row != null);
 
-    for (const failure of checkNumberFidelity(sentence.text, candidatesFrom(evidence.frozenInputs, citedRows))) {
+    for (const failure of checkNumberFidelity(
+      sentence.text,
+      candidatesFrom(evidence.frozenInputs, citedRows),
+    )) {
       objections.push({
         check: 'number_fidelity',
         message: `In "${truncate(sentence.text)}": ${failure.message}`,
@@ -218,7 +230,10 @@ function checkNumbers(sentences: readonly SubmittedSentence[], evidence: Resolve
  * to say so. Rendering the number without the caveat is how a proxy becomes a
  * fact.
  */
-function checkCaveats(sentences: readonly SubmittedSentence[], evidence: ResolvedEvidence): Objection[] {
+function checkCaveats(
+  sentences: readonly SubmittedSentence[],
+  evidence: ResolvedEvidence,
+): Objection[] {
   const objections: Objection[] = [];
   for (const required of evidence.mandatoryCaveats) {
     const inSection = sentences.filter((s) => s.section === required.section);
@@ -253,7 +268,8 @@ function checkRequiredSections(
   if (sentences.some((s) => s.section === 'dissent')) {
     objections.push({
       check: 'required_sections',
-      message: 'Nobody writes dissent — it is assembled from the objections a version published without resolving.',
+      message:
+        'Nobody writes dissent — it is assembled from the objections a version published without resolving.',
     });
   }
   return objections;
@@ -269,7 +285,10 @@ function checkLimitsNamesUnknowns(
   sentences: readonly SubmittedSentence[],
   evidence: ResolvedEvidence,
 ): Objection[] {
-  const limits = sentences.filter((s) => s.section === 'limits').map((s) => s.text.toLowerCase()).join(' ');
+  const limits = sentences
+    .filter((s) => s.section === 'limits')
+    .map((s) => s.text.toLowerCase())
+    .join(' ');
   const missing = evidence.unknownCriteria.filter((key) => !limitsNames(limits, key));
   return missing.length === 0
     ? []
@@ -329,17 +348,26 @@ function checkPickLegality(
   const objections: Objection[] = [];
 
   if (picks.length > 3) {
-    objections.push({ check: 'pick_legality', message: `At most three picks; this recommendation names ${picks.length}.` });
+    objections.push({
+      check: 'pick_legality',
+      message: `At most three picks; this recommendation names ${picks.length}.`,
+    });
   }
   const awards = picks.filter((p) => p.role === 'award');
   if (awards.length > 1) {
-    objections.push({ check: 'pick_legality', message: `At most one award; this recommendation names ${awards.length}.` });
+    objections.push({
+      check: 'pick_legality',
+      message: `At most one award; this recommendation names ${awards.length}.`,
+    });
   }
 
   for (const pick of picks) {
     const supplier = evidence.suppliers.get(pick.supplierId);
     if (!supplier) {
-      objections.push({ check: 'eligibility', message: `Pick ${pick.supplierId} is not a supplier of this program.` });
+      objections.push({
+        check: 'eligibility',
+        message: `Pick ${pick.supplierId} is not a supplier of this program.`,
+      });
       continue;
     }
     if (!supplier.matchAccepted) {
@@ -355,7 +383,10 @@ function checkPickLegality(
       });
     }
     if (!supplier.hasScore) {
-      objections.push({ check: 'pick_legality', message: `${supplier.name} has no score for this category.` });
+      objections.push({
+        check: 'pick_legality',
+        message: `${supplier.name} has no score for this category.`,
+      });
     }
     // The disqualifying badge bars an award or a second source — but not a
     // `develop` or an `avoid`, which are judgements about a company you are NOT
@@ -410,7 +441,8 @@ function checkUpstreamDisclosure(
     .join(' ');
 
   const undisclosed = [...evidence.suppliers.values()].filter(
-    (s) => s.onShortlist && s.publishedWithObjections && !openQuestions.includes(s.name.toLowerCase()),
+    (s) =>
+      s.onShortlist && s.publishedWithObjections && !openQuestions.includes(s.name.toLowerCase()),
   );
 
   return undisclosed.map((s) => ({

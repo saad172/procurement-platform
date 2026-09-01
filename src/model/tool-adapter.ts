@@ -60,7 +60,12 @@ export function toRunnableTool(
         await recordOutcome(
           ctx,
           context?.toolUse?.id,
-          { ok: false, objections: [`the handler threw: ${error instanceof Error ? error.message : String(error)}`] },
+          {
+            ok: false,
+            objections: [
+              `the handler threw: ${error instanceof Error ? error.message : String(error)}`,
+            ],
+          },
           Date.now() - startedAt,
         );
         throw error;

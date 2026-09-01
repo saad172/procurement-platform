@@ -44,7 +44,8 @@ export function parseSettlement(
   if (!choice) {
     return {
       ok: false,
-      error: 'Nothing was selected, so nothing was written. Pick a record, or mark the row not found.',
+      error:
+        'Nothing was selected, so nothing was written. Pick a record, or mark the row not found.',
     };
   }
 
@@ -70,7 +71,8 @@ export function parseSettlement(
     if (!entityId) {
       return {
         ok: false,
-        error: 'No id was typed, so nothing was written. Leaving the box empty is not the same as marking the row not found — there is a choice for that.',
+        error:
+          'No id was typed, so nothing was written. Leaving the box empty is not the same as marking the row not found — there is a choice for that.',
       };
     }
     if (!ENTITY_ID.test(entityId)) {

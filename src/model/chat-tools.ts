@@ -47,49 +47,50 @@ export function toChatTools(
     onResult: (toolName: string, result: ChatToolResult) => void;
   },
 ): BetaRunnableTool<never>[] {
-  return tools.map((tool) =>
-    betaZodTool({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.input as never,
-      run: async (input) => {
-        if (tool.confirm) {
-          // The estimator reads local rows only. One that spent to say what
-          // spending costs would also run BEFORE the person consented, which is
-          // the one thing the gate exists to prevent.
-          const estimate = await tool.confirm(input, ctx);
-          sink.onProposal({ toolName: tool.name, input, estimate });
-          return [
-            {
-              type: 'text',
-              text:
-                `Proposed, not done. The person has been shown an estimate for "${estimate.what}" ` +
-                `and has not decided yet. Do not assume it ran, and do not propose it again.`,
-            },
-          ];
-        }
+  return tools.map(
+    (tool) =>
+      betaZodTool({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.input as never,
+        run: async (input) => {
+          if (tool.confirm) {
+            // The estimator reads local rows only. One that spent to say what
+            // spending costs would also run BEFORE the person consented, which is
+            // the one thing the gate exists to prevent.
+            const estimate = await tool.confirm(input, ctx);
+            sink.onProposal({ toolName: tool.name, input, estimate });
+            return [
+              {
+                type: 'text',
+                text:
+                  `Proposed, not done. The person has been shown an estimate for "${estimate.what}" ` +
+                  `and has not decided yet. Do not assume it ran, and do not propose it again.`,
+              },
+            ];
+          }
 
-        const result = await tool.handler(input, ctx);
-        if (!result.ok) {
-          // A handler returning objections renders as a VISIBLE block listing
-          // them verbatim, and the model is told so it adjusts rather than
-          // retrying blind. Never an apology in place of what happened.
-          return [
-            {
-              type: 'text',
-              text: `This did not work. The reasons, verbatim:\n${result.objections.map((o) => `- ${o}`).join('\n')}`,
-            },
-          ];
-        }
+          const result = await tool.handler(input, ctx);
+          if (!result.ok) {
+            // A handler returning objections renders as a VISIBLE block listing
+            // them verbatim, and the model is told so it adjusts rather than
+            // retrying blind. Never an apology in place of what happened.
+            return [
+              {
+                type: 'text',
+                text: `This did not work. The reasons, verbatim:\n${result.objections.map((o) => `- ${o}`).join('\n')}`,
+              },
+            ];
+          }
 
-        // Every chat-reachable read returns `{ data, widget }` with NO OPT-OUT:
-        // a read that renders nothing is a number entering prose uncited.
-        const payload = result.data as { data?: unknown; widget?: Widget } | undefined;
-        sink.onResult(tool.name, { widget: payload?.widget, data: payload?.data ?? result.data });
+          // Every chat-reachable read returns `{ data, widget }` with NO OPT-OUT:
+          // a read that renders nothing is a number entering prose uncited.
+          const payload = result.data as { data?: unknown; widget?: Widget } | undefined;
+          sink.onResult(tool.name, { widget: payload?.widget, data: payload?.data ?? result.data });
 
-        return JSON.stringify(payload?.data ?? result.data);
-      },
-    }) as BetaRunnableTool<never>,
+          return JSON.stringify(payload?.data ?? result.data);
+        },
+      }) as BetaRunnableTool<never>,
   );
 }
 
@@ -109,7 +110,10 @@ export function toChatTools(
  * It is also the **non-spoofable operator channel**, which matters because chat
  * tool results carry Sayari-sourced third-party text.
  */
-export function buildPageBlock(pageRef: string, viewState: Record<string, unknown>): {
+export function buildPageBlock(
+  pageRef: string,
+  viewState: Record<string, unknown>,
+): {
   role: 'system';
   content: { type: 'text'; text: string }[];
 } {

@@ -50,9 +50,11 @@ function tokensOf(message: BetaMessage): number {
  * refusal fallback can serve a turn from a model we did not choose.
  */
 export function priceOf(message: BetaMessage): number {
-  const price = MODEL_PRICE_USD_PER_MTOK[message.model] ?? MODEL_PRICE_USD_PER_MTOK['claude-opus-5']!;
+  const price =
+    MODEL_PRICE_USD_PER_MTOK[message.model] ?? MODEL_PRICE_USD_PER_MTOK['claude-opus-5']!;
   const u = message.usage;
-  const input = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
+  const input =
+    (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
   return (input / 1_000_000) * price.input + ((u.output_tokens ?? 0) / 1_000_000) * price.output;
 }
 
@@ -100,10 +102,7 @@ function isMessageStream(value: BetaMessage | BetaMessageStream): value is BetaM
  * `for await`, and the SDK's tool runner executes any pending tool calls
  * before yielding the next turn.
  */
-export async function runLoop(
-  params: RunLoopParams,
-  ctx: ModelContext,
-): Promise<RunLoopOutcome> {
+export async function runLoop(params: RunLoopParams, ctx: ModelContext): Promise<RunLoopOutcome> {
   const { runner, controller } = buildRunner(params, ctx);
 
   let turns = 0;
@@ -145,7 +144,14 @@ export async function runLoop(
     if (controller.signal.aborted) {
       // An abort we initiated has already returned its outcome above; reaching
       // here means the abort raced the iterator, so report what we counted.
-      return { status: 'terminated', reason: 'aborted at a ceiling', turns, toolCalls, tokens, toolUses };
+      return {
+        status: 'terminated',
+        reason: 'aborted at a ceiling',
+        turns,
+        toolCalls,
+        tokens,
+        toolUses,
+      };
     }
     // Named loudly: a failure here is something only we can fix, and a silent
     // one reads to the caller as the model mis-shaping its output.
@@ -253,7 +259,10 @@ async function checkCapsAndBudget(
   // what it cannot.
   if (turn.stop_reason === 'refusal') {
     controller.abort();
-    const details = turn.stop_details as { category?: string | null; explanation?: string | null } | null;
+    const details = turn.stop_details as {
+      category?: string | null;
+      explanation?: string | null;
+    } | null;
     return {
       status: 'failed',
       error: 'the model refused, and server-side fallback did not produce an answer',

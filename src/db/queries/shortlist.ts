@@ -70,7 +70,10 @@ export async function loadSupplierSnapshots(
   db: Database,
   args: { programId: string; supplierIds?: string[] | undefined },
 ): Promise<SupplierSnapshot[]> {
-  const suppliers = await db.select().from(t.supplier).where(eq(t.supplier.programId, args.programId));
+  const suppliers = await db
+    .select()
+    .from(t.supplier)
+    .where(eq(t.supplier.programId, args.programId));
   const wanted = args.supplierIds ? new Set(args.supplierIds) : undefined;
 
   const out: SupplierSnapshot[] = [];
@@ -88,7 +91,9 @@ export async function loadSupplierSnapshots(
     const rows = await db
       .select()
       .from(t.criterionValue)
-      .where(and(eq(t.criterionValue.supplierId, supplier.id), eq(t.criterionValue.isCurrent, true)));
+      .where(
+        and(eq(t.criterionValue.supplierId, supplier.id), eq(t.criterionValue.isCurrent, true)),
+      );
 
     const factors = profile
       ? unionRiskFactors([{ source: 'getEntity', risk: profile.risk }]).map((u) => u.factor)
@@ -120,7 +125,10 @@ export async function loadSupplierSnapshots(
       dataConfidenceBand: dataConfidence({
         supplierId: supplier.id,
         displayName: supplier.rosterName ?? supplier.id,
-        match: { status: (match?.status ?? 'needs_review') as never, entityId: match?.entityId ?? undefined },
+        match: {
+          status: (match?.status ?? 'needs_review') as never,
+          entityId: match?.entityId ?? undefined,
+        },
         profile: profile
           ? {
               entityId: profile.id,
@@ -161,7 +169,9 @@ export function scoreSnapshot(
       dataConfidence: snapshot.dataConfidenceBand,
       disqualifyingFactors: snapshot.disqualifyingFactors,
       matchAccepted: snapshot.matchAccepted,
-      hasCategory: categoryId ? snapshot.categoryIds.includes(categoryId) : snapshot.categoryIds.length > 0,
+      hasCategory: categoryId
+        ? snapshot.categoryIds.includes(categoryId)
+        : snapshot.categoryIds.length > 0,
       categoryId,
     },
     weights,
@@ -174,9 +184,11 @@ function matchesFacets(
   facets: Facets,
 ): boolean {
   if (facets.country?.length && !facets.country.includes(entry.country ?? '')) return false;
-  if (facets.matchStatus?.length && !facets.matchStatus.includes(entry.matchStatus ?? '')) return false;
+  if (facets.matchStatus?.length && !facets.matchStatus.includes(entry.matchStatus ?? ''))
+    return false;
   if (facets.scoreBand?.length) {
-    const band = entry.score == null ? 'none' : entry.score >= 80 ? 'high' : entry.score >= 60 ? 'mid' : 'low';
+    const band =
+      entry.score == null ? 'none' : entry.score >= 80 ? 'high' : entry.score >= 60 ? 'mid' : 'low';
     if (!facets.scoreBand.includes(band)) return false;
   }
   return true;
@@ -201,7 +213,9 @@ export async function loadShortlist(
     supplierIds: bidders.map((b) => b.supplierId),
   });
 
-  const scored = snapshots.map((snapshot) => scoreSnapshot(snapshot, args.weights, args.categoryId));
+  const scored = snapshots.map((snapshot) =>
+    scoreSnapshot(snapshot, args.weights, args.categoryId),
+  );
 
   // Ranks are computed over the UNFILTERED set, always.
   const { ranked, excluded } = buildShortlist(scored);

@@ -28,13 +28,17 @@ describe('normaliseRowIds', () => {
 
   it('makes two databases agree on the same request', () => {
     // The same prompt, with rows minted twice. This is the whole point.
-    expect(wireHash(`{"cite":"${A}","match":"${B}"}`)).toBe(wireHash(`{"cite":"${B}","match":"${A}"}`));
+    expect(wireHash(`{"cite":"${A}","match":"${B}"}`)).toBe(
+      wireHash(`{"cite":"${B}","match":"${A}"}`),
+    );
   });
 
   it('does not care whether two instants coincide', () => {
     // A recorded run wrote a row and fetched it a second apart; a replay's
     // pipeline may do both inside one millisecond.
-    expect(wireHash('{"fetchedAt":"2026-08-30T20:28:45.709Z","firstSeenAt":"2026-08-30T20:28:46.001Z"}')).toBe(
+    expect(
+      wireHash('{"fetchedAt":"2026-08-30T20:28:45.709Z","firstSeenAt":"2026-08-30T20:28:46.001Z"}'),
+    ).toBe(
       wireHash('{"fetchedAt":"2026-08-30T20:49:40.840Z","firstSeenAt":"2026-08-30T20:49:40.840Z"}'),
     );
   });
@@ -48,7 +52,9 @@ describe('what the projection still catches', () => {
   it('a Sayari entity id, because it names a different company', () => {
     const text = 'entity CX3012yTGIhgMxcZG6hgnA';
     expect(normaliseRowIds(text)).toBe(text);
-    expect(wireHash('{"e":"CX3012yTGIhgMxcZG6hgnA"}')).not.toBe(wireHash('{"e":"LAtrDml3ulKGjNIIFGSNAg"}'));
+    expect(wireHash('{"e":"CX3012yTGIhgMxcZG6hgnA"}')).not.toBe(
+      wireHash('{"e":"LAtrDml3ulKGjNIIFGSNAg"}'),
+    );
   });
 
   it('a plain date, because a date is content here', () => {

@@ -54,34 +54,42 @@ export const program = pgTable('program', {
  * is at `city` precision — good to roughly ±5 km — and the column exists so the
  * UI can say so rather than imply a surveyed point.
  */
-export const plant = pgTable('plant', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  programId: uuid('program_id')
-    .notNull()
-    .references(() => program.id, { onDelete: 'cascade' }),
-  code: text('code').notNull(),
-  role: text('role').notNull(),
-  city: text('city').notNull(),
-  country: text('country').notNull(),
-  lat: doublePrecision('lat').notNull(),
-  lon: doublePrecision('lon').notNull(),
-  precision: geocodePrecision('precision').notNull(),
-  createdAt: now(),
-}, (t) => [uniqueIndex('plant_program_code_key').on(t.programId, t.code)]);
+export const plant = pgTable(
+  'plant',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    programId: uuid('program_id')
+      .notNull()
+      .references(() => program.id, { onDelete: 'cascade' }),
+    code: text('code').notNull(),
+    role: text('role').notNull(),
+    city: text('city').notNull(),
+    country: text('country').notNull(),
+    lat: doublePrecision('lat').notNull(),
+    lon: doublePrecision('lon').notNull(),
+    precision: geocodePrecision('precision').notNull(),
+    createdAt: now(),
+  },
+  (t) => [uniqueIndex('plant_program_code_key').on(t.programId, t.code)],
+);
 
 // ── Categories and their HS lines ────────────────────────────────────────────
 
 /** One kind of thing a Program buys, carrying the HS codes used for tariffs. */
-export const category = pgTable('category', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  programId: uuid('program_id')
-    .notNull()
-    .references(() => program.id, { onDelete: 'cascade' }),
-  code: text('code').notNull(),
-  name: text('name').notNull(),
-  note: text('note'),
-  createdAt: now(),
-}, (t) => [uniqueIndex('category_program_code_key').on(t.programId, t.code)]);
+export const category = pgTable(
+  'category',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    programId: uuid('program_id')
+      .notNull()
+      .references(() => program.id, { onDelete: 'cascade' }),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    note: text('note'),
+    createdAt: now(),
+  },
+  (t) => [uniqueIndex('category_program_code_key').on(t.programId, t.code)],
+);
 
 /**
  * Several per Category (SPEC §3.1).
@@ -95,21 +103,25 @@ export const category = pgTable('category', {
  * `rate` is the verified MFN rate as a percentage, stored `numeric` so 3.4 is
  * 3.4 and not 3.4000000000000004.
  */
-export const categoryHsLine = pgTable('category_hs_line', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  categoryId: uuid('category_id')
-    .notNull()
-    .references(() => category.id, { onDelete: 'cascade' }),
-  hsCode: text('hs_code').notNull(),
-  label: text('label').notNull(),
-  rate: numeric('rate', { precision: 6, scale: 3 }).notNull(),
-  isDefault: boolean('is_default').notNull().default(false),
-  note: text('note'),
-  createdAt: now(),
-}, (t) => [
-  uniqueIndex('category_hs_line_category_code_key').on(t.categoryId, t.hsCode),
-  index('category_hs_line_category_idx').on(t.categoryId),
-]);
+export const categoryHsLine = pgTable(
+  'category_hs_line',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    categoryId: uuid('category_id')
+      .notNull()
+      .references(() => category.id, { onDelete: 'cascade' }),
+    hsCode: text('hs_code').notNull(),
+    label: text('label').notNull(),
+    rate: numeric('rate', { precision: 6, scale: 3 }).notNull(),
+    isDefault: boolean('is_default').notNull().default(false),
+    note: text('note'),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('category_hs_line_category_code_key').on(t.categoryId, t.hsCode),
+    index('category_hs_line_category_idx').on(t.categoryId),
+  ],
+);
 
 // ── Suppliers ────────────────────────────────────────────────────────────────
 
@@ -121,30 +133,34 @@ export const categoryHsLine = pgTable('category_hs_line', {
  * never imported, so it has no roster name, address or country to carry
  * (SPEC §3.1, §11.3). `origin` is what tells the two apart.
  */
-export const supplier = pgTable('supplier', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  programId: uuid('program_id')
-    .notNull()
-    .references(() => program.id, { onDelete: 'cascade' }),
-  origin: supplierOrigin('origin').notNull(),
-  /** Position in the imported list. Null for a promoted Lead. */
-  rosterIndex: integer('roster_index'),
-  rosterName: text('roster_name'),
-  rosterAddress: text('roster_address'),
-  /** ISO3 as the roster gives it. The *scored* country is the Profile's (SPEC §9.4). */
-  rosterCountry: text('roster_country'),
-  createdAt: now(),
-}, (t) => [
-  index('supplier_program_idx').on(t.programId),
-  uniqueIndex('supplier_program_roster_index_key').on(t.programId, t.rosterIndex),
-  // An imported Supplier came off a list and must carry its row; a discovered
-  // one never did. Making that a CHECK stops a half-populated row existing.
-  check(
-    'supplier_origin_roster_consistency',
-    sql`(${t.origin} = 'imported' AND ${t.rosterName} IS NOT NULL AND ${t.rosterIndex} IS NOT NULL)
+export const supplier = pgTable(
+  'supplier',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    programId: uuid('program_id')
+      .notNull()
+      .references(() => program.id, { onDelete: 'cascade' }),
+    origin: supplierOrigin('origin').notNull(),
+    /** Position in the imported list. Null for a promoted Lead. */
+    rosterIndex: integer('roster_index'),
+    rosterName: text('roster_name'),
+    rosterAddress: text('roster_address'),
+    /** ISO3 as the roster gives it. The *scored* country is the Profile's (SPEC §9.4). */
+    rosterCountry: text('roster_country'),
+    createdAt: now(),
+  },
+  (t) => [
+    index('supplier_program_idx').on(t.programId),
+    uniqueIndex('supplier_program_roster_index_key').on(t.programId, t.rosterIndex),
+    // An imported Supplier came off a list and must carry its row; a discovered
+    // one never did. Making that a CHECK stops a half-populated row existing.
+    check(
+      'supplier_origin_roster_consistency',
+      sql`(${t.origin} = 'imported' AND ${t.rosterName} IS NOT NULL AND ${t.rosterIndex} IS NOT NULL)
         OR (${t.origin} = 'discovered' AND ${t.rosterName} IS NULL AND ${t.rosterIndex} IS NULL)`,
-  ),
-]);
+    ),
+  ],
+);
 
 /**
  * Which Categories a Supplier bids on. Many-to-many, hand-authored, and
@@ -155,17 +171,21 @@ export const supplier = pgTable('supplier', {
  * seed forbids implying a source it does not have. No app behaviour may depend
  * on the mapping being right.
  */
-export const supplierCategory = pgTable('supplier_category', {
-  supplierId: uuid('supplier_id')
-    .notNull()
-    .references(() => supplier.id, { onDelete: 'cascade' }),
-  categoryId: uuid('category_id')
-    .notNull()
-    .references(() => category.id, { onDelete: 'cascade' }),
-}, (t) => [
-  primaryKey({ columns: [t.supplierId, t.categoryId] }),
-  index('supplier_category_category_idx').on(t.categoryId),
-]);
+export const supplierCategory = pgTable(
+  'supplier_category',
+  {
+    supplierId: uuid('supplier_id')
+      .notNull()
+      .references(() => supplier.id, { onDelete: 'cascade' }),
+    categoryId: uuid('category_id')
+      .notNull()
+      .references(() => category.id, { onDelete: 'cascade' }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.supplierId, t.categoryId] }),
+    index('supplier_category_category_idx').on(t.categoryId),
+  ],
+);
 
 // ── Criteria and weights ─────────────────────────────────────────────────────
 
@@ -197,16 +217,20 @@ export const criterion = pgTable('criterion', {
  * gone stale — summing to 101 and 112 — when a Criterion was dropped, and a row
  * would have survived that silently.
  */
-export const programCriterionWeight = pgTable('program_criterion_weight', {
-  programId: uuid('program_id')
-    .notNull()
-    .references(() => program.id, { onDelete: 'cascade' }),
-  criterionKey: text('criterion_key')
-    .notNull()
-    .references(() => criterion.key),
-  weight: numeric('weight', { precision: 6, scale: 3 }).notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [primaryKey({ columns: [t.programId, t.criterionKey] })]);
+export const programCriterionWeight = pgTable(
+  'program_criterion_weight',
+  {
+    programId: uuid('program_id')
+      .notNull()
+      .references(() => program.id, { onDelete: 'cascade' }),
+    criterionKey: text('criterion_key')
+      .notNull()
+      .references(() => criterion.key),
+    weight: numeric('weight', { precision: 6, scale: 3 }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.programId, t.criterionKey] })],
+);
 
 // ── Trade-action flags ───────────────────────────────────────────────────────
 
@@ -226,24 +250,32 @@ export const tariffFlag = pgTable('tariff_flag', {
 });
 
 /** A flag that bites a Category (material- or heading-keyed). */
-export const categoryFlag = pgTable('category_flag', {
-  categoryId: uuid('category_id')
-    .notNull()
-    .references(() => category.id, { onDelete: 'cascade' }),
-  flagKey: text('flag_key')
-    .notNull()
-    .references(() => tariffFlag.key),
-  note: text('note'),
-}, (t) => [primaryKey({ columns: [t.categoryId, t.flagKey] })]);
+export const categoryFlag = pgTable(
+  'category_flag',
+  {
+    categoryId: uuid('category_id')
+      .notNull()
+      .references(() => category.id, { onDelete: 'cascade' }),
+    flagKey: text('flag_key')
+      .notNull()
+      .references(() => tariffFlag.key),
+    note: text('note'),
+  },
+  (t) => [primaryKey({ columns: [t.categoryId, t.flagKey] })],
+);
 
 /** A flag that bites an origin country. */
-export const countryFlag = pgTable('country_flag', {
-  country: text('country').notNull(),
-  flagKey: text('flag_key')
-    .notNull()
-    .references(() => tariffFlag.key),
-  note: text('note'),
-}, (t) => [primaryKey({ columns: [t.country, t.flagKey] })]);
+export const countryFlag = pgTable(
+  'country_flag',
+  {
+    country: text('country').notNull(),
+    flagKey: text('flag_key')
+      .notNull()
+      .references(() => tariffFlag.key),
+    note: text('note'),
+  },
+  (t) => [primaryKey({ columns: [t.country, t.flagKey] })],
+);
 
 // ── Relations ────────────────────────────────────────────────────────────────
 

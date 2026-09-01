@@ -40,54 +40,58 @@ import { category, criterion, program, supplier } from './authored';
  * remaining weights renormalise. A neutral 50 was rejected as a fabricated fact
  * a Citation could point at, which is the worst failure this app has (§9.1).
  */
-export const criterionValue = pgTable('criterion_value', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  supplierId: uuid('supplier_id')
-    .notNull()
-    .references(() => supplier.id, { onDelete: 'cascade' }),
-  programId: uuid('program_id')
-    .notNull()
-    .references(() => program.id, { onDelete: 'cascade' }),
-  categoryId: uuid('category_id').references(() => category.id, { onDelete: 'cascade' }),
-  criterionKey: text('criterion_key')
-    .notNull()
-    .references(() => criterion.key),
+export const criterionValue = pgTable(
+  'criterion_value',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    supplierId: uuid('supplier_id')
+      .notNull()
+      .references(() => supplier.id, { onDelete: 'cascade' }),
+    programId: uuid('program_id')
+      .notNull()
+      .references(() => program.id, { onDelete: 'cascade' }),
+    categoryId: uuid('category_id').references(() => category.id, { onDelete: 'cascade' }),
+    criterionKey: text('criterion_key')
+      .notNull()
+      .references(() => criterion.key),
 
-  /** 0–100, higher is better. Null means `unknown` — the Criterion drops out. */
-  value: doublePrecision('value'),
-  /** Why it is unknown, when it is. Named in the Assessment's `limits` section. */
-  unknownReason: text('unknown_reason'),
+    /** 0–100, higher is better. Null means `unknown` — the Criterion drops out. */
+    value: doublePrecision('value'),
+    /** Why it is unknown, when it is. Named in the Assessment's `limits` section. */
+    unknownReason: text('unknown_reason'),
 
-  /**
-   * The raw inputs the value was computed from — the MFN rate, the kilometre
-   * distance, the list of risk factors and their levels.
-   *
-   * The app **may never render a Criterion number alone** (SPEC §9.1), so this
-   * column is not diagnostic extra: it is what the UI displays beside every
-   * value, and what the number-fidelity validator matches a sentence's figures
-   * against.
-   */
-  rawInputs: jsonb('raw_inputs').notNull(),
-  /** The fixed anchor line, e.g. "0–10% MFN, linear". Rendered with the value. */
-  anchorLine: text('anchor_line').notNull(),
+    /**
+     * The raw inputs the value was computed from — the MFN rate, the kilometre
+     * distance, the list of risk factors and their levels.
+     *
+     * The app **may never render a Criterion number alone** (SPEC §9.1), so this
+     * column is not diagnostic extra: it is what the UI displays beside every
+     * value, and what the number-fidelity validator matches a sentence's figures
+     * against.
+     */
+    rawInputs: jsonb('raw_inputs').notNull(),
+    /** The fixed anchor line, e.g. "0–10% MFN, linear". Rendered with the value. */
+    anchorLine: text('anchor_line').notNull(),
 
-  /** The `criterion_value` this one replaced, if any. */
-  supersedesId: uuid('supersedes_id'),
-  isCurrent: boolean('is_current').notNull().default(true),
+    /** The `criterion_value` this one replaced, if any. */
+    supersedesId: uuid('supersedes_id'),
+    isCurrent: boolean('is_current').notNull().default(true),
 
-  jobId: uuid('job_id'),
-  computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
-  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [
-  index('criterion_value_current_idx').on(
-    t.supplierId,
-    t.programId,
-    t.categoryId,
-    t.criterionKey,
-    t.isCurrent,
-  ),
-  index('criterion_value_program_idx').on(t.programId, t.isCurrent),
-]);
+    jobId: uuid('job_id'),
+    computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('criterion_value_current_idx').on(
+      t.supplierId,
+      t.programId,
+      t.categoryId,
+      t.criterionKey,
+      t.isCurrent,
+    ),
+    index('criterion_value_program_idx').on(t.programId, t.isCurrent),
+  ],
+);
 
 export const criterionValueRelations = relations(criterionValue, ({ one }) => ({
   supplier: one(supplier, { fields: [criterionValue.supplierId], references: [supplier.id] }),

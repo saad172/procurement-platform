@@ -152,10 +152,43 @@ const normalise = (value: string | null): string => (value ? tokens(value).join(
 
 /** Words a legal name carries that say nothing about which company it is. */
 const LEGAL_FORMS = new Set([
-  'ltd', 'limited', 'plc', 'inc', 'incorporated', 'corp', 'corporation', 'llc',
-  'lp', 'sa', 'sab', 'sas', 'sarl', 'spa', 'srl', 'bv', 'nv', 'ab', 'as', 'oy',
-  'kk', 'gmbh', 'ag', 'kg', 'kgaa', 'se', 'mbh', 'co', 'cv', 'sl', 'de', 'the',
-  'and', 'pte', 'pty', 'sdn', 'bhd',
+  'ltd',
+  'limited',
+  'plc',
+  'inc',
+  'incorporated',
+  'corp',
+  'corporation',
+  'llc',
+  'lp',
+  'sa',
+  'sab',
+  'sas',
+  'sarl',
+  'spa',
+  'srl',
+  'bv',
+  'nv',
+  'ab',
+  'as',
+  'oy',
+  'kk',
+  'gmbh',
+  'ag',
+  'kg',
+  'kgaa',
+  'se',
+  'mbh',
+  'co',
+  'cv',
+  'sl',
+  'de',
+  'the',
+  'and',
+  'pte',
+  'pty',
+  'sdn',
+  'bhd',
 ]);
 
 const significant = (name: string): string[] =>
@@ -330,10 +363,11 @@ const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
  * that is the definition of the page — so a green *ok* would be a lie and a red
  * *stop* would suggest something is broken. Something is undecided.
  */
-export function settleAnswer(input: {
-  rosterName: string;
-  candidates: CandidateForChoice[];
-}): { tone: 'you'; said: string; because: string } {
+export function settleAnswer(input: { rosterName: string; candidates: CandidateForChoice[] }): {
+  tone: 'you';
+  said: string;
+  because: string;
+} {
   const n = input.candidates.length;
 
   if (n === 0) {
@@ -378,9 +412,7 @@ export function settleAnswer(input: {
   return { tone: 'you', said, because: parts.join(' ') };
 }
 
-const WORDS = [
-  'No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
-];
+const WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
 
 /** Small counts read as words in a sentence; anything larger stays a numeral. */
 const word = (n: number): string => WORDS[n] ?? String(n);

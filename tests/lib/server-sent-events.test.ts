@@ -38,7 +38,9 @@ describe('parseServerSentEvents', () => {
   });
 
   it('defaults an unnamed event to "message"', () => {
-    expect(parseServerSentEvents('data: hello\n\n').events).toEqual([{ event: 'message', data: 'hello' }]);
+    expect(parseServerSentEvents('data: hello\n\n').events).toEqual([
+      { event: 'message', data: 'hello' },
+    ]);
   });
 
   it('strips exactly one space after the colon', () => {
@@ -52,7 +54,9 @@ describe('parseServerSentEvents', () => {
   });
 
   it('normalises CRLF', () => {
-    expect(parseServerSentEvents('event: a\r\ndata: 1\r\n\r\n').events).toEqual([{ event: 'a', data: '1' }]);
+    expect(parseServerSentEvents('event: a\r\ndata: 1\r\n\r\n').events).toEqual([
+      { event: 'a', data: '1' },
+    ]);
   });
 
   it('ignores a comment-only frame, which carries no data', () => {
@@ -68,9 +72,12 @@ describe('readServerSentEvents', () => {
     for await (const event of readServerSentEvents(chunked(WIRE, size))) seen.push(event);
 
     expect(seen.map((e) => e.event)).toEqual(['open', 'delta', 'delta', 'done']);
-    expect(seen.filter((e) => e.event === 'delta').map((e) => JSON.parse(e.data) as string).join('')).toBe(
-      'Yazaki is a match.',
-    );
+    expect(
+      seen
+        .filter((e) => e.event === 'delta')
+        .map((e) => JSON.parse(e.data) as string)
+        .join(''),
+    ).toBe('Yazaki is a match.');
   });
 
   it('keeps a multi-byte character split across chunks intact', async () => {

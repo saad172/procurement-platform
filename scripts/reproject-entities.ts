@@ -39,7 +39,11 @@ async function main() {
   const db = getDirectDb();
 
   const rows = await db
-    .select({ id: t.upstreamResponse.id, params: t.upstreamResponse.params, body: t.upstreamResponse.body })
+    .select({
+      id: t.upstreamResponse.id,
+      params: t.upstreamResponse.params,
+      body: t.upstreamResponse.body,
+    })
     .from(t.upstreamResponse)
     .where(eq(t.upstreamResponse.endpoint, 'entity.getEntity'))
     .orderBy(asc(t.upstreamResponse.fetchedAt));
@@ -83,19 +87,25 @@ async function main() {
     const was = before.get(entity.id);
     if (!was) continue;
     if (was.psaCount == null && entity.psa_count != null) repaired.psaCount += 1;
-    if (was.relationshipCount == null && entity.relationship_count != null) repaired.relationshipCount += 1;
+    if (was.relationshipCount == null && entity.relationship_count != null)
+      repaired.relationshipCount += 1;
     if (was.sourceCount == null && entity.source_count != null) repaired.sourceCount += 1;
     if (was.country == null && entity.attributes?.address?.data?.[0]?.properties?.country != null) {
       repaired.country += 1;
     }
-    if (was.lei == null && entity.identifiers?.some((i) => /lei/i.test(String((i as { type?: unknown })?.type)))) {
+    if (
+      was.lei == null &&
+      entity.identifiers?.some((i) => /lei/i.test(String((i as { type?: unknown })?.type)))
+    ) {
       repaired.lei += 1;
     }
   }
 
   await closeDirectDb();
 
-  console.log(`${dryRun ? 'would re-project' : 're-projected'} ${projected} stored getEntity bodies`);
+  console.log(
+    `${dryRun ? 'would re-project' : 're-projected'} ${projected} stored getEntity bodies`,
+  );
   if (unparseable > 0) console.log(`  ${unparseable} did not parse and were skipped`);
   console.log(`\ncolumns that were null and the payload can fill:`);
   for (const [column, n] of Object.entries(repaired)) {

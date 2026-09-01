@@ -25,12 +25,21 @@ export function deriveEdgeGroups(
   edges: readonly (typeof t.entityRelationship.$inferSelect)[],
   entityId: string,
 ): EdgeGroup[] {
-  const groups = new Map<string, { type: string; side: 'from' | 'to'; total: number; current: number; former: number }>();
+  const groups = new Map<
+    string,
+    { type: string; side: 'from' | 'to'; total: number; current: number; former: number }
+  >();
 
   for (const edge of edges) {
     const side: 'from' | 'to' = edge.fromEntityId === entityId ? 'from' : 'to';
     const key = `${edge.relationshipType}::${side}`;
-    const group = groups.get(key) ?? { type: edge.relationshipType, side, total: 0, current: 0, former: 0 };
+    const group = groups.get(key) ?? {
+      type: edge.relationshipType,
+      side,
+      total: 0,
+      current: 0,
+      former: 0,
+    };
     group.total += 1;
     if (edge.former) group.former += 1;
     else group.current += 1;
@@ -43,10 +52,19 @@ export function deriveEdgeGroups(
       // Read from THIS company's end, which flips when it is the target.
       const outward = group.side === 'from';
       const reading =
-        direction === 'lateral' ? 'neither owns the other'
-        : (direction === 'downward') === outward ? 'this company is above'
-        : 'this company is below';
-      return { relationshipType: group.type, side: group.side, reading, total: group.total, current: group.current, former: group.former };
+        direction === 'lateral'
+          ? 'neither owns the other'
+          : (direction === 'downward') === outward
+            ? 'this company is above'
+            : 'this company is below';
+      return {
+        relationshipType: group.type,
+        side: group.side,
+        reading,
+        total: group.total,
+        current: group.current,
+        former: group.former,
+      };
     })
     .sort((a, b) => b.total - a.total);
 }

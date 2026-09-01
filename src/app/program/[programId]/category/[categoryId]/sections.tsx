@@ -19,7 +19,15 @@ import { CategoryActions } from './category-actions';
 type Data = NonNullable<Awaited<ReturnType<typeof loadCategoryPage>>>;
 
 /** ── The answers, before any of the apparatus ── */
-export function Answers({ data, programId, categoryId }: { data: Data; programId: string; categoryId: string }) {
+export function Answers({
+  data,
+  programId,
+  categoryId,
+}: {
+  data: Data;
+  programId: string;
+  categoryId: string;
+}) {
   const { answers, shortlist } = data;
   return (
     <>
@@ -70,12 +78,16 @@ export function Shortlist({ data, programId }: { data: Data; programId: string }
   return (
     <>
       <h2>
-        <span className="term">Who is bidding, best fit first<i>Shortlist</i></span>
+        <span className="term">
+          Who is bidding, best fit first<i>Shortlist</i>
+        </span>
         {shortlist.visibleCount !== shortlist.totalCount ? (
           <span className="note">
             {' '}
             showing {shortlist.visibleCount} of {shortlist.totalCount} —{' '}
-            <Link href={`/program/${programId}/category/${categoryId}` as never}>clear the filter</Link>
+            <Link href={`/program/${programId}/category/${categoryId}` as never}>
+              clear the filter
+            </Link>
           </span>
         ) : null}
       </h2>
@@ -94,9 +106,15 @@ export function Shortlist({ data, programId }: { data: Data; programId: string }
           </thead>
           <tbody>
             {shortlist.ranked.length === 0 ? (
-              <tr><td colSpan={6} className="empty">Nothing is ranked here yet.</td></tr>
+              <tr>
+                <td colSpan={6} className="empty">
+                  Nothing is ranked here yet.
+                </td>
+              </tr>
             ) : (
-              shortlist.ranked.map((row) => <ShortlistRow key={row.supplierId} row={row} programId={programId} />)
+              shortlist.ranked.map((row) => (
+                <ShortlistRow key={row.supplierId} row={row} programId={programId} />
+              ))
             )}
           </tbody>
         </table>
@@ -105,13 +123,21 @@ export function Shortlist({ data, programId }: { data: Data; programId: string }
   );
 }
 
-function ShortlistRow({ row, programId }: { row: Data['shortlist']['ranked'][number]; programId: string }) {
+function ShortlistRow({
+  row,
+  programId,
+}: {
+  row: Data['shortlist']['ranked'][number];
+  programId: string;
+}) {
   return (
     <tr className={row.visible ? undefined : 'hidden-by-filter'}>
       {/* The rank is the TRUE one, computed over the unfiltered set. */}
       <td className="num">{row.rank}</td>
       <td>
-        <Link href={`/program/${programId}/supplier/${row.supplierId}` as never}>{row.displayName}</Link>
+        <Link href={`/program/${programId}/supplier/${row.supplierId}` as never}>
+          {row.displayName}
+        </Link>
       </td>
       <td className="num">
         <strong>{row.score?.toFixed(1)}</strong>
@@ -120,7 +146,9 @@ function ShortlistRow({ row, programId }: { row: Data['shortlist']['ranked'][num
         {row.coverage.computed} of {row.coverage.total} criteria
       </td>
       <td>
-        <span className={`badge ${row.dataConfidence === 'strong' ? 'good' : row.dataConfidence === 'thin' ? 'warn' : 'mute'}`}>
+        <span
+          className={`badge ${row.dataConfidence === 'strong' ? 'good' : row.dataConfidence === 'thin' ? 'warn' : 'mute'}`}
+        >
           {row.dataConfidence}
         </span>
       </td>
@@ -190,13 +218,23 @@ export function Excluded({ data, programId }: { data: Data; programId: string })
  * thing twice at two different weights, which is how the verdict came to be
  * invisible in the first place.
  */
-export function ArguedCase({ data, programId, categoryId }: { data: Data; programId: string; categoryId: string }) {
+export function ArguedCase({
+  data,
+  programId,
+  categoryId,
+}: {
+  data: Data;
+  programId: string;
+  categoryId: string;
+}) {
   const { version } = data;
   if (!version) return null;
   return (
     <>
       <h2>
-        <span className="term">The argued case<i>Recommendation</i></span>
+        <span className="term">
+          The argued case<i>Recommendation</i>
+        </span>
       </h2>
       <div className="card">
         <p style={{ margin: 0 }}>
@@ -216,26 +254,40 @@ export function ArguedCase({ data, programId, categoryId }: { data: Data; progra
 }
 
 /** ── The working: the apparatus the ranking was produced with ── */
-export function TheWorking({ data, programId, categoryId }: { data: Data; programId: string; categoryId: string }) {
+export function TheWorking({
+  data,
+  programId,
+  categoryId,
+}: {
+  data: Data;
+  programId: string;
+  categoryId: string;
+}) {
   const { category, program, scoredLine, shortlist, programDefault } = data;
   return (
     <>
       <h2>The working</h2>
       <p className="note" style={{ margin: '-0.4rem 0 0.8rem', maxWidth: '56rem' }}>
-        The duty the tariff criterion scores, and the weights the ranking above was computed
-        with. Move a weight and the order re-reads live.
+        The duty the tariff criterion scores, and the weights the ranking above was computed with.
+        Move a weight and the order re-reads live.
       </p>
       {/*
         The full Actions card, which still owns Discover — only the Recommend
         button moved up into the answer that names it. Both write to the same
         server action; neither is a second copy of the other.
       */}
-      <CategoryActions programId={programId} categoryId={categoryId} shortlistSize={shortlist.ranked.length} />
+      <CategoryActions
+        programId={programId}
+        categoryId={categoryId}
+        shortlistSize={shortlist.ranked.length}
+      />
 
       <div className="grid two" style={{ marginTop: '1rem' }}>
         <section className="card">
           <h3 style={{ marginTop: 0 }}>
-            <span className="term">What it costs to bring in<i>Tariff</i></span>
+            <span className="term">
+              What it costs to bring in<i>Tariff</i>
+            </span>
           </h3>
           <table>
             <tbody>
@@ -244,7 +296,13 @@ export function TheWorking({ data, programId, categoryId }: { data: Data; progra
                   <td className="mono">{line.hsCode}</td>
                   <td>{line.label}</td>
                   <td className="num">{Number(line.rate)}%</td>
-                  <td>{line.isDefault ? <span className="badge">scored</span> : <span className="badge mute">candidate</span>}</td>
+                  <td>
+                    {line.isDefault ? (
+                      <span className="badge">scored</span>
+                    ) : (
+                      <span className="badge mute">candidate</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -255,9 +313,12 @@ export function TheWorking({ data, programId, categoryId }: { data: Data; progra
             not have — so they ride beside the number rather than inside it.
           */}
           <p className="note" style={{ marginTop: '0.6rem' }}>
-            {scoredLine ? `${Number(scoredLine.rate)}% is the general (MFN) rate for ${scoredLine.hsCode} into ${program.importingCountry}. ` : ''}
-            Trade-action surcharges are not folded into it: they key on melt-and-pour origin, regional
-            value content and declared end-use, which are facts this application does not hold.
+            {scoredLine
+              ? `${Number(scoredLine.rate)}% is the general (MFN) rate for ${scoredLine.hsCode} into ${program.importingCountry}. `
+              : ''}
+            Trade-action surcharges are not folded into it: they key on melt-and-pour origin,
+            regional value content and declared end-use, which are facts this application does not
+            hold.
           </p>
           {category.flags.length > 0 ? (
             <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>

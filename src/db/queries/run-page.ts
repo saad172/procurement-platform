@@ -16,10 +16,7 @@ import {
  * A page reads through `db/queries`, never through the schema — see
  * `supplier-page.ts` for why.
  */
-export async function loadRunPage(
-  db: Database,
-  args: { programId: string, runId: string },
-) {
+export async function loadRunPage(db: Database, args: { programId: string; runId: string }) {
   const { programId, runId } = args;
 
   const run = await db.query.run.findFirst({ where: eq(t.run.id, runId) });
@@ -42,7 +39,9 @@ export async function loadRunPage(
   const subjects = await loadSubjects(db, jobs);
 
   // What resuming would actually pay for: the jobs that never finished.
-  const unfinished = jobs.filter((job) => job.state === 'queued' || job.state === 'paused_on_budget').length;
+  const unfinished = jobs.filter(
+    (job) => job.state === 'queued' || job.state === 'paused_on_budget',
+  ).length;
   const actualUsd = await runSpendUsd(db, runId);
   /**
    * Liveness, asked once. It answers two questions on this page: whether queued
@@ -78,7 +77,9 @@ async function loadSubjects(
 ): Promise<Map<string, string>> {
   const names = new Map<string, string>();
 
-  const supplierIds = jobs.filter((job) => job.subjectType === 'supplier').map((job) => job.subjectId);
+  const supplierIds = jobs
+    .filter((job) => job.subjectType === 'supplier')
+    .map((job) => job.subjectId);
   if (supplierIds.length > 0) {
     const rows = await db
       .select({ id: t.supplier.id, name: t.supplier.rosterName })
@@ -87,7 +88,9 @@ async function loadSubjects(
     for (const row of rows) names.set(row.id, row.name ?? row.id.slice(0, 12));
   }
 
-  const categoryIds = jobs.filter((job) => job.subjectType === 'category').map((job) => job.subjectId);
+  const categoryIds = jobs
+    .filter((job) => job.subjectType === 'category')
+    .map((job) => job.subjectId);
   if (categoryIds.length > 0) {
     const rows = await db
       .select({ id: t.category.id, code: t.category.code, name: t.category.name })

@@ -34,12 +34,7 @@ export default async function TracePage({
   const data = await loadJobPage(getPooledDb(), { programId, runId, jobId });
   if (!data) notFound();
 
-  const {
-    job,
-    program,
-    turns,
-    usage,
-  } = data;
+  const { job, program, turns, usage } = data;
   return (
     <main>
       <Breadcrumb
@@ -55,7 +50,10 @@ export default async function TracePage({
         {turns.length} turn{turns.length === 1 ? '' : 's'} ·{' '}
         <span className="badge">{job.traceFidelity}</span>
         {job.traceFidelity === 'timeline' ? (
-          <span className="note"> — a dossier’s context is rewritten server-side, so this cannot drive a replay</span>
+          <span className="note">
+            {' '}
+            — a dossier’s context is rewritten server-side, so this cannot drive a replay
+          </span>
         ) : null}
         {' · '}
         <LiveRefresh
@@ -87,7 +85,9 @@ export default async function TracePage({
 
             {thinking.length > 0 ? (
               <details>
-                <summary className="note">Reasoning — a summary, never the chain of thought</summary>
+                <summary className="note">
+                  Reasoning — a summary, never the chain of thought
+                </summary>
                 <p className="note" style={{ whiteSpace: 'pre-wrap' }}>
                   {thinking.map((b) => b.thinking).join('\n\n')}
                 </p>
@@ -103,7 +103,9 @@ export default async function TracePage({
             {toolUses.length > 0 ? (
               <p style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', margin: '0.5rem 0 0' }}>
                 {toolUses.map((block, index) => (
-                  <span key={index} className="badge">{block.name}</span>
+                  <span key={index} className="badge">
+                    {block.name}
+                  </span>
                 ))}
               </p>
             ) : null}
@@ -124,8 +126,8 @@ export default async function TracePage({
       })}
 
       <p className="note" style={{ marginTop: '1rem' }}>
-        {usage.length} usage event{usage.length === 1 ? '' : 's'} recorded for this job. Usage lives on
-        one table, not on the trace — one number, one home.
+        {usage.length} usage event{usage.length === 1 ? '' : 's'} recorded for this job. Usage lives
+        on one table, not on the trace — one number, one home.
       </p>
     </main>
   );

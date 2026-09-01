@@ -96,7 +96,12 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
     it('hands out different Jobs to concurrent callers rather than blocking', async () => {
       const runId = await openRun(db, { programId, trigger: 'full', supplierCount: 3 });
       for (let i = 0; i < 3; i += 1) {
-        await enqueueJob(db, { runId, kind: 'enrich', subjectType: 'program', subjectId: programId });
+        await enqueueJob(db, {
+          runId,
+          kind: 'enrich',
+          subjectType: 'program',
+          subjectId: programId,
+        });
       }
       const claims = await Promise.all([dequeueJob(db), dequeueJob(db), dequeueJob(db)]);
       const ids = claims.filter(Boolean).map((j) => j!.id);
@@ -105,7 +110,12 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
 
     it('takes the oldest queued Job first', async () => {
       const runId = await openRun(db, { programId, trigger: 'full', supplierCount: 2 });
-      const first = await enqueueJob(db, { runId, kind: 'enrich', subjectType: 'program', subjectId: programId });
+      const first = await enqueueJob(db, {
+        runId,
+        kind: 'enrich',
+        subjectType: 'program',
+        subjectId: programId,
+      });
       await new Promise((r) => setTimeout(r, 5));
       await enqueueJob(db, { runId, kind: 'assess', subjectType: 'program', subjectId: programId });
       const claimed = await dequeueJob(db);
@@ -117,10 +127,23 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
     it('a terminated Job does NOT fail its run', async () => {
       // The run continues and reports "N jobs stopped at their ceiling".
       const runId = await openRun(db, { programId, trigger: 'full', supplierCount: 2 });
-      const a = await enqueueJob(db, { runId, kind: 'resolve', subjectType: 'program', subjectId: programId });
-      const b = await enqueueJob(db, { runId, kind: 'resolve', subjectType: 'program', subjectId: programId });
+      const a = await enqueueJob(db, {
+        runId,
+        kind: 'resolve',
+        subjectType: 'program',
+        subjectId: programId,
+      });
+      const b = await enqueueJob(db, {
+        runId,
+        kind: 'resolve',
+        subjectType: 'program',
+        subjectId: programId,
+      });
 
-      await finishJob(db, a, { state: 'terminated', reason: 'stopped at its 60-tool-call ceiling' });
+      await finishJob(db, a, {
+        state: 'terminated',
+        reason: 'stopped at its 60-tool-call ceiling',
+      });
       await finishJob(db, b, { state: 'done' });
       await settleRunState(db, runId);
 
@@ -132,7 +155,12 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
 
     it('a failed Job DOES fail its run', async () => {
       const runId = await openRun(db, { programId, trigger: 'full', supplierCount: 1 });
-      const a = await enqueueJob(db, { runId, kind: 'resolve', subjectType: 'program', subjectId: programId });
+      const a = await enqueueJob(db, {
+        runId,
+        kind: 'resolve',
+        subjectType: 'program',
+        subjectId: programId,
+      });
       await finishJob(db, a, { state: 'failed', error: 'the model refused' });
       await settleRunState(db, runId);
       const run = await db.query.run.findFirst({ where: eq(t.run.id, runId) });
@@ -141,7 +169,12 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
 
     it('carries the Job caps its kind declares', async () => {
       const runId = await openRun(db, { programId, trigger: 'full', supplierCount: 1 });
-      const id = await enqueueJob(db, { runId, kind: 'recommend', subjectType: 'program', subjectId: programId });
+      const id = await enqueueJob(db, {
+        runId,
+        kind: 'recommend',
+        subjectType: 'program',
+        subjectId: programId,
+      });
       const job = await db.query.job.findFirst({ where: eq(t.job.id, id) });
       expect(job!.toolCallCap).toBe(60);
       expect(job!.tokenCap).toBe(900_000);
@@ -149,7 +182,12 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
 
     it('marks a Dossier’s Trace as `timeline`, which cannot drive a replay', async () => {
       const runId = await openRun(db, { programId, trigger: 'dossier', supplierCount: 1 });
-      const id = await enqueueJob(db, { runId, kind: 'dossier', subjectType: 'program', subjectId: programId });
+      const id = await enqueueJob(db, {
+        runId,
+        kind: 'dossier',
+        subjectType: 'program',
+        subjectId: programId,
+      });
       const job = await db.query.job.findFirst({ where: eq(t.job.id, id) });
       expect(job!.traceFidelity).toBe('timeline');
     });
@@ -167,7 +205,8 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
        * this test to a figure the spec always said would be re-fit.
        */
       const outputPricePerMTok = MODEL_PRICE_USD_PER_MTOK['claude-opus-5']!.output;
-      const outputTokens = Math.ceil((RUN_BUDGET_USD_PER_SUPPLIER / outputPricePerMTok) * 1e6) + 1e5;
+      const outputTokens =
+        Math.ceil((RUN_BUDGET_USD_PER_SUPPLIER / outputPricePerMTok) * 1e6) + 1e5;
       await testSql()`
         INSERT INTO usage_event (run_id, endpoint, ms, outcome, model, input_tokens, output_tokens)
         VALUES (${runId}, 'messages.toolRunner', 10, 'ok', 'claude-opus-5', 0, ${outputTokens})`;
@@ -181,7 +220,9 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
         pollIntervalMs: 1,
         handlers: { assess: async () => ({ state: 'done' as const }) },
         shouldStop: () => idled > 0,
-        onIdle: () => { idled += 1; },
+        onIdle: () => {
+          idled += 1;
+        },
       });
 
       const jobs = await db.select().from(t.job).where(eq(t.job.runId, runId));
@@ -192,8 +233,18 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
       // A flat step would be arbitrary; a free-text box would hole the
       // code-constant discipline.
       const runId = await openRun(db, { programId, trigger: 'full', supplierCount: 10 });
-      const a = await enqueueJob(db, { runId, kind: 'assess', subjectType: 'program', subjectId: programId });
-      const b = await enqueueJob(db, { runId, kind: 'assess', subjectType: 'program', subjectId: programId });
+      const a = await enqueueJob(db, {
+        runId,
+        kind: 'assess',
+        subjectType: 'program',
+        subjectId: programId,
+      });
+      const b = await enqueueJob(db, {
+        runId,
+        kind: 'assess',
+        subjectType: 'program',
+        subjectId: programId,
+      });
       await finishJob(db, a, { state: 'paused_on_budget' });
       await finishJob(db, b, { state: 'paused_on_budget' });
 
@@ -226,7 +277,9 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
           },
         },
         shouldStop: () => idled > 0,
-        onIdle: () => { idled += 1; },
+        onIdle: () => {
+          idled += 1;
+        },
       });
 
       expect(seen).toHaveLength(1);
@@ -242,9 +295,15 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
       await runWorker(db, {
         concurrency: 1,
         pollIntervalMs: 1,
-        handlers: { enrich: async () => { throw new Error('upstream exploded'); } },
+        handlers: {
+          enrich: async () => {
+            throw new Error('upstream exploded');
+          },
+        },
         shouldStop: () => idled > 0,
-        onIdle: () => { idled += 1; },
+        onIdle: () => {
+          idled += 1;
+        },
       });
 
       const jobs = await db.select().from(t.job).where(eq(t.job.runId, runId));
@@ -254,14 +313,21 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
 
     it('fails a Job with no registered handler rather than silently dropping it', async () => {
       const runId = await openRun(db, { programId, trigger: 'full', supplierCount: 1 });
-      await enqueueJob(db, { runId, kind: 'discover', subjectType: 'program', subjectId: programId });
+      await enqueueJob(db, {
+        runId,
+        kind: 'discover',
+        subjectType: 'program',
+        subjectId: programId,
+      });
       let idled = 0;
       await runWorker(db, {
         concurrency: 1,
         pollIntervalMs: 1,
         handlers: {},
         shouldStop: () => idled > 0,
-        onIdle: () => { idled += 1; },
+        onIdle: () => {
+          idled += 1;
+        },
       });
       const jobs = await db.select().from(t.job).where(eq(t.job.runId, runId));
       expect(jobs[0]!.state).toBe('failed');
@@ -292,7 +358,9 @@ describe('a draft that never passes the code checks', () => {
       }),
       // Never satisfied, the way a dangling citation never becomes valid by
       // being asked about again.
-      validate: async () => [{ check: 'citations', message: 'points at a row that does not exist' }],
+      validate: async () => [
+        { check: 'citations', message: 'points at a row that does not exist' },
+      ],
       evaluate: async () => {
         throw new Error('the evaluator must not run on a draft the code rejected');
       },
@@ -312,7 +380,12 @@ describe('a draft that never passes the code checks', () => {
     const outcome = await runProposerEvaluatorLoop<{ text: string }>({
       propose: async () => ({ kind: 'draft', draft: { text: 'a draft' }, text: '' }),
       validate: async () => [],
-      evaluate: async () => ({ kind: 'objections', objections: ['I would weigh this differently'], rubric: {}, text: '' }),
+      evaluate: async () => ({
+        kind: 'objections',
+        objections: ['I would weigh this differently'],
+        rubric: {},
+        text: '',
+      }),
     });
 
     expect(outcome.evaluatorOutcome).toBe('published_with_objections');
@@ -346,7 +419,10 @@ describe('a loop failure is reported as itself', () => {
 
   it('still blames the draft when the draft really was mis-shaped', async () => {
     const outcome = await runProposerEvaluatorLoop<{ text: string }>({
-      propose: async () => ({ kind: 'refinement_failure', message: 'sentences: expected at least 1' }),
+      propose: async () => ({
+        kind: 'refinement_failure',
+        message: 'sentences: expected at least 1',
+      }),
       validate: async () => [],
       evaluate: async () => {
         throw new Error('the evaluator must not run when no draft was produced');

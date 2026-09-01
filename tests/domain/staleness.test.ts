@@ -57,9 +57,7 @@ describe('inputs moved — the causal indicator', () => {
       citedSubjects: new Set(),
     });
     expect(s.inputsMoved.lit).toBe(true);
-    expect(s.inputsMoved.changes).toEqual([
-      { path: 'weights.compliance_risk', from: 28, to: 40 },
-    ]);
+    expect(s.inputsMoved.changes).toEqual([{ path: 'weights.compliance_risk', from: 28, to: 40 }]);
   });
 
   it('lights when the Shortlist order moved', () => {

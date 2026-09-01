@@ -179,61 +179,64 @@ describe.skipIf(!up)(`database constraints (needs: ${START_TEST_DB_HINT})`, () =
  * repeated, and it is the reason the row count and `explored_count` cannot
  * silently drift apart again.
  */
-describe.skipIf(!up)(`one family_member row per (root, member) (needs: ${START_TEST_DB_HINT})`, () => {
-  const ROOT = 'family-constraint-root';
-  const MEMBER = 'family-constraint-member';
-  const RESPONSE = '66666666-6666-6666-6666-666666666666';
-  const ENRICHMENT_A = '77777777-7777-7777-7777-777777777777';
-  const ENRICHMENT_B = '88888888-8888-8888-8888-888888888888';
+describe.skipIf(!up)(
+  `one family_member row per (root, member) (needs: ${START_TEST_DB_HINT})`,
+  () => {
+    const ROOT = 'family-constraint-root';
+    const MEMBER = 'family-constraint-member';
+    const RESPONSE = '66666666-6666-6666-6666-666666666666';
+    const ENRICHMENT_A = '77777777-7777-7777-7777-777777777777';
+    const ENRICHMENT_B = '88888888-8888-8888-8888-888888888888';
 
-  beforeAll(async () => {
-    // The block above closes the client in its own `afterAll`, so this reopens.
-    await getTestDb();
-    const sql = testSql();
-    await sql`DELETE FROM entity WHERE id IN (${ROOT}, ${MEMBER})`;
-    await sql`INSERT INTO entity (id, label) VALUES (${ROOT}, 'Root'), (${MEMBER}, 'Member')`;
-    await sql`INSERT INTO upstream_response (id, source, endpoint, params_hash, params, body, body_hash, via)
+    beforeAll(async () => {
+      // The block above closes the client in its own `afterAll`, so this reopens.
+      await getTestDb();
+      const sql = testSql();
+      await sql`DELETE FROM entity WHERE id IN (${ROOT}, ${MEMBER})`;
+      await sql`INSERT INTO entity (id, label) VALUES (${ROOT}, 'Root'), (${MEMBER}, 'Member')`;
+      await sql`INSERT INTO upstream_response (id, source, endpoint, params_hash, params, body, body_hash, via)
               VALUES (${RESPONSE}, 'sayari', 'traversal.ownership', 'h', '{}'::jsonb, '{}'::jsonb, 'bh', 'sdk')`;
-    // Two enrichments of the same Profile: the exact shape that doubled the
-    // family, since re-enrichment is a button a person can press twice.
-    for (const id of [ENRICHMENT_A, ENRICHMENT_B]) {
-      await sql`INSERT INTO enrichment (id, source, subject_kind, subject_key, request_params, upstream_response_id)
+      // Two enrichments of the same Profile: the exact shape that doubled the
+      // family, since re-enrichment is a button a person can press twice.
+      for (const id of [ENRICHMENT_A, ENRICHMENT_B]) {
+        await sql`INSERT INTO enrichment (id, source, subject_kind, subject_key, request_params, upstream_response_id)
                 VALUES (${id}, 'sayari_ownership_family', 'entity', ${ROOT}, '{}'::jsonb, ${RESPONSE})`;
-    }
-  });
+      }
+    });
 
-  afterAll(async () => {
-    if (!up) return;
-    const sql = testSql();
-    await sql`DELETE FROM enrichment WHERE id IN (${ENRICHMENT_A}, ${ENRICHMENT_B})`;
-    await sql`DELETE FROM upstream_response WHERE id = ${RESPONSE}`;
-    await sql`DELETE FROM entity WHERE id IN (${ROOT}, ${MEMBER})`;
-    await closeTestDb();
-  });
+    afterAll(async () => {
+      if (!up) return;
+      const sql = testSql();
+      await sql`DELETE FROM enrichment WHERE id IN (${ENRICHMENT_A}, ${ENRICHMENT_B})`;
+      await sql`DELETE FROM upstream_response WHERE id = ${RESPONSE}`;
+      await sql`DELETE FROM entity WHERE id IN (${ROOT}, ${MEMBER})`;
+      await closeTestDb();
+    });
 
-  it('refuses the same member twice under the same root', async () => {
-    const sql = testSql();
-    await sql`INSERT INTO family_member (enrichment_id, root_entity_id, member_entity_id, hop_depth, explored_count)
+    it('refuses the same member twice under the same root', async () => {
+      const sql = testSql();
+      await sql`INSERT INTO family_member (enrichment_id, root_entity_id, member_entity_id, hop_depth, explored_count)
               VALUES (${ENRICHMENT_A}, ${ROOT}, ${MEMBER}, 1, 50)`;
-    await expect(
-      sql`INSERT INTO family_member (enrichment_id, root_entity_id, member_entity_id, hop_depth, explored_count)
+      await expect(
+        sql`INSERT INTO family_member (enrichment_id, root_entity_id, member_entity_id, hop_depth, explored_count)
           VALUES (${ENRICHMENT_B}, ${ROOT}, ${MEMBER}, 1, 50)`,
-    ).rejects.toThrow(/family_member_root_member_key/);
-  });
+      ).rejects.toThrow(/family_member_root_member_key/);
+    });
 
-  it('lets a second read refresh the row it already has', async () => {
-    // What `enrichFamily` now does: the pair is the identity, and a re-read is
-    // newer evidence about the same pair rather than a new fact.
-    const sql = testSql();
-    await sql`INSERT INTO family_member (enrichment_id, root_entity_id, member_entity_id, hop_depth, explored_count)
+    it('lets a second read refresh the row it already has', async () => {
+      // What `enrichFamily` now does: the pair is the identity, and a re-read is
+      // newer evidence about the same pair rather than a new fact.
+      const sql = testSql();
+      await sql`INSERT INTO family_member (enrichment_id, root_entity_id, member_entity_id, hop_depth, explored_count)
               VALUES (${ENRICHMENT_B}, ${ROOT}, ${MEMBER}, 2, 37)
               ON CONFLICT (root_entity_id, member_entity_id)
               DO UPDATE SET enrichment_id = EXCLUDED.enrichment_id,
                             hop_depth = EXCLUDED.hop_depth,
                             explored_count = EXCLUDED.explored_count`;
-    const rows = await sql`SELECT hop_depth, explored_count FROM family_member
+      const rows = await sql`SELECT hop_depth, explored_count FROM family_member
                            WHERE root_entity_id = ${ROOT} AND member_entity_id = ${MEMBER}`;
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ hop_depth: 2, explored_count: 37 });
-  });
-});
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ hop_depth: 2, explored_count: 37 });
+    });
+  },
+);

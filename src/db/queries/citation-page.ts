@@ -11,7 +11,7 @@ import { loadSentenceEvidence } from '@/db/queries/citations';
  */
 export async function loadCitationPage(
   db: Database,
-  args: { programId: string, sentenceId: string },
+  args: { programId: string; sentenceId: string },
 ) {
   const { programId, sentenceId } = args;
 

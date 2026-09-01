@@ -58,7 +58,14 @@ export function buildManifest(toolDigests: Partial<Record<LoopName, string>>): L
       systemHash,
       toolDigestHash,
       hash: createHash('sha256')
-        .update(JSON.stringify({ model: settings.model, effort: settings.effort, systemHash, toolDigestHash }))
+        .update(
+          JSON.stringify({
+            model: settings.model,
+            effort: settings.effort,
+            systemHash,
+            toolDigestHash,
+          }),
+        )
         .digest('hex'),
     };
   });
@@ -79,10 +86,15 @@ const LEGAL_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
  * `system`, every effort is in the legal set, and no `system` is empty.
  */
 export function assertModelConfigIsLegal(): void {
-  for (const [loop, settings] of Object.entries(LOOP_SETTINGS) as [LoopName, typeof LOOP_SETTINGS[LoopName]][]) {
+  for (const [loop, settings] of Object.entries(LOOP_SETTINGS) as [
+    LoopName,
+    (typeof LOOP_SETTINGS)[LoopName],
+  ][]) {
     if (!settings.model) throw new Error(`Loop "${loop}" has no model.`);
     if (!LEGAL_EFFORTS.has(settings.effort)) {
-      throw new Error(`Loop "${loop}" has effort "${settings.effort}", which is not one of ${[...LEGAL_EFFORTS].join(', ')}.`);
+      throw new Error(
+        `Loop "${loop}" has effort "${settings.effort}", which is not one of ${[...LEGAL_EFFORTS].join(', ')}.`,
+      );
     }
     const system = LOOP_SYSTEMS[loop];
     if (!system || system.trim().length === 0) {

@@ -38,7 +38,9 @@ export type CategoryAnswerInput = {
   /** Rows that reach no ranking, and why. */
   excluded: { reason: 'no_match' | 'no_category' }[];
   /** The published recommendation for this category, when there is one. */
-  recommendation: { versionN: number; evaluatorOutcome: 'passed' | 'published_with_objections' } | undefined;
+  recommendation:
+    | { versionN: number; evaluatorOutcome: 'passed' | 'published_with_objections' }
+    | undefined;
   recommendationHref: string;
   compareHref: string | null;
   supplierHref: (supplierId: string) => string;
@@ -97,7 +99,9 @@ function leadAnswer(input: CategoryAnswerInput): CategoryAnswer | null {
       tone: 'ok',
       said: `${leader.displayName} leads ${categoryName}, and it is the only supplier with a score.`,
       because: `Nothing else on this category has enough measured to rank, so ${leader.displayName} is first by default rather than by comparison. One scored bidder is a shortlist of one, which is a weaker thing than it looks.`,
-      actions: [{ label: `Open ${leader.displayName}`, href: input.supplierHref(leader.supplierId) }],
+      actions: [
+        { label: `Open ${leader.displayName}`, href: input.supplierHref(leader.supplierId) },
+      ],
     };
   }
 

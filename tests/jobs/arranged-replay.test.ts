@@ -41,7 +41,12 @@ async function arrange(fixtureName: string, rosterName: string) {
 
   const [run] = await db
     .insert(t.run)
-    .values({ programId: TEST_PROGRAM.id, state: 'running', trigger: 'full', subjectLabel: fixtureName })
+    .values({
+      programId: TEST_PROGRAM.id,
+      state: 'running',
+      trigger: 'full',
+      subjectLabel: fixtureName,
+    })
     .returning({ id: t.run.id });
   const jobId = await openJob(db, run!.id, 'resolve', supplier.id);
   const upstream = replayUpstream(db, run!.id, jobId);
@@ -51,7 +56,14 @@ async function arrange(fixtureName: string, rosterName: string) {
       db,
       upstream,
       round: {
-        toolCtx: { db, upstream, meter: { addModelTokens: () => {} }, runId: run!.id, jobId, surface: 'job' },
+        toolCtx: {
+          db,
+          upstream,
+          meter: { addModelTokens: () => {} },
+          runId: run!.id,
+          jobId,
+          surface: 'job',
+        },
         modelCtx: {
           db,
           runId: run!.id,
@@ -70,7 +82,10 @@ async function arrange(fixtureName: string, rosterName: string) {
 describe('resolve/not-found replays', () => {
   it('settles not_found, with no entity and no candidate in the roster country', async () => {
     if (!(await testDatabaseIsUp())) return;
-    const { db, supplier, outcome } = await arrange('resolve/not-found', 'Nordhavn Präzisionsteile Vertriebsgesellschaft');
+    const { db, supplier, outcome } = await arrange(
+      'resolve/not-found',
+      'Nordhavn Präzisionsteile Vertriebsgesellschaft',
+    );
 
     expect(outcome.status).toBe('not_found');
     expect(outcome.entityId).toBeNull();

@@ -70,15 +70,16 @@ export function Argument({ data, programId }: { data: Data; programId: string })
       <h2>The argument</h2>
       <div className="card">
         {sentences.length === 0 ? (
-          <p className="empty" style={{ margin: 0 }}>This version published no prose.</p>
+          <p className="empty" style={{ margin: 0 }}>
+            This version published no prose.
+          </p>
         ) : (
           groupBySection(sentences).map(([section, rows]) => (
             <section key={section} style={{ marginTop: '1rem' }}>
               <h3 style={{ marginTop: 0 }}>{section.replace(/_/g, ' ')}</h3>
               {rows.map((sentence) => (
                 <p key={sentence.id} style={{ margin: '0 0 0.5rem' }}>
-                  {sentence.text}{' '}
-                  {/* The same hop as an Assessment's, into the same page. */}
+                  {sentence.text} {/* The same hop as an Assessment's, into the same page. */}
                   <Link
                     href={`/program/${programId}/citation/${sentence.id}` as never}
                     title="Go to the evidence"
@@ -110,8 +111,8 @@ export function Dissent({ data }: { data: Data }) {
       <h2>Dissent</h2>
       <div className="card">
         <p className="note">
-          Nobody writes this section. It is what the disagreement left behind — the
-          objections this version published without resolving.
+          Nobody writes this section. It is what the disagreement left behind — the objections this
+          version published without resolving.
         </p>
         {dissent
           .filter((round) => round.objection)

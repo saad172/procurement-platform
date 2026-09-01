@@ -81,14 +81,18 @@ export function SharedChecks({ data }: { data: Data }) {
       <h2>What the eight checks already settled</h2>
       <p className="note" style={{ margin: '-0.4rem 0 0.6rem', maxWidth: '56rem' }}>
         Stated once, above the list, because {shared.length === 1 ? 'it is' : 'they are'} true of
-        every record below. Repeating {shared.length === 1 ? 'it' : 'them'} on each row is what
-        made the old screen unreadable.
+        every record below. Repeating {shared.length === 1 ? 'it' : 'them'} on each row is what made
+        the old screen unreadable.
       </p>
       <Legend />
       <div className="card" style={{ marginBottom: '1.4rem' }}>
         <div className="vs">
           {shared.map((verdict) => (
-            <span key={verdict.discriminator} className={`v ${tone(verdict.verdict)}`} title={verdict.reasoning}>
+            <span
+              key={verdict.discriminator}
+              className={`v ${tone(verdict.verdict)}`}
+              title={verdict.reasoning}
+            >
               <i aria-hidden="true">{glyph(verdict.verdict)}</i> {label(verdict.discriminator)}
               <span className="vh"> — {verdict.verdict}</span>
             </span>
@@ -117,14 +121,16 @@ export function SettleForm({ data, programId }: { data: Data; programId: string 
 
         {groups.map((group) =>
           group.kind === 'listed' ? (
-            group.choices.map((choice) => <Pick key={choice.entityId} choice={choice} programId={programId} />)
+            group.choices.map((choice) => (
+              <Pick key={choice.entityId} choice={choice} programId={programId} />
+            ))
           ) : (
             <details className="same" key={group.summary} open>
               <summary>{group.summary}</summary>
               <p className="note" style={{ margin: '0 0 0.6rem' }}>
                 Sayari links none of these by <span className="mono">possibly_same_as</span>, so the
-                app cannot call them Twins — it can only say it cannot separate them. Settling on one
-                leaves{' '}
+                app cannot call them Twins — it can only say it cannot separate them. Settling on
+                one leaves{' '}
                 {group.choices.length === 2
                   ? 'the other unreferenced'
                   : `the other ${group.choices.length - 1} unreferenced`}
@@ -338,7 +344,10 @@ function Pick({ choice, programId }: { choice: Choice; programId: string }) {
 function Verdict({ verdict }: { verdict: ChoiceVerdict }) {
   if (verdict.disputed) {
     return (
-      <span className="v split" title={verdict.reports.map((r) => `${r.reportedBy}: ${r.reasoning}`).join(' · ')}>
+      <span
+        className="v split"
+        title={verdict.reports.map((r) => `${r.reportedBy}: ${r.reasoning}`).join(' · ')}
+      >
         <i aria-hidden="true">!</i> {label(verdict.discriminator)} — read two ways
         <span className="vh">
           {verdict.reports.map((r) => ` ${r.reportedBy} says ${r.verdict}.`).join('')}
@@ -347,7 +356,10 @@ function Verdict({ verdict }: { verdict: ChoiceVerdict }) {
     );
   }
   return (
-    <span className={`v ${tone(verdict.verdict)}`} title={`${verdict.reportedBy.join(', ')}: ${verdict.reasoning}`}>
+    <span
+      className={`v ${tone(verdict.verdict)}`}
+      title={`${verdict.reportedBy.join(', ')}: ${verdict.reasoning}`}
+    >
       <i aria-hidden="true">{glyph(verdict.verdict)}</i> {label(verdict.discriminator)}
       <span className="vh"> — {verdict.verdict}</span>
     </span>
@@ -375,5 +387,6 @@ function Legend() {
 }
 
 const glyph = (verdict: string) => (verdict === 'pass' ? '✓' : verdict === 'fail' ? '✗' : '?');
-const tone = (verdict: string) => (verdict === 'pass' ? 'pass' : verdict === 'fail' ? 'fail' : 'dunno');
+const tone = (verdict: string) =>
+  verdict === 'pass' ? 'pass' : verdict === 'fail' ? 'fail' : 'dunno';
 const label = (discriminator: string) => discriminator.replace(/_/g, ' ');

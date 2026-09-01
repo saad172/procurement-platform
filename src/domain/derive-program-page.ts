@@ -45,7 +45,15 @@ export function deriveSupplierPoints(args: {
   geocodePoints: readonly { supplierKey: string; lat: number | null; lon: number | null }[];
   plants: readonly PlantPoint[];
 }): {
-  supplierPoints: { id: string; name: string; country: string; status: string; assessed: boolean; lat: number; lon: number }[];
+  supplierPoints: {
+    id: string;
+    name: string;
+    country: string;
+    status: string;
+    assessed: boolean;
+    lat: number;
+    lon: number;
+  }[];
   bandBySupplier: Map<string, string>;
 } {
   const { suppliers, matchBySupplier, assessedIds, profilePoints, geocodePoints, plants } = args;
@@ -82,7 +90,9 @@ export function deriveSupplierPoints(args: {
 }
 
 /** How many Suppliers bid on each Category, for the ledger's "Bidders" column. */
-export function deriveBiddersByCategory(bidderCountRows: readonly { categoryId: string }[]): Map<string, number> {
+export function deriveBiddersByCategory(
+  bidderCountRows: readonly { categoryId: string }[],
+): Map<string, number> {
   const biddersByCategory = new Map<string, number>();
   for (const row of bidderCountRows) {
     biddersByCategory.set(row.categoryId, (biddersByCategory.get(row.categoryId) ?? 0) + 1);
@@ -140,8 +150,14 @@ type RecommendJobRow = {
  * Last attempt wins; it is only ever read for a Category with no published
  * version, so a `done` Job needs no special case.
  */
-export function deriveCategoryAttempts(recommendJobs: readonly RecommendJobRow[], programId: string) {
-  const attemptByCategory = new Map<string, { outcome: 'in_flight' | 'refused' | 'broke'; href: string }>();
+export function deriveCategoryAttempts(
+  recommendJobs: readonly RecommendJobRow[],
+  programId: string,
+) {
+  const attemptByCategory = new Map<
+    string,
+    { outcome: 'in_flight' | 'refused' | 'broke'; href: string }
+  >();
   for (const job of recommendJobs) {
     const href = `/program/${programId}/runs/${job.runId}/job/${job.jobId}`;
     if (job.state === 'queued' || job.state === 'running' || job.state === 'paused_on_budget') {

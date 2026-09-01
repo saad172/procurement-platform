@@ -1,7 +1,12 @@
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod/v4';
 import * as t from '@/db/schema';
-import { DEEP_TRAVERSAL_MAX_HOPS, DEEP_TRAVERSAL_MAX_NODES, DISCOVER_CLASSIFY_TOP_N, DOSSIER_BUDGET_USD } from '@/config/constants';
+import {
+  DEEP_TRAVERSAL_MAX_HOPS,
+  DEEP_TRAVERSAL_MAX_NODES,
+  DISCOVER_CLASSIFY_TOP_N,
+  DOSSIER_BUDGET_USD,
+} from '@/config/constants';
 import { enqueueJob, openRun } from '@/jobs/runs';
 import { defineTool, type Estimate, type ToolContext } from '../define';
 
@@ -43,14 +48,17 @@ const FILTER_CAVEAT =
 
 const enqueueEnrichment = defineTool({
   name: 'enqueue_enrichment',
-  description: 'Re-fetch the six enrichment sources for one supplier, and re-compute its criterion values.',
+  description:
+    'Re-fetch the six enrichment sources for one supplier, and re-compute its criterion values.',
   input: z.object({ supplierId: z.string(), refresh: z.boolean().optional() }),
   surfaces: ['chat'],
   effect: 'write',
   spends: ['sayari', 'external'],
   latency: 'fast',
   confirm: async (input, ctx): Promise<Estimate> => {
-    const match = await ctx.db.query.match.findFirst({ where: eq(t.match.supplierId, input.supplierId) });
+    const match = await ctx.db.query.match.findFirst({
+      where: eq(t.match.supplierId, input.supplierId),
+    });
     const cached = !input.refresh && (await cachedUpstreamFor(ctx, match?.entityId ?? null));
     return {
       what: 'Fetch this supplier’s six enrichment sources and recompute its criterion values.',
@@ -63,7 +71,9 @@ const enqueueEnrichment = defineTool({
     };
   },
   handler: async (input, ctx) => {
-    const supplier = await ctx.db.query.supplier.findFirst({ where: eq(t.supplier.id, input.supplierId) });
+    const supplier = await ctx.db.query.supplier.findFirst({
+      where: eq(t.supplier.id, input.supplierId),
+    });
     if (!supplier) return { ok: false, objections: [`no supplier with id ${input.supplierId}`] };
     // A new Run, so every amount spent is attributable — the knowingly-accepted
     // cost is a longer Runs list.
@@ -73,7 +83,12 @@ const enqueueEnrichment = defineTool({
       subjectLabel: `enrich ${supplier.rosterName ?? supplier.id}`,
       supplierCount: 1,
     });
-    const jobId = await enqueueJob(ctx.db, { runId, kind: 'enrich', subjectType: 'supplier', subjectId: supplier.id });
+    const jobId = await enqueueJob(ctx.db, {
+      runId,
+      kind: 'enrich',
+      subjectType: 'supplier',
+      subjectId: supplier.id,
+    });
     return { ok: true, data: { runId, jobId } };
   },
 });
@@ -89,11 +104,14 @@ const enqueueReassess = defineTool({
   confirm: async (): Promise<Estimate> => ({
     what: 'Re-run this supplier’s assessment.',
     spends: { modelTokens: { min: 40_000, max: 450_000 }, usd: { min: 0.3, max: 3.0 } },
-    basis: 'Up to three proposer/evaluator rounds. The upper figure assumes it runs to the round ceiling; most do not.',
+    basis:
+      'Up to three proposer/evaluator rounds. The upper figure assumes it runs to the round ceiling; most do not.',
     caveats: [VERSIONING_CAVEAT],
   }),
   handler: async (input, ctx) => {
-    const supplier = await ctx.db.query.supplier.findFirst({ where: eq(t.supplier.id, input.supplierId) });
+    const supplier = await ctx.db.query.supplier.findFirst({
+      where: eq(t.supplier.id, input.supplierId),
+    });
     if (!supplier) return { ok: false, objections: [`no supplier with id ${input.supplierId}`] };
     const runId = await openRun(ctx.db, {
       programId: supplier.programId,
@@ -101,7 +119,12 @@ const enqueueReassess = defineTool({
       subjectLabel: `re-assess ${supplier.rosterName ?? supplier.id}`,
       supplierCount: 1,
     });
-    const jobId = await enqueueJob(ctx.db, { runId, kind: 'assess', subjectType: 'supplier', subjectId: supplier.id });
+    const jobId = await enqueueJob(ctx.db, {
+      runId,
+      kind: 'assess',
+      subjectType: 'supplier',
+      subjectId: supplier.id,
+    });
     return { ok: true, data: { runId, jobId } };
   },
 });
@@ -117,7 +140,8 @@ const enqueueRerunRecommendation = defineTool({
   confirm: async (): Promise<Estimate> => ({
     what: 'Re-run this category’s recommendation.',
     spends: { modelTokens: { min: 60_000, max: 900_000 }, usd: { min: 0.5, max: 6.0 } },
-    basis: 'An analyst pass plus up to three lead/evaluator rounds. The upper figure assumes the round ceiling.',
+    basis:
+      'An analyst pass plus up to three lead/evaluator rounds. The upper figure assumes the round ceiling.',
     caveats: [VERSIONING_CAVEAT, FILTER_CAVEAT],
   }),
   handler: async (input, ctx) => {
@@ -169,14 +193,20 @@ const enqueueDeepTraversal = defineTool({
       subjectLabel: `traverse ${input.entityId}`,
       supplierCount: 1,
     });
-    const jobId = await enqueueJob(ctx.db, { runId, kind: 'traverse', subjectType: 'entity', subjectId: input.entityId });
+    const jobId = await enqueueJob(ctx.db, {
+      runId,
+      kind: 'traverse',
+      subjectType: 'entity',
+      subjectId: input.entityId,
+    });
     return { ok: true, data: { runId, jobId } };
   },
 });
 
 const enqueueDiscover = defineTool({
   name: 'enqueue_discover',
-  description: 'Search trade data for companies shipping this category’s HS lines that are on no imported list.',
+  description:
+    'Search trade data for companies shipping this category’s HS lines that are on no imported list.',
   input: z.object({ programId: z.string(), categoryId: z.string() }),
   surfaces: ['chat'],
   effect: 'write',
@@ -216,7 +246,8 @@ const enqueueDiscover = defineTool({
  */
 const enqueueDossier = defineTool({
   name: 'enqueue_dossier',
-  description: 'Commission an in-depth research write-up on one supplier, cited like an assessment.',
+  description:
+    'Commission an in-depth research write-up on one supplier, cited like an assessment.',
   input: z.object({ supplierId: z.string() }),
   surfaces: ['chat'],
   effect: 'write',
@@ -239,7 +270,9 @@ const enqueueDossier = defineTool({
         ],
       };
     }
-    const supplier = await ctx.db.query.supplier.findFirst({ where: eq(t.supplier.id, input.supplierId) });
+    const supplier = await ctx.db.query.supplier.findFirst({
+      where: eq(t.supplier.id, input.supplierId),
+    });
     if (!supplier) return { ok: false, objections: [`no supplier with id ${input.supplierId}`] };
     const runId = await openRun(ctx.db, {
       programId: supplier.programId,
@@ -247,7 +280,12 @@ const enqueueDossier = defineTool({
       subjectLabel: `dossier on ${supplier.rosterName ?? supplier.id}`,
       supplierCount: 1,
     });
-    const jobId = await enqueueJob(ctx.db, { runId, kind: 'dossier', subjectType: 'supplier', subjectId: supplier.id });
+    const jobId = await enqueueJob(ctx.db, {
+      runId,
+      kind: 'dossier',
+      subjectType: 'supplier',
+      subjectId: supplier.id,
+    });
     return { ok: true, data: { runId, jobId } };
   },
 });
@@ -273,18 +311,25 @@ const enqueueMatchSettlement = defineTool({
   spends: [],
   latency: 'fast',
   confirm: async (input, ctx): Promise<Estimate> => {
-    const supplier = await ctx.db.query.supplier.findFirst({ where: eq(t.supplier.id, input.supplierId) });
+    const supplier = await ctx.db.query.supplier.findFirst({
+      where: eq(t.supplier.id, input.supplierId),
+    });
     return {
       what: input.entityId
         ? `Settle ${supplier?.rosterName ?? 'this supplier'} on entity ${input.entityId}.`
         : `Mark ${supplier?.rosterName ?? 'this supplier'} not found.`,
       spends: { sayariCalls: 0, modelTokens: 0 },
-      basis: 'Settling itself spends nothing. The enrichment and assessment it unblocks are separate jobs with their own estimates.',
-      caveats: ['A settled match starts a new run, so the spend it unblocks is attributable to your decision.'],
+      basis:
+        'Settling itself spends nothing. The enrichment and assessment it unblocks are separate jobs with their own estimates.',
+      caveats: [
+        'A settled match starts a new run, so the spend it unblocks is attributable to your decision.',
+      ],
     };
   },
   handler: async (input, ctx) => {
-    const supplier = await ctx.db.query.supplier.findFirst({ where: eq(t.supplier.id, input.supplierId) });
+    const supplier = await ctx.db.query.supplier.findFirst({
+      where: eq(t.supplier.id, input.supplierId),
+    });
     if (!supplier) return { ok: false, objections: [`no supplier with id ${input.supplierId}`] };
     const runId = await openRun(ctx.db, {
       programId: supplier.programId,
@@ -298,7 +343,10 @@ const enqueueMatchSettlement = defineTool({
       subjectType: 'supplier',
       subjectId: supplier.id,
     });
-    return { ok: true, data: { runId, jobId, settlingTo: input.entityId, note: input.note ?? null } };
+    return {
+      ok: true,
+      data: { runId, jobId, settlingTo: input.entityId, note: input.note ?? null },
+    };
   },
 });
 
@@ -318,7 +366,10 @@ const navigateTo = defineTool({
     'Offer the person a link to a page and view state — including a different weight vector. It renders a link; it never moves the page.',
   input: z.object({
     pageRef: z.string().describe('A path, e.g. /program/{id}/category/{id}'),
-    weights: z.record(z.string(), z.number()).optional().describe('A what-if vector to put in the URL'),
+    weights: z
+      .record(z.string(), z.number())
+      .optional()
+      .describe('A what-if vector to put in the URL'),
     label: z.string().describe('What the link should say'),
   }),
   surfaces: ['chat'],
@@ -327,7 +378,9 @@ const navigateTo = defineTool({
   latency: 'fast',
   handler: async (input) => {
     const query = input.weights
-      ? `?${Object.entries(input.weights).map(([k, v]) => `w.${k}=${v}`).join('&')}`
+      ? `?${Object.entries(input.weights)
+          .map(([k, v]) => `w.${k}=${v}`)
+          .join('&')}`
       : '';
     return { ok: true, data: { href: `${input.pageRef}${query}`, label: input.label } };
   },

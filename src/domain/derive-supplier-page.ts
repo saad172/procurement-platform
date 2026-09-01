@@ -41,7 +41,9 @@ export function deriveFamilyCoverageAndExposure(familyRows: readonly FamilyRow[]
       entityId: row.member.id,
       label: row.member.label,
       country: row.member.country,
-      factors: unionRiskFactors([{ source: 'getEntity', risk: row.member.risk }]).map((u) => u.factor),
+      factors: unionRiskFactors([{ source: 'getEntity', risk: row.member.risk }]).map(
+        (u) => u.factor,
+      ),
       fromDeepTraversal: false,
     })),
     coverage,
@@ -57,7 +59,10 @@ export function deriveOwnRiskFactorCount(entityRisk: unknown): number {
 
 /** The oldest Enrichment age is the freshest-checked claim the page can make about the whole company. */
 export function deriveFreshestAge(enrichments: readonly { ageDays: number }[]): number | null {
-  return enrichments.reduce<number | null>((best, e) => (best == null || e.ageDays < best ? e.ageDays : best), null);
+  return enrichments.reduce<number | null>(
+    (best, e) => (best == null || e.ageDays < best ? e.ageDays : best),
+    null,
+  );
 }
 
 /**

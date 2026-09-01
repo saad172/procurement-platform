@@ -41,7 +41,8 @@ export default async function ProgramPage({
       <Breadcrumb trail={[{ label: program.name }]} />
       <h1>{program.name}</h1>
       <p className="sub">
-        {program.vehicleClass} · importing into {program.importingCountry} · {program.sourcingHorizon}
+        {program.vehicleClass} · importing into {program.importingCountry} ·{' '}
+        {program.sourcingHorizon}
       </p>
 
       <Answers data={data} />

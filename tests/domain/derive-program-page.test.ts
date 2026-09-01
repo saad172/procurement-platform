@@ -17,7 +17,10 @@ import {
  * and lists the three page sections actually render.
  */
 
-const supplier = (id: string, overrides: Partial<{ rosterName: string | null; rosterCountry: string | null }> = {}) => ({
+const supplier = (
+  id: string,
+  overrides: Partial<{ rosterName: string | null; rosterCountry: string | null }> = {},
+) => ({
   id,
   // `'rosterName' in overrides` rather than `??`: a caller passing `rosterName:
   // null` on purpose (the nameless-lead case) must not be overwritten by the
@@ -29,7 +32,12 @@ const supplier = (id: string, overrides: Partial<{ rosterName: string | null; ro
 describe('deriveMatchBySupplier', () => {
   it('keys the match rows by supplier id', () => {
     const matches = [
-      { supplierId: 's1', status: 'accepted' as const, entityId: 'e1', settledBy: 'rules' as const },
+      {
+        supplierId: 's1',
+        status: 'accepted' as const,
+        entityId: 'e1',
+        settledBy: 'rules' as const,
+      },
     ];
     const map = deriveMatchBySupplier(matches);
     expect(map.get('s1')).toEqual(matches[0]);
@@ -48,7 +56,10 @@ describe('deriveAssessedIds', () => {
 
 describe('deriveWaitingOnYou', () => {
   it('names only the suppliers whose match needs review', () => {
-    const suppliers = [supplier('s1', { rosterName: 'Yazaki' }), supplier('s2', { rosterName: 'Nemak' })];
+    const suppliers = [
+      supplier('s1', { rosterName: 'Yazaki' }),
+      supplier('s2', { rosterName: 'Nemak' }),
+    ];
     const matchBySupplier = deriveMatchBySupplier([
       { supplierId: 's1', status: 'needs_review', entityId: null, settledBy: 'agents' },
       { supplierId: 's2', status: 'accepted', entityId: 'e2', settledBy: 'rules' },
@@ -104,7 +115,11 @@ describe('deriveSupplierPoints', () => {
 
 describe('deriveBiddersByCategory', () => {
   it('counts one row per bidder, per category', () => {
-    const counts = deriveBiddersByCategory([{ categoryId: 'c1' }, { categoryId: 'c1' }, { categoryId: 'c2' }]);
+    const counts = deriveBiddersByCategory([
+      { categoryId: 'c1' },
+      { categoryId: 'c1' },
+      { categoryId: 'c2' },
+    ]);
     expect(counts.get('c1')).toBe(2);
     expect(counts.get('c2')).toBe(1);
   });
@@ -128,7 +143,12 @@ describe('deriveCategoryRecommendations', () => {
         ],
       },
     ]);
-    expect(map.get('c1')).toEqual({ n: 2, evaluatorOutcome: 'passed', humanMark: null, awardedTo: 'Yazaki' });
+    expect(map.get('c1')).toEqual({
+      n: 2,
+      evaluatorOutcome: 'passed',
+      humanMark: null,
+      awardedTo: 'Yazaki',
+    });
   });
 
   it('counts a recommendation with no version as none', () => {

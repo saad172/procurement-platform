@@ -63,8 +63,10 @@ describe('fixture manifests match the current prompts', () => {
      * that somehow pinned nothing is still caught.
      */
     if (fixture.turns.length === 0) {
-      expect(fixture.upstream.length, `"${name}" has no turns and no bodies, so it holds nothing`)
-        .toBeGreaterThan(0);
+      expect(
+        fixture.upstream.length,
+        `"${name}" has no turns and no bodies, so it holds nothing`,
+      ).toBeGreaterThan(0);
       return;
     }
 
@@ -76,10 +78,15 @@ describe('fixture manifests match the current prompts', () => {
        * hash it returns differs from the recorded one only when the model,
        * effort or system prompt has moved.
        */
-      const digests = { [loop]: fixture.manifest.toolDigests[loop] ?? '' } as Partial<Record<LoopName, string>>;
+      const digests = { [loop]: fixture.manifest.toolDigests[loop] ?? '' } as Partial<
+        Record<LoopName, string>
+      >;
       const current = buildManifest(digests).find((entry) => entry.loop === loop);
 
-      expect(current, `fixture "${name}" pins loop "${loop}", which no longer exists`).toBeDefined();
+      expect(
+        current,
+        `fixture "${name}" pins loop "${loop}", which no longer exists`,
+      ).toBeDefined();
       expect(
         current!.hash,
         `The "${loop}" loop's model, effort or system prompt has changed since ` +

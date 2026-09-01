@@ -38,9 +38,12 @@ const scaffold = (): ToolDefinition[] => [
       spends: name.startsWith('sayari_') ? ['sayari'] : [],
     }),
   ),
-  ...['find_candidates_by_name_town', 'find_candidates_by_address', 'find_lei_by_name', 'join_lei'].map((name) =>
-    tool({ name, surfaces: ['job'], spends: ['sayari'] }),
-  ),
+  ...[
+    'find_candidates_by_name_town',
+    'find_candidates_by_address',
+    'find_lei_by_name',
+    'join_lei',
+  ].map((name) => tool({ name, surfaces: ['job'], spends: ['sayari'] })),
   tool({ name: 'submit_match_proposal', surfaces: ['job'], effect: 'write' }),
   tool({ name: 'submit_match_verdict', surfaces: ['job'], effect: 'write' }),
 ];
@@ -67,53 +70,94 @@ describe('finalizeRegistry rejects', () => {
     // Chat proposes and never does. A write it can reach must enqueue the same
     // Job the page's own button would.
     rejects(
-      [tool({ name: 'get_write_thing', effect: 'write', surfaces: ['chat'], confirm: async () => ({ what: '', spends: {}, basis: '', caveats: [] }) })],
+      [
+        tool({
+          name: 'get_write_thing',
+          effect: 'write',
+          surfaces: ['chat'],
+          confirm: async () => ({ what: '', spends: {}, basis: '', caveats: [] }),
+        }),
+      ],
       /must be named enqueue_\*/,
     );
   });
 
   it('a chat-reachable write with no confirm gate', () => {
-    rejects([tool({ name: 'enqueue_thing', effect: 'write', surfaces: ['chat'] })], /must carry a confirm gate/);
+    rejects(
+      [tool({ name: 'enqueue_thing', effect: 'write', surfaces: ['chat'] })],
+      /must carry a confirm gate/,
+    );
   });
 
   it('a chat-reachable spender with no confirm gate', () => {
     // A Sayari lookup is a READ that SPENDS — which is precisely the case a
     // single `scope` enum could not express.
-    rejects([tool({ name: 'sayari_lookup_thing', spends: ['sayari'], surfaces: ['chat'] })], /must carry a confirm gate/);
+    rejects(
+      [tool({ name: 'sayari_lookup_thing', spends: ['sayari'], surfaces: ['chat'] })],
+      /must carry a confirm gate/,
+    );
   });
 
   it('a slow tool reachable from chat, even though it does not fan out', () => {
     // trade at 3.6–13.4 s and negativeNews at 7–15 s are both slow WITHOUT
     // fanning out — the second axis a single enum could not express.
-    rejects([tool({ name: 'sayari_slow_thing', latency: 'slow', surfaces: ['chat'], spends: ['sayari'], confirm: async () => ({ what: '', spends: {}, basis: '', caveats: [] }) })], /is slow, so it may not be reachable from chat/);
+    rejects(
+      [
+        tool({
+          name: 'sayari_slow_thing',
+          latency: 'slow',
+          surfaces: ['chat'],
+          spends: ['sayari'],
+          confirm: async () => ({ what: '', spends: {}, basis: '', caveats: [] }),
+        }),
+      ],
+      /is slow, so it may not be reachable from chat/,
+    );
   });
 
   it('a client-effect tool exposed anywhere but chat', () => {
     // `navigate_to` is a side effect that touches no row — the third thing a
     // single enum could not express.
-    rejects([tool({ name: 'navigate_to', effect: 'client', surfaces: ['chat', 'job'] })], /surfaces must be exactly \["chat"\]/);
+    rejects(
+      [tool({ name: 'navigate_to', effect: 'client', surfaces: ['chat', 'job'] })],
+      /surfaces must be exactly \["chat"\]/,
+    );
   });
 
   it('a submit_* tool reachable from chat', () => {
     // There is exactly one path into a Match or an Assessment, and it is owned
     // by a Job with a Trace.
-    rejects([tool({ name: 'submit_assessment', effect: 'write', surfaces: ['chat'] })], /must have surfaces exactly \["job"\]/);
+    rejects(
+      [tool({ name: 'submit_assessment', effect: 'write', surfaces: ['chat'] })],
+      /must have surfaces exactly \["job"\]/,
+    );
   });
 
   it('a write exposed over MCP that is not submit_dossier', () => {
-    rejects([tool({ name: 'enqueue_over_mcp', effect: 'write', surfaces: ['mcp'] })], /only submit_dossier may be/);
+    rejects(
+      [tool({ name: 'enqueue_over_mcp', effect: 'write', surfaces: ['mcp'] })],
+      /only submit_dossier may be/,
+    );
   });
 
   it('a confirm gate on a tool no human ever sees', () => {
     rejects(
-      [tool({ name: 'get_job_only', surfaces: ['job'], confirm: async () => ({ what: '', spends: {}, basis: '', caveats: [] }) })],
+      [
+        tool({
+          name: 'get_job_only',
+          surfaces: ['job'],
+          confirm: async () => ({ what: '', spends: {}, basis: '', caveats: [] }),
+        }),
+      ],
       /nobody would ever see it/,
     );
   });
 
   it('a Dossier profile whose named tool is missing', () => {
     const withoutRecord = scaffold().filter((t) => t.name !== 'sayari_get_record');
-    expect(() => finalizeRegistry(withoutRecord)).toThrow(/names "sayari_get_record", which is not in the registry/);
+    expect(() => finalizeRegistry(withoutRecord)).toThrow(
+      /names "sayari_get_record", which is not in the registry/,
+    );
   });
 
   it('a Dossier profile tool that does not carry the mcp surface', () => {
@@ -130,7 +174,11 @@ describe('finalizeRegistry rejects', () => {
 
   it('and reports EVERY problem at once, not one per attempt', () => {
     try {
-      finalizeRegistry([...scaffold(), tool({ name: 'bad name!' }), tool({ name: 'enqueue_x', effect: 'write', surfaces: ['chat'] })]);
+      finalizeRegistry([
+        ...scaffold(),
+        tool({ name: 'bad name!' }),
+        tool({ name: 'enqueue_x', effect: 'write', surfaces: ['chat'] }),
+      ]);
       expect.unreachable();
     } catch (error) {
       const message = (error as Error).message;

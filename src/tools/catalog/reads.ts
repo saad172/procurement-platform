@@ -64,7 +64,8 @@ const getProgram = defineTool({
 
 const getCategory = defineTool({
   name: 'get_category',
-  description: 'One category of a sourcing program: its HS lines, its trade-action flags, and its bidders.',
+  description:
+    'One category of a sourcing program: its HS lines, its trade-action flags, and its bidders.',
   input: z.object({ categoryId: z.string() }),
   surfaces: ['chat', 'job', 'mcp'],
   effect: 'read',
@@ -247,7 +248,12 @@ const getSupplierFamily = defineTool({
       where: eq(t.match.supplierId, input.supplierId),
     });
     if (!match?.entityId) {
-      return { ok: false, objections: ['this supplier has no accepted match, so it has no profile to hang a family off'] };
+      return {
+        ok: false,
+        objections: [
+          'this supplier has no accepted match, so it has no profile to hang a family off',
+        ],
+      };
     }
     const members = await ctx.db
       .select({
@@ -362,7 +368,10 @@ const getShortlist = defineTool({
   input: z.object({
     programId: z.string(),
     categoryId: z.string(),
-    weights: z.record(z.string(), z.number()).optional().describe('A what-if vector; omit for the program default'),
+    weights: z
+      .record(z.string(), z.number())
+      .optional()
+      .describe('A what-if vector; omit for the program default'),
   }),
   surfaces: ['chat', 'job', 'mcp'],
   effect: 'read',
@@ -479,7 +488,10 @@ const compareSuppliers = defineTool({
   name: 'compare_suppliers',
   description:
     'Two or more suppliers side by side on every criterion, with each raw input beside its value.',
-  input: z.object({ supplierIds: z.array(z.string()).min(2).max(5), categoryId: z.string().optional() }),
+  input: z.object({
+    supplierIds: z.array(z.string()).min(2).max(5),
+    categoryId: z.string().optional(),
+  }),
   surfaces: ['chat', 'mcp'],
   effect: 'read',
   spends: [],
@@ -519,7 +531,8 @@ const getTrace = defineTool({
 
 const listNeedsReview = defineTool({
   name: 'list_needs_review',
-  description: 'The suppliers whose match the agents could not settle, and are waiting on a person.',
+  description:
+    'The suppliers whose match the agents could not settle, and are waiting on a person.',
   input: z.object({ programId: z.string() }),
   surfaces: ['chat', 'mcp'],
   effect: 'read',
@@ -540,7 +553,11 @@ const listLeads = defineTool({
   name: 'list_leads',
   description:
     'The companies Discover proposed for one category that are on no imported list, with their classification and shipment evidence.',
-  input: z.object({ programId: z.string(), categoryId: z.string(), includeDismissed: z.boolean().optional() }),
+  input: z.object({
+    programId: z.string(),
+    categoryId: z.string(),
+    includeDismissed: z.boolean().optional(),
+  }),
   surfaces: ['chat', 'mcp'],
   effect: 'read',
   spends: [],
@@ -573,7 +590,7 @@ const listLeads = defineTool({
 export const getUsage = defineTool({
   name: 'get_usage',
   description:
-    "What this program has spent, and separately what the Sayari account has used. The two are differently scoped and are never netted against each other.",
+    'What this program has spent, and separately what the Sayari account has used. The two are differently scoped and are never netted against each other.',
   input: z.object({ programId: z.string(), runId: z.string().optional() }),
   surfaces: ['chat', 'mcp'],
   effect: 'read',
@@ -595,7 +612,8 @@ export const getUsage = defineTool({
           scope: 'Your Sayari account, rolling year',
           note: 'Account-wide and lagging. negativeNews has no bucket here at all.',
           dollars: null,
-          dollarsNote: 'Sayari publishes no per-class price, so any credits-to-dollars figure would be one we invented.',
+          dollarsNote:
+            'Sayari publishes no per-class price, so any credits-to-dollars figure would be one we invented.',
         },
         claudeNote: 'Computed from a committed price constant, not a bill.',
       }),
@@ -671,7 +689,14 @@ async function briefFor(ctx: ToolContext, supplierId: string) {
   };
 }
 
-export const PAGE_READS = [getProgram, getCategory, getSupplier, getSupplierFamily, getEntity, getRecord];
+export const PAGE_READS = [
+  getProgram,
+  getCategory,
+  getSupplier,
+  getSupplierFamily,
+  getEntity,
+  getRecord,
+];
 export const OTHER_READS = [
   getShortlist,
   compareSuppliers,

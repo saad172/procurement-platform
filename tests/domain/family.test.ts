@@ -31,14 +31,19 @@ describe('the three badge states, and why the first two are not one state', () =
   });
 
   it('reports NO EXPOSURE FOUND when members came back carrying nothing', () => {
-    const exposure = computeFamilyExposure([member('a'), member('b')], { explored: 2, reachable: null });
+    const exposure = computeFamilyExposure([member('a'), member('b')], {
+      explored: 2,
+      reachable: null,
+    });
     expect(exposure.state).toBe('no_exposure_found');
   });
 
   it('renders the two in visibly different words', () => {
     // Collapsing them would report an empty ownership graph in the same ink as
     // a genuinely clean family.
-    const notCovered = describeFamilyExposure(computeFamilyExposure([], { explored: 0, reachable: null }));
+    const notCovered = describeFamilyExposure(
+      computeFamilyExposure([], { explored: 0, reachable: null }),
+    );
     const clean = describeFamilyExposure(
       computeFamilyExposure([member('a')], { explored: 1, reachable: null }),
     );
@@ -116,7 +121,10 @@ describe('unioning risk when two endpoints disagree', () => {
   it('keeps a traversal path from whichever endpoint carried one', () => {
     const merged = unionRiskFactors([
       { source: 'getEntity', risk: { a: { level: 'high' } } },
-      { source: 'traversal', risk: { a: { level: 'high', metadata: { traversal_path: ['x', 'y'] } } } },
+      {
+        source: 'traversal',
+        risk: { a: { level: 'high', metadata: { traversal_path: ['x', 'y'] } } },
+      },
     ]);
     expect(merged[0]!.factor.traversalPath).toEqual(['x', 'y']);
   });

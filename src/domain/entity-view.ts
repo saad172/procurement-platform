@@ -131,7 +131,9 @@ function omissions(entity: SayariEntity, addressCount: number, riskCount: number
     omitted.push(`${addressCount - MAX_ADDRESSES} further address(es) — addressCount is the total`);
   }
   if (riskCount > MAX_RISK_FACTORS) {
-    omitted.push(`${riskCount - MAX_RISK_FACTORS} further risk factor(s) — riskFactorCount is the total`);
+    omitted.push(
+      `${riskCount - MAX_RISK_FACTORS} further risk factor(s) — riskFactorCount is the total`,
+    );
   }
   return omitted;
 }

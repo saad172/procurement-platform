@@ -43,9 +43,7 @@ export default async function RecommendationPage({
         ]}
       />
       <h1>{category.name}</h1>
-      <p className="sub">
-        {category.code} · what to do about this category
-      </p>
+      <p className="sub">{category.code} · what to do about this category</p>
 
       {!version ? (
         <div className="card">
@@ -63,7 +61,9 @@ export default async function RecommendationPage({
               {version.evaluatorOutcome.replace(/_/g, ' ')}
             </span>{' '}
             {version.humanMark ? (
-              <span className="badge">marked {version.humanMark.replace(/_/g, ' ')} by a person</span>
+              <span className="badge">
+                marked {version.humanMark.replace(/_/g, ' ')} by a person
+              </span>
             ) : null}
           </p>
 
@@ -74,7 +74,9 @@ export default async function RecommendationPage({
       )}
 
       <p className="note" style={{ marginTop: '1rem' }}>
-        <Link href={`/program/${programId}/category/${categoryId}` as never}>← back to the category</Link>
+        <Link href={`/program/${programId}/category/${categoryId}` as never}>
+          ← back to the category
+        </Link>
       </p>
       <ChatDock programId={programId} />
     </main>

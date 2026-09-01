@@ -57,10 +57,23 @@ export function recordingFetch(
      */
     if (contentType.includes('text/event-stream')) {
       const sse = await response.clone().text();
-      sink.turns.push({ n, wireHash: hash, loop: meta.loop, roundN: meta.roundN ?? null, response: null, sse });
+      sink.turns.push({
+        n,
+        wireHash: hash,
+        loop: meta.loop,
+        roundN: meta.roundN ?? null,
+        response: null,
+        sse,
+      });
     } else {
       const json = (await response.clone().json()) as unknown;
-      sink.turns.push({ n, wireHash: hash, loop: meta.loop, roundN: meta.roundN ?? null, response: json });
+      sink.turns.push({
+        n,
+        wireHash: hash,
+        loop: meta.loop,
+        roundN: meta.roundN ?? null,
+        response: json,
+      });
     }
 
     return response;

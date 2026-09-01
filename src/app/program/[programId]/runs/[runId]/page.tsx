@@ -46,7 +46,9 @@ export default async function RunPage({
         */}
         {run.estimateUsd ? `up to $${Number(run.estimateUsd).toFixed(2)} · ` : ''}
         actual ${actualUsd.toFixed(4)}
-        {run.budgetUsd ? ` · budget $${Number(run.budgetUsd).toFixed(2)}` : ' · no budget (a thread’s run)'}
+        {run.budgetUsd
+          ? ` · budget $${Number(run.budgetUsd).toFixed(2)}`
+          : ' · no budget (a thread’s run)'}
       </p>
 
       <Progress data={data} programId={programId} runId={runId} />

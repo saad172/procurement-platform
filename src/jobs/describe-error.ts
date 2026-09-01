@@ -85,7 +85,11 @@ export function describeError(error: unknown, maxLength = 2000): string {
    * other; where neither does, keep both.
    */
   const kept = parts.filter(
-    (part, i) => part.length > 0 && !parts.some((other, j) => j !== i && other.includes(part) && (other.length > part.length || j < i)),
+    (part, i) =>
+      part.length > 0 &&
+      !parts.some(
+        (other, j) => j !== i && other.includes(part) && (other.length > part.length || j < i),
+      ),
   );
 
   const line = kept.join(' — ') || 'something broke, and it carried no message';

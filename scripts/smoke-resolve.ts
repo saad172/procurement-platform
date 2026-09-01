@@ -52,7 +52,9 @@ async function main(): Promise<void> {
   });
 
   console.log(`\nResolving "${rosterName}"\n` + '═'.repeat(78));
-  console.log(`  roster: ${supplier.rosterName} · ${supplier.rosterAddress} · ${supplier.rosterCountry}`);
+  console.log(
+    `  roster: ${supplier.rosterName} · ${supplier.rosterAddress} · ${supplier.rosterCountry}`,
+  );
 
   // Rung R1: the batch pre-pass. One call carries every row; here it carries one.
   const prepass = await upstream.sayari.resolve({
@@ -63,7 +65,9 @@ async function main(): Promise<void> {
     },
   });
   const candidateIds = prepassCandidateIds(prepass.data).slice(0, 5);
-  console.log(`\n  Pre-pass returned ${candidateIds.length} candidates${prepass.cacheHit ? ' (cached)' : ''}:`);
+  console.log(
+    `\n  Pre-pass returned ${candidateIds.length} candidates${prepass.cacheHit ? ' (cached)' : ''}:`,
+  );
 
   const roster = {
     name: supplier.rosterName!,
@@ -85,11 +89,15 @@ async function main(): Promise<void> {
           city: e?.legalAddress?.city ?? null,
           country: e?.legalAddress?.country ?? null,
         };
-      } catch { /* absence is not evidence */ }
+      } catch {
+        /* absence is not evidence */
+      }
     }
     const verdicts = runDiscriminators(roster, facts);
     const summary = verdicts
-      .map((v) => `${v.verdict === 'pass' ? '✓' : v.verdict === 'fail' ? '✗' : '·'}${v.discriminator}`)
+      .map(
+        (v) => `${v.verdict === 'pass' ? '✓' : v.verdict === 'fail' ? '✗' : '·'}${v.discriminator}`,
+      )
       .join(' ');
     const cities = facts.addresses.map((a) => a.city).filter(Boolean);
     console.log(
@@ -111,7 +119,9 @@ async function main(): Promise<void> {
   );
 
   console.log('\n' + '─'.repeat(78));
-  console.log(`  OUTCOME: ${outcome.status}  (settled by ${outcome.settledBy}, ${outcome.rounds} rounds, 0 tokens)`);
+  console.log(
+    `  OUTCOME: ${outcome.status}  (settled by ${outcome.settledBy}, ${outcome.rounds} rounds, 0 tokens)`,
+  );
   console.log(`  ${outcome.reason}`);
   console.log('═'.repeat(78));
 

@@ -1,4 +1,9 @@
-import { DEFAULT_WEIGHTS, WEIGHTED_CRITERIA, normaliseWeights, type WeightVector } from '@/domain/score';
+import {
+  DEFAULT_WEIGHTS,
+  WEIGHTED_CRITERIA,
+  normaliseWeights,
+  type WeightVector,
+} from '@/domain/score';
 
 /**
  * View state (SPEC §13.5).
@@ -107,7 +112,10 @@ export function parseViewState(
  * says what it means: a URL with no `w.` parameters is the Program's own
  * ranking, and one with them is explicitly a what-if.
  */
-export function toSearchParams(state: ViewState, programDefault: WeightVector = DEFAULT_WEIGHTS): URLSearchParams {
+export function toSearchParams(
+  state: ViewState,
+  programDefault: WeightVector = DEFAULT_WEIGHTS,
+): URLSearchParams {
   const params = new URLSearchParams();
   const base = normaliseWeights(programDefault);
 
@@ -125,7 +133,10 @@ export function toSearchParams(state: ViewState, programDefault: WeightVector = 
 }
 
 /** True when the rail is off the Program default — the transient what-if chip. */
-export function isWhatIf(state: ViewState, programDefault: WeightVector = DEFAULT_WEIGHTS): boolean {
+export function isWhatIf(
+  state: ViewState,
+  programDefault: WeightVector = DEFAULT_WEIGHTS,
+): boolean {
   const base = normaliseWeights(programDefault);
   return WEIGHTED_CRITERIA.some((key) => state.weights[key] !== base[key]);
 }
@@ -144,7 +155,9 @@ export function hasFilter(state: ViewState): boolean {
  */
 export type HistoryMode = 'push' | 'replace';
 
-export function historyModeFor(gesture: 'drag' | 'preset' | 'chat' | 'navigate' | 'filter'): HistoryMode {
+export function historyModeFor(
+  gesture: 'drag' | 'preset' | 'chat' | 'navigate' | 'filter',
+): HistoryMode {
   return gesture === 'drag' ? 'replace' : 'push';
 }
 

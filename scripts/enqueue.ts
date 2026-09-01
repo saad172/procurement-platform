@@ -129,7 +129,9 @@ async function main(): Promise<void> {
     });
     const jobId = await enqueueJob(db, { runId, kind, subjectType, subjectId: row.id });
 
-    console.warn(`queued ${kind} "${subject}"\n  job ${jobId}\n  run ${runId}\n\nRun \`pnpm worker\` to process it.`);
+    console.warn(
+      `queued ${kind} "${subject}"\n  job ${jobId}\n  run ${runId}\n\nRun \`pnpm worker\` to process it.`,
+    );
   } finally {
     await closeDirectDb();
   }

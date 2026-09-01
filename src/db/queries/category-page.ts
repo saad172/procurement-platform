@@ -6,7 +6,6 @@ import { categoryAnswer } from '@/domain/category-answer';
 import { parseViewState } from '@/lib/view-state';
 import { DEFAULT_WEIGHTS } from '@/domain/score';
 
-
 /**
  * Everything the Category page renders, in one read (SPEC §13.1).
  *
@@ -15,7 +14,11 @@ import { DEFAULT_WEIGHTS } from '@/domain/score';
  */
 export async function loadCategoryPage(
   db: Database,
-  args: { programId: string, categoryId: string; query: Record<string, string | string[] | undefined> },
+  args: {
+    programId: string;
+    categoryId: string;
+    query: Record<string, string | string[] | undefined>;
+  },
 ) {
   const { programId, categoryId, query } = args;
 

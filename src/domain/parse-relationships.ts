@@ -81,7 +81,9 @@ export function parseRelationships(entity: unknown, subjectId: string): ParseRes
     const types = edge.types;
     if (!types || typeof types !== 'object') continue;
 
-    for (const [relationshipType, occurrences] of Object.entries(types as Record<string, unknown>)) {
+    for (const [relationshipType, occurrences] of Object.entries(
+      types as Record<string, unknown>,
+    )) {
       seenTypes.push(relationshipType);
       const list = Array.isArray(occurrences) ? occurrences : [occurrences];
 

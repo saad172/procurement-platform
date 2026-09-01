@@ -57,7 +57,10 @@ describe('check 1 — every sentence carries a citation resolving to a live row'
     const objections = checkAssessment({
       verdict: 'recommend',
       supplierId: 'supplier-a',
-      sentences: [...legalAssessment(), { section: 'compliance', text: 'It is clean.', citations: [] }],
+      sentences: [
+        ...legalAssessment(),
+        { section: 'compliance', text: 'It is clean.', citations: [] },
+      ],
       evidence: evidence(),
     });
     expect(objections.some((o) => o.check === 'citations')).toBe(true);
@@ -141,7 +144,10 @@ describe('check 5 — required sections, and what `limits` is for', () => {
     const objections = checkAssessment({
       verdict: 'recommend',
       supplierId: 'supplier-a',
-      sentences: [cited('identity', 'Alpha is the company.'), { section: 'limits', text: '   ', citations: [{ criterionValueId: 'cv-1' }] }],
+      sentences: [
+        cited('identity', 'Alpha is the company.'),
+        { section: 'limits', text: '   ', citations: [{ criterionValueId: 'cv-1' }] },
+      ],
       evidence: evidence(),
     });
     expect(objections.some((o) => /"limits"/.test(o.message))).toBe(true);
@@ -252,7 +258,9 @@ describe('checks 4 and 6 — eligibility and pick legality', () => {
       evidence: e,
     });
     expect(objections.some((o) => /no accepted match/.test(o.message))).toBe(true);
-    expect(objections.find((o) => /no accepted match/.test(o.message))!.message).toMatch(/say why in a sentence/);
+    expect(objections.find((o) => /no accepted match/.test(o.message))!.message).toMatch(
+      /say why in a sentence/,
+    );
   });
 
   it('rejects a pick on a category the supplier does not bid on', () => {
@@ -364,7 +372,9 @@ describe('check 8 — upstream disclosure', () => {
       evidence: e,
     });
     expect(objections.some((o) => o.check === 'upstream_disclosure')).toBe(true);
-    expect(objections.find((o) => o.check === 'upstream_disclosure')!.message).toMatch(/must not vanish at the boundary/);
+    expect(objections.find((o) => o.check === 'upstream_disclosure')!.message).toMatch(
+      /must not vanish at the boundary/,
+    );
   });
 
   it('accepts it once an open question names them', () => {

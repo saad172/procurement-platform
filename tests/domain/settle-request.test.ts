@@ -41,7 +41,8 @@ describe('a choice among the candidates cannot produce an unknown id', () => {
   it('refuses a submission that selected nothing', () => {
     expect(parse({})).toEqual({
       ok: false,
-      error: 'Nothing was selected, so nothing was written. Pick a record, or mark the row not found.',
+      error:
+        'Nothing was selected, so nothing was written. Pick a record, or mark the row not found.',
     });
   });
 
@@ -57,9 +58,7 @@ describe('a choice among the candidates cannot produce an unknown id', () => {
       choice: 'entity:M_bKIsKm8M7jv0xju_VcAw',
       note: '  Two sources where every other record has one.  ',
     });
-    expect(result.ok === true && result.note).toBe(
-      'Two sources where every other record has one.',
-    );
+    expect(result.ok === true && result.note).toBe('Two sources where every other record has one.');
   });
 });
 

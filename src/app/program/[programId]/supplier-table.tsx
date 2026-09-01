@@ -32,8 +32,9 @@ export function SupplierTable({
    */
   bandBySupplier: Map<string, string>;
 }) {
-  const visible = (supplier: (typeof t.supplier.$inferSelect)) => {
-    if (facets.country?.length && !facets.country.includes(supplier.rosterCountry ?? 'unknown')) return false;
+  const visible = (supplier: typeof t.supplier.$inferSelect) => {
+    if (facets.country?.length && !facets.country.includes(supplier.rosterCountry ?? 'unknown'))
+      return false;
     const status = matchBySupplier.get(supplier.id)?.status ?? 'unresolved';
     if (facets.matchStatus?.length && !facets.matchStatus.includes(status)) return false;
     if (facets.proximityBand?.length) {
@@ -50,8 +51,8 @@ export function SupplierTable({
     <>
       {filtered ? (
         <p className="note" style={{ marginBottom: '0.5rem' }}>
-          Showing {shown} of {suppliers.length}. Hidden rows keep their place — the filter changes what
-          you see, never what a recommendation argues from.{' '}
+          Showing {shown} of {suppliers.length}. Hidden rows keep their place — the filter changes
+          what you see, never what a recommendation argues from.{' '}
           <Link href={`/program/${programId}` as never}>Clear</Link>
         </p>
       ) : null}

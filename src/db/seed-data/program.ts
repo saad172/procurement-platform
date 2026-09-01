@@ -139,9 +139,7 @@ export const CATEGORIES = [
     code: 'PWR',
     name: 'Power electronics & traction inverters',
     note: 'Traction inverters fall to the residual "other" static-converter lines, Free at every 8-digit line checked.',
-    hsLines: [
-      { hsCode: '8504.40', label: 'Static converters', rate: 0.0, isDefault: true },
-    ],
+    hsLines: [{ hsCode: '8504.40', label: 'Static converters', rate: 0.0, isDefault: true }],
   },
   {
     code: 'THM',
@@ -163,7 +161,12 @@ export const CATEGORIES = [
     name: 'Seating systems',
     note: 'The one heading cross-validated by two independent sources — HTS and WITS both returned 0%.',
     hsLines: [
-      { hsCode: '9401.20', label: 'Seats of a kind used for motor vehicles', rate: 0.0, isDefault: true },
+      {
+        hsCode: '9401.20',
+        label: 'Seats of a kind used for motor vehicles',
+        rate: 0.0,
+        isDefault: true,
+      },
     ],
   },
   {
@@ -172,7 +175,12 @@ export const CATEGORIES = [
     note: 'A clean baseline pair — same rate for both halves, no sub-line trap.',
     hsLines: [
       { hsCode: '8708.30', label: 'Brakes and servo-brakes', rate: 2.5, isDefault: true },
-      { hsCode: '8708.94', label: 'Steering wheels, columns and boxes', rate: 2.5, isDefault: false },
+      {
+        hsCode: '8708.94',
+        label: 'Steering wheels, columns and boxes',
+        rate: 2.5,
+        isDefault: false,
+      },
     ],
   },
   {
@@ -203,8 +211,7 @@ export const TARIFF_FLAGS = [
   {
     key: 'section232_steel_al',
     label: 'Section 232 — steel and aluminium',
-    whyNotARate:
-      'Keyed on material content and melt-and-pour origin, not on the HS heading alone.',
+    whyNotARate: 'Keyed on material content and melt-and-pour origin, not on the HS heading alone.',
     categories: ['ENC'],
   },
   {

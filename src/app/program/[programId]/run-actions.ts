@@ -87,7 +87,12 @@ export async function startRun(formData: FormData): Promise<void> {
    * parks at `needs_review` correctly gets neither.
    */
   for (const supplier of unresolved) {
-    await enqueueJob(db, { runId, kind: 'resolve', subjectType: 'supplier', subjectId: supplier.id });
+    await enqueueJob(db, {
+      runId,
+      kind: 'resolve',
+      subjectType: 'supplier',
+      subjectId: supplier.id,
+    });
   }
 
   toRun(programId, runId);
@@ -288,7 +293,12 @@ export async function runRecommendation(formData: FormData): Promise<void> {
     subjectLabel: `recommend ${category.code}`,
     supplierCount: 1,
   });
-  await enqueueJob(db, { runId, kind: 'recommend', subjectType: 'category', subjectId: categoryId });
+  await enqueueJob(db, {
+    runId,
+    kind: 'recommend',
+    subjectType: 'category',
+    subjectId: categoryId,
+  });
 
   revalidatePath(`/program/${programId}/category/${categoryId}`);
   toRun(programId, runId);
@@ -333,4 +343,3 @@ export async function resumeRun(formData: FormData): Promise<void> {
   await resumeRunBudget(getPooledDb(), runId);
   toRun(programId, runId);
 }
-

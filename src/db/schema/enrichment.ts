@@ -13,11 +13,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { entity } from './entities';
-import {
-  enrichmentSource,
-  enrichmentSubjectKind,
-  geocodePrecision,
-} from './enums';
+import { enrichmentSource, enrichmentSubjectKind, geocodePrecision } from './enums';
 import { upstreamResponse } from './upstream';
 
 /**
@@ -40,24 +36,26 @@ import { upstreamResponse } from './upstream';
  * TTL and no background refresh: a background TTL would spend credits on page
  * views (SPEC §7.2).
  */
-export const enrichment = pgTable('enrichment', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  source: enrichmentSource('source').notNull(),
-  subjectKind: enrichmentSubjectKind('subject_kind').notNull(),
-  /** An entity id, an ISO country code, an HS code, or an address string. */
-  subjectKey: text('subject_key').notNull(),
-  requestParams: jsonb('request_params').notNull(),
-  /** The raw body this was projected from, so a Citation can reach the source. */
-  upstreamResponseId: uuid('upstream_response_id')
-    .notNull()
-    .references(() => upstreamResponse.id),
-  fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
-  /** Not re-stamped on refresh — the *new evidence* chip is computed from it. */
-  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
-  jobId: uuid('job_id'),
-}, (t) => [
-  index('enrichment_subject_idx').on(t.source, t.subjectKind, t.subjectKey, t.fetchedAt),
-]);
+export const enrichment = pgTable(
+  'enrichment',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    source: enrichmentSource('source').notNull(),
+    subjectKind: enrichmentSubjectKind('subject_kind').notNull(),
+    /** An entity id, an ISO country code, an HS code, or an address string. */
+    subjectKey: text('subject_key').notNull(),
+    requestParams: jsonb('request_params').notNull(),
+    /** The raw body this was projected from, so a Citation can reach the source. */
+    upstreamResponseId: uuid('upstream_response_id')
+      .notNull()
+      .references(() => upstreamResponse.id),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Not re-stamped on refresh — the *new evidence* chip is computed from it. */
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    jobId: uuid('job_id'),
+  },
+  (t) => [index('enrichment_subject_idx').on(t.source, t.subjectKind, t.subjectKey, t.fetchedAt)],
+);
 
 // ── The six typed value tables ───────────────────────────────────────────────
 
@@ -69,20 +67,24 @@ export const enrichment = pgTable('enrichment', {
  * `GOV_WGI_*` codes expose an absolute 0–100 `.SC` with confidence bounds,
  * which is what the Criterion uses and what makes the band renderable.
  */
-export const countryIndicator = pgTable('country_indicator', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  enrichmentId: uuid('enrichment_id')
-    .notNull()
-    .references(() => enrichment.id, { onDelete: 'cascade' }),
-  country: text('country').notNull(),
-  indicatorCode: text('indicator_code').notNull(),
-  indicatorLabel: text('indicator_label').notNull(),
-  year: integer('year'),
-  value: doublePrecision('value'),
-  /** `.SC_LB` / `.SC_UB`. Overlapping bands are not a real difference. */
-  lowerBound: doublePrecision('lower_bound'),
-  upperBound: doublePrecision('upper_bound'),
-}, (t) => [index('country_indicator_country_idx').on(t.country, t.indicatorCode)]);
+export const countryIndicator = pgTable(
+  'country_indicator',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    enrichmentId: uuid('enrichment_id')
+      .notNull()
+      .references(() => enrichment.id, { onDelete: 'cascade' }),
+    country: text('country').notNull(),
+    indicatorCode: text('indicator_code').notNull(),
+    indicatorLabel: text('indicator_label').notNull(),
+    year: integer('year'),
+    value: doublePrecision('value'),
+    /** `.SC_LB` / `.SC_UB`. Overlapping bands are not a real difference. */
+    lowerBound: doublePrecision('lower_bound'),
+    upperBound: doublePrecision('upper_bound'),
+  },
+  (t) => [index('country_indicator_country_idx').on(t.country, t.indicatorCode)],
+);
 
 /**
  * USITC HTS / WITS — the MFN rate for one HS line (SPEC §7.1).
@@ -90,20 +92,24 @@ export const countryIndicator = pgTable('country_indicator', {
  * Trade-action surcharges are **flags, never folded into the rate**: they key
  * on facts the app does not have.
  */
-export const tariffLine = pgTable('tariff_line', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  enrichmentId: uuid('enrichment_id')
-    .notNull()
-    .references(() => enrichment.id, { onDelete: 'cascade' }),
-  hsCode: text('hs_code').notNull(),
-  /** The importer this rate is for. USA is scored; MEX is rendered beside it. */
-  importerCountry: text('importer_country').notNull(),
-  originCountry: text('origin_country'),
-  description: text('description'),
-  /** Percent. Null where the source returned no general rate. */
-  mfnRate: numeric('mfn_rate', { precision: 6, scale: 3 }),
-  rateText: text('rate_text'),
-}, (t) => [index('tariff_line_key_idx').on(t.hsCode, t.importerCountry)]);
+export const tariffLine = pgTable(
+  'tariff_line',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    enrichmentId: uuid('enrichment_id')
+      .notNull()
+      .references(() => enrichment.id, { onDelete: 'cascade' }),
+    hsCode: text('hs_code').notNull(),
+    /** The importer this rate is for. USA is scored; MEX is rendered beside it. */
+    importerCountry: text('importer_country').notNull(),
+    originCountry: text('origin_country'),
+    description: text('description'),
+    /** Percent. Null where the source returned no general rate. */
+    mfnRate: numeric('mfn_rate', { precision: 6, scale: 3 }),
+    rateText: text('rate_text'),
+  },
+  (t) => [index('tariff_line_key_idx').on(t.hsCode, t.importerCountry)],
+);
 
 /**
  * GLEIF — the exact-LEI join is decisive; name search is not (SPEC §7.1).
@@ -113,20 +119,24 @@ export const tariffLine = pgTable('tariff_line', {
  * HTTP 200 with zero results, silently, which is a failure mode worth a column
  * comment because it looks exactly like a clean negative.
  */
-export const leiRecord = pgTable('lei_record', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  enrichmentId: uuid('enrichment_id')
-    .notNull()
-    .references(() => enrichment.id, { onDelete: 'cascade' }),
-  lei: text('lei').notNull(),
-  legalName: text('legal_name').notNull(),
-  legalAddressLine: text('legal_address_line'),
-  legalCity: text('legal_city'),
-  legalPostcode: text('legal_postcode'),
-  legalCountry: text('legal_country'),
-  status: text('status'),
-  registrationStatus: text('registration_status'),
-}, (t) => [index('lei_record_lei_idx').on(t.lei)]);
+export const leiRecord = pgTable(
+  'lei_record',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    enrichmentId: uuid('enrichment_id')
+      .notNull()
+      .references(() => enrichment.id, { onDelete: 'cascade' }),
+    lei: text('lei').notNull(),
+    legalName: text('legal_name').notNull(),
+    legalAddressLine: text('legal_address_line'),
+    legalCity: text('legal_city'),
+    legalPostcode: text('legal_postcode'),
+    legalCountry: text('legal_country'),
+    status: text('status'),
+    registrationStatus: text('registration_status'),
+  },
+  (t) => [index('lei_record_lei_idx').on(t.lei)],
+);
 
 /**
  * Sayari `negativeNews` (SPEC §7.1).
@@ -136,19 +146,23 @@ export const leiRecord = pgTable('lei_record', {
  * Zero articles is not a clean result — the coverage precondition is what stops
  * an empty set reading as spotless.
  */
-export const newsItem = pgTable('news_item', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  enrichmentId: uuid('enrichment_id')
-    .notNull()
-    .references(() => enrichment.id, { onDelete: 'cascade' }),
-  entityId: text('entity_id').references(() => entity.id),
-  title: text('title').notNull(),
-  sourceName: text('source_name'),
-  url: text('url'),
-  publishedAt: timestamp('published_at', { withTimezone: true }),
-  /** Sayari's own flags. Weighted ×3 serious / ×1 moderate / ×0.5 unflagged. */
-  riskFlags: jsonb('risk_flags'),
-}, (t) => [index('news_item_entity_idx').on(t.entityId)]);
+export const newsItem = pgTable(
+  'news_item',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    enrichmentId: uuid('enrichment_id')
+      .notNull()
+      .references(() => enrichment.id, { onDelete: 'cascade' }),
+    entityId: text('entity_id').references(() => entity.id),
+    title: text('title').notNull(),
+    sourceName: text('source_name'),
+    url: text('url'),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    /** Sayari's own flags. Weighted ×3 serious / ×1 moderate / ×0.5 unflagged. */
+    riskFlags: jsonb('risk_flags'),
+  },
+  (t) => [index('news_item_entity_idx').on(t.entityId)],
+);
 
 /**
  * Nominatim (with Photon as fallback) — for **Plants and unresolved rows only**.
@@ -183,49 +197,53 @@ export const geocode = pgTable('geocode', {
  * shared-parent pairs mean a deduction would move two Suppliers' ranks off one
  * shared fact. Ranks do not move.
  */
-export const familyMember = pgTable('family_member', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  enrichmentId: uuid('enrichment_id')
-    .notNull()
-    .references(() => enrichment.id, { onDelete: 'cascade' }),
-  /** The Profile (or Twin) the family hangs off. */
-  rootEntityId: text('root_entity_id')
-    .notNull()
-    .references(() => entity.id),
-  memberEntityId: text('member_entity_id')
-    .notNull()
-    .references(() => entity.id),
-  /** The ownership path, including the `possibly_same_as` hops it ran through. */
-  path: jsonb('path'),
-  hopDepth: integer('hop_depth').notNull(),
-  /** Set when a Deep Traversal, rather than the automatic read, found it. */
-  discoveredByJob: uuid('discovered_by_job'),
-  /**
-   * True when the 50-node window was smaller than the reachable set. "17 of
-   * 2 275 explored" is the honest phrasing, and an absent member proves nothing.
-   */
-  truncated: boolean('truncated').notNull().default(false),
-  exploredCount: integer('explored_count'),
-  reachableCount: integer('reachable_count'),
-  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [
-  index('family_member_root_idx').on(t.rootEntityId),
-  /**
-   * **One row per (root, member).**
-   *
-   * The table had only its `id` primary key, so the `onConflictDoNothing` on
-   * the insert had nothing to conflict on — a fresh uuid never collides — and
-   * a second enrichment of the same Profile simply inserted the family again.
-   * Bosch and Magna each held **100 rows for 50 distinct members**, which the
-   * supplier page then counted, so the badge read *"28 of 100 explored"* where
-   * the truth was 14 of 50. Both halves of that were doubled.
-   *
-   * A family member is a fact about the ownership graph, not about the read
-   * that found it, so the row identity is the pair — and the constraint is what
-   * makes re-enrichment idempotent rather than merely repeated.
-   */
-  uniqueIndex('family_member_root_member_key').on(t.rootEntityId, t.memberEntityId),
-]);
+export const familyMember = pgTable(
+  'family_member',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    enrichmentId: uuid('enrichment_id')
+      .notNull()
+      .references(() => enrichment.id, { onDelete: 'cascade' }),
+    /** The Profile (or Twin) the family hangs off. */
+    rootEntityId: text('root_entity_id')
+      .notNull()
+      .references(() => entity.id),
+    memberEntityId: text('member_entity_id')
+      .notNull()
+      .references(() => entity.id),
+    /** The ownership path, including the `possibly_same_as` hops it ran through. */
+    path: jsonb('path'),
+    hopDepth: integer('hop_depth').notNull(),
+    /** Set when a Deep Traversal, rather than the automatic read, found it. */
+    discoveredByJob: uuid('discovered_by_job'),
+    /**
+     * True when the 50-node window was smaller than the reachable set. "17 of
+     * 2 275 explored" is the honest phrasing, and an absent member proves nothing.
+     */
+    truncated: boolean('truncated').notNull().default(false),
+    exploredCount: integer('explored_count'),
+    reachableCount: integer('reachable_count'),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('family_member_root_idx').on(t.rootEntityId),
+    /**
+     * **One row per (root, member).**
+     *
+     * The table had only its `id` primary key, so the `onConflictDoNothing` on
+     * the insert had nothing to conflict on — a fresh uuid never collides — and
+     * a second enrichment of the same Profile simply inserted the family again.
+     * Bosch and Magna each held **100 rows for 50 distinct members**, which the
+     * supplier page then counted, so the badge read *"28 of 100 explored"* where
+     * the truth was 14 of 50. Both halves of that were doubled.
+     *
+     * A family member is a fact about the ownership graph, not about the read
+     * that found it, so the row identity is the pair — and the constraint is what
+     * makes re-enrichment idempotent rather than merely repeated.
+     */
+    uniqueIndex('family_member_root_member_key').on(t.rootEntityId, t.memberEntityId),
+  ],
+);
 
 export const enrichmentRelations = relations(enrichment, ({ one, many }) => ({
   upstreamResponse: one(upstreamResponse, {

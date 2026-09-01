@@ -43,7 +43,9 @@ function lookupTool(onRun: () => void) {
   return betaZodTool({
     name: 'lookup_supplier_country',
     description: 'Returns the roster country recorded for a supplier on this program.',
-    inputSchema: z.object({ supplierName: z.string().describe('The roster name, exactly as imported') }),
+    inputSchema: z.object({
+      supplierName: z.string().describe('The roster name, exactly as imported'),
+    }),
     run: async (input) => {
       onRun();
       const known: Record<string, string> = {
@@ -52,9 +54,7 @@ function lookupTool(onRun: () => void) {
         Aptiv: 'USA',
       };
       const country = known[input.supplierName];
-      return country
-        ? `${input.supplierName}: ${country}`
-        : 'no such supplier on this program';
+      return country ? `${input.supplierName}: ${country}` : 'no such supplier on this program';
     },
   });
 }
@@ -113,7 +113,11 @@ describe('replayFetch', () => {
       {
         loop: 'assess',
         system: RECORDED_SYSTEM,
-        tools: [lookupTool(() => { toolRuns += 1; })],
+        tools: [
+          lookupTool(() => {
+            toolRuns += 1;
+          }),
+        ],
         messages: [{ role: 'user', content: RECORDED_QUESTION }],
         caps: { toolCalls: JOB_CAPS.assess.toolCalls, tokens: JOB_CAPS.assess.tokens },
         roundN: 1,
@@ -197,10 +201,15 @@ describe('replayFetch', () => {
 
 describe('ReplayMissError', () => {
   it('names the fixture, the served turns and the next expected one', () => {
-    const error = new ReplayMissError('resolve/agree-r1', 'a'.repeat(64), [1], [
-      { n: 1, wireHash: 'b'.repeat(64), loop: 'resolve', roundN: 1, response: {} },
-      { n: 2, wireHash: 'c'.repeat(64), loop: 'resolve', roundN: 2, response: {} },
-    ]);
+    const error = new ReplayMissError(
+      'resolve/agree-r1',
+      'a'.repeat(64),
+      [1],
+      [
+        { n: 1, wireHash: 'b'.repeat(64), loop: 'resolve', roundN: 1, response: {} },
+        { n: 2, wireHash: 'c'.repeat(64), loop: 'resolve', roundN: 2, response: {} },
+      ],
+    );
     expect(error.message).toContain('resolve/agree-r1');
     expect(error.message).toContain('n=2');
     expect(error.message).toContain('round 2');

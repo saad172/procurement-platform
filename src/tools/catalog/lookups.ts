@@ -29,7 +29,8 @@ const spendOneSayariCall = (what: string) =>
     return {
       what,
       spends: { sayariCalls: 1 },
-      basis: 'One Sayari call. Sayari publishes no per-class price, so this is a call count and not a dollar figure.',
+      basis:
+        'One Sayari call. Sayari publishes no per-class price, so this is a call count and not a dollar figure.',
       caveats: [],
     };
   };
@@ -56,7 +57,9 @@ const findCandidatesByNameTown = defineTool({
     'Search Sayari for companies matching this roster row by name and town, including legal-form and rename variants. Say why you are trying a variant.',
   input: z.object({
     nameVariant: z.string().describe('The name to try — a rename or legal-form variant is allowed'),
-    whyThisVariant: z.string().describe('Why this term rather than the roster name. Recorded in the trace.'),
+    whyThisVariant: z
+      .string()
+      .describe('Why this term rather than the roster name. Recorded in the trace.'),
   }),
   surfaces: ['job'],
   effect: 'read',
@@ -132,7 +135,10 @@ const findLeiByName = defineTool({
         found: rows.length,
         // Stated in the return value, so the model cannot read a zero as a
         // clean negative.
-        zeroMeans: rows.length === 0 ? 'could not tell — GLEIF name search only matches the native-script primary name' : null,
+        zeroMeans:
+          rows.length === 0
+            ? 'could not tell — GLEIF name search only matches the native-script primary name'
+            : null,
         records: rows.map((r) => ({
           lei: r.id,
           legalName: r.attributes?.entity?.legalName?.name ?? null,
@@ -195,13 +201,19 @@ const sourceResult = (source: string, cacheHit: boolean, payload: unknown) => ({
   data: payload,
   widget: {
     type: 'source_result' as const,
-    payload: { source, cacheHit, cachedNote: cacheHit ? 'cached — no credits, no wait' : null, payload },
+    payload: {
+      source,
+      cacheHit,
+      cachedNote: cacheHit ? 'cached — no credits, no wait' : null,
+      payload,
+    },
   },
 });
 
 export const sayariResolve = defineTool({
   name: 'sayari_resolve',
-  description: 'Resolve one or more company names, with optional address and country, against the Sayari graph.',
+  description:
+    'Resolve one or more company names, with optional address and country, against the Sayari graph.',
   input: z.object({
     names: z.array(z.string()).min(1),
     addresses: z.array(z.string()).optional(),
@@ -374,7 +386,8 @@ export const sayariNegativeNews = defineTool({
 /** 3.6–13.4 s measured. Slow WITHOUT fanning out — the case one enum missed. */
 const sayariTradeSearch = defineTool({
   name: 'sayari_trade_search',
-  description: 'Find companies shipping a given HS line into given arrival countries, from Sayari trade data.',
+  description:
+    'Find companies shipping a given HS line into given arrival countries, from Sayari trade data.',
   input: z.object({
     hsCodes: z.array(z.string()).min(1),
     arrivalCountries: z.array(z.string()).min(1),
@@ -438,7 +451,10 @@ const worldbankIndicator = defineTool({
   latency: 'fast',
   confirm: spendOneFreeCall('Fetch this World Bank indicator.', 'The World Bank API'),
   handler: async (input, ctx) => {
-    const r = await ctx.upstream.worldbank.indicator({ country: input.country, indicator: input.indicator });
+    const r = await ctx.upstream.worldbank.indicator({
+      country: input.country,
+      indicator: input.indicator,
+    });
     return { ok: true, data: sourceResult('World Bank', r.cacheHit, r.data) };
   },
 });

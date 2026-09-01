@@ -52,7 +52,11 @@ function completeInput(overrides: Partial<SupplierScoringInput> = {}): SupplierS
   };
 }
 
-const factor = (name: string, level: RiskFactor['level'] = 'high', country: unknown = null): RiskFactor => ({
+const factor = (
+  name: string,
+  level: RiskFactor['level'] = 'high',
+  country: unknown = null,
+): RiskFactor => ({
   name,
   level,
   country,
@@ -163,7 +167,9 @@ describe('the coverage precondition — an empty result is never a clean result'
   });
 
   it('returns unknown for media when the query did not run on a resolved legal name', () => {
-    const r = scoreSupplier(completeInput({ news: { ranOnResolvedLegalName: false, articles: [] } }));
+    const r = scoreSupplier(
+      completeInput({ news: { ranOnResolvedLegalName: false, articles: [] } }),
+    );
     const media = r.criteria.find((c) => c.key === 'media_signal')!;
     expect(media.outcome.status).toBe('unknown');
   });
@@ -193,7 +199,9 @@ describe('the disqualifying badge', () => {
       completeInput({
         profile: {
           ...completeInput().profile!,
-          riskFactors: [factor('psa_owned_by_sheffield_hallam_reports_forced_labor_entity', 'high')],
+          riskFactors: [
+            factor('psa_owned_by_sheffield_hallam_reports_forced_labor_entity', 'high'),
+          ],
         },
       }),
     );
@@ -250,7 +258,10 @@ describe('the disqualifying badge', () => {
     const compliance = r.criteria.find((c) => c.key === 'compliance_risk')!;
     if (compliance.outcome.status === 'value') {
       expect(compliance.outcome.value).toBe(100);
-      expect(compliance.outcome.rawInputs.countryDerivedExcluded).toEqual(['cpi_score', 'basel_aml']);
+      expect(compliance.outcome.rawInputs.countryDerivedExcluded).toEqual([
+        'cpi_score',
+        'basel_aml',
+      ]);
     }
   });
 });
@@ -259,9 +270,7 @@ describe('Ownership exposure names WHY it is unknown', () => {
   const noOwners = () => completeInput({ owners: [] });
 
   it('distinguishes a real absence', () => {
-    const r = scoreSupplier(
-      noOwners(),
-    );
+    const r = scoreSupplier(noOwners());
     // The complete fixture claims one owner edge in relationshipCount, so with
     // no owners passed this reads as a truncated window, not an absence.
     const ownership = r.criteria.find((c) => c.key === 'ownership_exposure')!;
@@ -298,7 +307,9 @@ describe('Ownership exposure names WHY it is unknown', () => {
 
 describe('a Supplier with no Score', () => {
   it('has none because its Match is not accepted, and says so', () => {
-    const r = scoreSupplier(completeInput({ match: { status: 'needs_review' }, profile: undefined }));
+    const r = scoreSupplier(
+      completeInput({ match: { status: 'needs_review' }, profile: undefined }),
+    );
     expect(r.score).toBeNull();
     expect(r.scoreAbsentReason).toBe('no_match');
     expect(r.dataConfidence).toBe('thin');
@@ -372,15 +383,21 @@ describe('the Shortlist', () => {
   });
 
   it('separates the Excluded block by its two distinct reasons', () => {
-    const noMatch = scoreSupplier(completeInput({ supplierId: 'x', match: { status: 'not_found' }, profile: undefined }));
-    const noCategory = scoreSupplier(completeInput({ supplierId: 'y' }), DEFAULT_WEIGHTS, { hasCategory: false });
+    const noMatch = scoreSupplier(
+      completeInput({ supplierId: 'x', match: { status: 'not_found' }, profile: undefined }),
+    );
+    const noCategory = scoreSupplier(completeInput({ supplierId: 'y' }), DEFAULT_WEIGHTS, {
+      hasCategory: false,
+    });
     const { ranked, excluded } = buildShortlist([withScore('a', 'A', 70), noMatch, noCategory]);
     expect(ranked).toHaveLength(1);
     expect(excluded.map((e) => e.reason).sort()).toEqual(['no_category', 'no_match']);
   });
 
   it('shows no estimated Criterion for an excluded Supplier', () => {
-    const noMatch = scoreSupplier(completeInput({ match: { status: 'not_found' }, profile: undefined }));
+    const noMatch = scoreSupplier(
+      completeInput({ match: { status: 'not_found' }, profile: undefined }),
+    );
     expect(noMatch.score).toBeNull();
     expect(noMatch.criteria.every((c) => c.contribution === 0)).toBe(true);
   });
@@ -395,10 +412,12 @@ describe('data confidence is a badge, not a Criterion', () => {
   it('bands on distinct sources and the Enrichment checklist', () => {
     const base = completeInput();
     expect(dataConfidence(base)).toBe('strong');
-    expect(dataConfidence({ ...base, presentEnrichments: EXPECTED_ENRICHMENTS.slice(0, 3) as string[] })).toBe('adequate');
     expect(
-      dataConfidence({ ...base, profile: { ...base.profile!, distinctSourceCount: 2 } }),
-    ).toBe('thin');
+      dataConfidence({ ...base, presentEnrichments: EXPECTED_ENRICHMENTS.slice(0, 3) as string[] }),
+    ).toBe('adequate');
+    expect(dataConfidence({ ...base, profile: { ...base.profile!, distinctSourceCount: 2 } })).toBe(
+      'thin',
+    );
   });
 
   it('is thin for any Match that is not accepted, whatever the source count', () => {
@@ -411,7 +430,9 @@ describe('data confidence is a badge, not a Criterion', () => {
     // The whole reason it was demoted: a Supplier must not lose points for
     // sitting in a thin registry. It gates `clean`; it never scores.
     const strong = completeInput();
-    const adequate = completeInput({ presentEnrichments: EXPECTED_ENRICHMENTS.slice(0, 3) as string[] });
+    const adequate = completeInput({
+      presentEnrichments: EXPECTED_ENRICHMENTS.slice(0, 3) as string[],
+    });
     expect(dataConfidence(strong)).toBe('strong');
     expect(dataConfidence(adequate)).toBe('adequate');
     expect(scoreSupplier(strong).score).toBeCloseTo(scoreSupplier(adequate).score!, 9);

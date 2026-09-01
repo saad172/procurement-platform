@@ -9,10 +9,7 @@ import { loadParked } from '@/db/queries/needs-review';
  * A page reads through `db/queries`, never through the schema — see
  * `supplier-page.ts` for why.
  */
-export async function loadNeedsReviewPage(
-  db: Database,
-  args: { programId: string },
-) {
+export async function loadNeedsReviewPage(db: Database, args: { programId: string }) {
   const { programId } = args;
 
   const program = await db.query.program.findFirst({ where: eq(t.program.id, programId) });

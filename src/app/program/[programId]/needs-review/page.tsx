@@ -31,11 +31,7 @@ export default async function NeedsReviewPage({
   const data = await loadNeedsReviewPage(getPooledDb(), { programId });
   if (!data) notFound();
 
-  const {
-    program,
-    waiting,
-    decidable,
-  } = data;
+  const { program, waiting, decidable } = data;
   return (
     <main>
       <Breadcrumb
@@ -95,7 +91,9 @@ export default async function NeedsReviewPage({
                         {supplier.rosterName}
                       </Link>
                       <div className="note">
-                        <span className={`badge ${match.status === 'needs_review' ? 'warn' : 'bad'}`}>
+                        <span
+                          className={`badge ${match.status === 'needs_review' ? 'warn' : 'bad'}`}
+                        >
                           {match.status.replace(/_/g, ' ')}
                         </span>
                       </div>

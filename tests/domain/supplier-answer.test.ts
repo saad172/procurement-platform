@@ -49,7 +49,9 @@ describe('identity outranks everything below it', () => {
   });
 
   it('stops on a row nothing was found for', () => {
-    const result = answer({ match: { status: 'not_found', settledBy: 'agents', entityLabel: null } });
+    const result = answer({
+      match: { status: 'not_found', settledBy: 'agents', entityLabel: null },
+    });
     expect(result.tone).toBe('stop');
     expect(result.said).toMatch(/could not find Bosch on the graph/);
   });
@@ -100,7 +102,11 @@ describe('an unresolved objection outranks the verdict it was published with', (
 
   it('counts one objection as one', () => {
     const result = answer({
-      assessment: { verdict: 'escalate', evaluatorOutcome: 'published_with_objections', objections: ['a'] },
+      assessment: {
+        verdict: 'escalate',
+        evaluatorOutcome: 'published_with_objections',
+        objections: ['a'],
+      },
     });
     expect(result.because).toMatch(/an unresolved objection:/);
   });
@@ -117,7 +123,11 @@ describe('a settled verdict reads as itself', () => {
 
   it('names the conditions as the point when there are conditions', () => {
     const result = answer({
-      assessment: { verdict: 'recommend_with_conditions', evaluatorOutcome: 'passed', objections: [] },
+      assessment: {
+        verdict: 'recommend_with_conditions',
+        evaluatorOutcome: 'passed',
+        objections: [],
+      },
     });
     expect(result.tone).toBe('ok');
     expect(result.said).toMatch(/with conditions/);

@@ -81,9 +81,7 @@ async function main(): Promise<void> {
    * fetched it; the target is upserted here. A target that arrived as a bare
    * id has nothing to upsert, and is counted rather than invented.
    */
-  const known = new Set(
-    (await db.select({ id: t.entity.id }).from(t.entity)).map((row) => row.id),
-  );
+  const known = new Set((await db.select({ id: t.entity.id }).from(t.entity)).map((row) => row.id));
 
   for (const row of bodies) {
     for (const entity of entitiesIn(row.body)) {
@@ -112,7 +110,9 @@ async function main(): Promise<void> {
       `${skippedNoEntityRow} subject(s) skipped for having no entity row`,
   );
   if (unclassified.size > 0) {
-    console.log(`unclassified types (stored, excluded from ownership): ${[...unclassified].join(', ')}`);
+    console.log(
+      `unclassified types (stored, excluded from ownership): ${[...unclassified].join(', ')}`,
+    );
   }
   console.log(`${linked} entit(ies) linked to the body they were projected from`);
   if (dryRun) console.log('dry run — nothing written');
@@ -146,9 +146,12 @@ async function backfillProvenance(db: ReturnType<typeof getDirectDb>): Promise<n
   let linked = 0;
   for (const row of bodies) {
     const body = row.body as { data?: { id?: unknown }; id?: unknown };
-    const entityId = typeof body?.data?.id === 'string' ? body.data.id
-      : typeof body?.id === 'string' ? body.id
-      : null;
+    const entityId =
+      typeof body?.data?.id === 'string'
+        ? body.data.id
+        : typeof body?.id === 'string'
+          ? body.id
+          : null;
     if (!entityId) continue;
 
     const updated = await db

@@ -56,36 +56,43 @@ export type Settlement = {
  * candidates**, which is what keeps `match` **total over Suppliers** — so the
  * scoring bands, the lifecycle and the Excluded block need no fourth case.
  */
-export async function settleMatch(db: Database, settlement: Settlement): Promise<{ matchId: string; attemptId: string }> {
+export async function settleMatch(
+  db: Database,
+  settlement: Settlement,
+): Promise<{ matchId: string; attemptId: string }> {
   return db.transaction(async (tx) => {
     const existing = await tx.query.match.findFirst({
       where: eq(t.match.supplierId, settlement.supplierId),
     });
 
     const matchId = existing
-      ? (await tx
-          .update(t.match)
-          .set({
-            status: settlement.status,
-            entityId: settlement.entityId,
-            settledBy: settlement.settledBy,
-            matchStrength: settlement.matchStrength ?? null,
-            settledAt: new Date(),
-          })
-          .where(eq(t.match.id, existing.id))
-          .returning({ id: t.match.id }))[0]!.id
-      : (await tx
-          .insert(t.match)
-          .values({
-            // One Match per Supplier, upserted — so the Supplier IS the key.
-            id: derivedId('match', settlement.supplierId, 0),
-            supplierId: settlement.supplierId,
-            status: settlement.status,
-            entityId: settlement.entityId,
-            settledBy: settlement.settledBy,
-            matchStrength: settlement.matchStrength ?? null,
-          })
-          .returning({ id: t.match.id }))[0]!.id;
+      ? (
+          await tx
+            .update(t.match)
+            .set({
+              status: settlement.status,
+              entityId: settlement.entityId,
+              settledBy: settlement.settledBy,
+              matchStrength: settlement.matchStrength ?? null,
+              settledAt: new Date(),
+            })
+            .where(eq(t.match.id, existing.id))
+            .returning({ id: t.match.id })
+        )[0]!.id
+      : (
+          await tx
+            .insert(t.match)
+            .values({
+              // One Match per Supplier, upserted — so the Supplier IS the key.
+              id: derivedId('match', settlement.supplierId, 0),
+              supplierId: settlement.supplierId,
+              status: settlement.status,
+              entityId: settlement.entityId,
+              settledBy: settlement.settledBy,
+              matchStrength: settlement.matchStrength ?? null,
+            })
+            .returning({ id: t.match.id })
+        )[0]!.id;
 
     // Append-only: the next attempt number, never an overwrite.
     const [{ next }] = (await tx
@@ -122,7 +129,9 @@ export async function settleMatch(db: Database, settlement: Settlement): Promise
           matchStrength: candidate.matchStrength ?? null,
           explanation: (candidate.explanation ?? null) as never,
         })
-        .onConflictDoNothing({ target: [t.matchCandidate.matchAttemptId, t.matchCandidate.entityId] })
+        .onConflictDoNothing({
+          target: [t.matchCandidate.matchAttemptId, t.matchCandidate.entityId],
+        })
         .returning({ id: t.matchCandidate.id });
 
       if (!row) continue;
@@ -176,6 +185,9 @@ export async function candidatesSeen(db: Database, supplierId: string): Promise<
     .select({ entityId: t.matchCandidate.entityId })
     .from(t.matchCandidate)
     .innerJoin(t.matchAttempt, eq(t.matchAttempt.id, t.matchCandidate.matchAttemptId))
-    .innerJoin(t.match, and(eq(t.match.id, t.matchAttempt.matchId), eq(t.match.supplierId, supplierId)));
+    .innerJoin(
+      t.match,
+      and(eq(t.match.id, t.matchAttempt.matchId), eq(t.match.supplierId, supplierId)),
+    );
   return [...new Set(rows.map((r) => r.entityId))];
 }

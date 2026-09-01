@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { compareAddress, containsWholeWord, normaliseAddress, sameCountry } from '@/domain/match/address-ladder';
+import {
+  compareAddress,
+  containsWholeWord,
+  normaliseAddress,
+  sameCountry,
+} from '@/domain/match/address-ladder';
 
 /**
  * SPEC §6.2 — the three-rung ladder, and why there is no address parser.
@@ -21,7 +26,9 @@ describe('whole-word containment is what makes a parser unnecessary', () => {
   it('folds diacritics and ß, which this roster needs', () => {
     // Real roster rows: Löwentaler Straße, Công ty TNHH BOSCH Việt Nam.
     expect(normaliseAddress('Löwentaler Straße')).toBe('lowentaler strasse');
-    expect(containsWholeWord('Löwentaler Straße 20, 88046 Friedrichshafen', 'Friedrichshafen')).toBe(true);
+    expect(
+      containsWholeWord('Löwentaler Straße 20, 88046 Friedrichshafen', 'Friedrichshafen'),
+    ).toBe(true);
     expect(containsWholeWord('Công ty TNHH BOSCH Việt Nam', 'Viet Nam')).toBe(true);
   });
 });

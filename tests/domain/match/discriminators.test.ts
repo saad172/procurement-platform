@@ -88,7 +88,9 @@ describe('THE BOSCH DECOY — the right building holding the wrong company', () 
     const results = runDiscriminators(BOSCH_ROW, ventureCapital);
     const failing = results.filter((r) => r.verdict === 'fail').map((r) => r.discriminator);
     expect(failing).toEqual(['business_purpose']);
-    expect(verdictFor(results, 'business_purpose').reasoning).toMatch(/right building can hold the wrong company/);
+    expect(verdictFor(results, 'business_purpose').reasoning).toMatch(
+      /right building can hold the wrong company/,
+    );
   });
 
   it('is therefore never auto-accepted', () => {
@@ -150,7 +152,10 @@ describe('business_purpose degrades explicitly for an uncategorised Supplier', (
   });
 
   it('still rejects an investment arm', () => {
-    const arm = candidate({ label: 'BASF VENTURE CAPITAL GMBH', businessPurposes: ['Venture capital'] });
+    const arm = candidate({
+      label: 'BASF VENTURE CAPITAL GMBH',
+      businessPurposes: ['Venture capital'],
+    });
     const results = runDiscriminators(uncategorised, arm);
     expect(verdictFor(results, 'business_purpose').verdict).toBe('fail');
   });
@@ -158,12 +163,18 @@ describe('business_purpose degrades explicitly for an uncategorised Supplier', (
 
 describe('liveness', () => {
   it('fails a closed company', () => {
-    const results = runDiscriminators(BOSCH_ROW, candidate({ closed: true, latestStatus: 'dissolved' }));
+    const results = runDiscriminators(
+      BOSCH_ROW,
+      candidate({ closed: true, latestStatus: 'dissolved' }),
+    );
     expect(verdictFor(results, 'liveness').verdict).toBe('fail');
   });
 
   it('fails a company whose status reads as dead even when the flag is not set', () => {
-    const results = runDiscriminators(BOSCH_ROW, candidate({ closed: false, latestStatus: 'in liquidation' }));
+    const results = runDiscriminators(
+      BOSCH_ROW,
+      candidate({ closed: false, latestStatus: 'in liquidation' }),
+    );
     expect(verdictFor(results, 'liveness').verdict).toBe('fail');
   });
 
@@ -174,7 +185,10 @@ describe('liveness', () => {
 });
 
 describe('the auto-accept gate', () => {
-  const clean = () => ({ candidate: candidate({}), verdicts: runDiscriminators(BOSCH_ROW, candidate({})) });
+  const clean = () => ({
+    candidate: candidate({}),
+    verdicts: runDiscriminators(BOSCH_ROW, candidate({})),
+  });
 
   it('accepts exactly one clean candidate with a GLEIF second witness', () => {
     const outcome = evaluateAutoAccept([clean()]);
@@ -187,7 +201,9 @@ describe('the auto-accept gate', () => {
     // LEI can never be auto-accepted. On a roster of trade names few rows clear
     // this bar, and THAT COUNT IS A RESULT TO REPORT.
     const noLei = candidate({ lei: null, gleif: undefined });
-    const outcome = evaluateAutoAccept([{ candidate: noLei, verdicts: runDiscriminators(BOSCH_ROW, noLei) }]);
+    const outcome = evaluateAutoAccept([
+      { candidate: noLei, verdicts: runDiscriminators(BOSCH_ROW, noLei) },
+    ]);
     expect(outcome.accepted).toBe(false);
     expect(outcome.reason).toMatch(/safe direction of failure/);
   });
@@ -204,7 +220,9 @@ describe('the auto-accept gate', () => {
 
   it('refuses when no candidate passes all eight', () => {
     const decoy = candidate({ businessPurposes: ['Venture capital'] });
-    const outcome = evaluateAutoAccept([{ candidate: decoy, verdicts: runDiscriminators(BOSCH_ROW, decoy) }]);
+    const outcome = evaluateAutoAccept([
+      { candidate: decoy, verdicts: runDiscriminators(BOSCH_ROW, decoy) },
+    ]);
     expect(outcome.accepted).toBe(false);
     expect(outcome.reason).toMatch(/No candidate passed all eight/);
   });

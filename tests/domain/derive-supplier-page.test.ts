@@ -17,8 +17,16 @@ describe('deriveFamilyCoverageAndExposure', () => {
     // The regression this guards: the family stored twice for one entity once
     // made the badge read "28 of 100 explored" against a truth of 14 of 50.
     const { coverage } = deriveFamilyCoverageAndExposure([
-      { member: { id: 'a', label: 'A', country: 'DEU', risk: null }, exploredCount: 14, reachableCount: 50 },
-      { member: { id: 'a', label: 'A', country: 'DEU', risk: null }, exploredCount: 14, reachableCount: 50 },
+      {
+        member: { id: 'a', label: 'A', country: 'DEU', risk: null },
+        exploredCount: 14,
+        reachableCount: 50,
+      },
+      {
+        member: { id: 'a', label: 'A', country: 'DEU', risk: null },
+        exploredCount: 14,
+        reachableCount: 50,
+      },
     ]);
     expect(coverage).toEqual({ explored: 14, reachable: 50 });
   });

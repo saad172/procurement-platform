@@ -35,8 +35,7 @@ const base: RunsAnswerInput = {
   runHref: (id) => `/program/p/runs/${id}`,
 };
 
-const answers = (overrides: Partial<RunsAnswerInput> = {}) =>
-  runsAnswer({ ...base, ...overrides });
+const answers = (overrides: Partial<RunsAnswerInput> = {}) => runsAnswer({ ...base, ...overrides });
 
 describe('work that was started and never finished', () => {
   /** The real case, and the whole explanation for a nearly-empty program. */
@@ -56,8 +55,20 @@ describe('work that was started and never finished', () => {
   it('picks the batch that left the most undone, not the dearest', () => {
     const [first] = answers({
       runs: [
-        { id: 'cheap', label: 'a big batch', state: 'cancelled', jobs: { total: 90, done: 0, failed: 0, neverStarted: 90 }, actualUsd: 0.1 },
-        { id: 'dear', label: 'a small batch', state: 'cancelled', jobs: { total: 5, done: 0, failed: 0, neverStarted: 5 }, actualUsd: 300 },
+        {
+          id: 'cheap',
+          label: 'a big batch',
+          state: 'cancelled',
+          jobs: { total: 90, done: 0, failed: 0, neverStarted: 90 },
+          actualUsd: 0.1,
+        },
+        {
+          id: 'dear',
+          label: 'a small batch',
+          state: 'cancelled',
+          jobs: { total: 5, done: 0, failed: 0, neverStarted: 5 },
+          actualUsd: 300,
+        },
       ],
     });
     expect(first!.said).toMatch(/^A big batch was stopped part way\. 90 of 90 never started\./);
@@ -65,7 +76,15 @@ describe('work that was started and never finished', () => {
 
   it('does not claim anything finished when nothing did', () => {
     const [first] = answers({
-      runs: [{ id: 'r', label: 'a batch', state: 'cancelled', jobs: { total: 10, done: 0, failed: 0, neverStarted: 10 }, actualUsd: 0 }],
+      runs: [
+        {
+          id: 'r',
+          label: 'a batch',
+          state: 'cancelled',
+          jobs: { total: 10, done: 0, failed: 0, neverStarted: 10 },
+          actualUsd: 0,
+        },
+      ],
     });
     expect(first!.because).toMatch(/^None finished, and the remaining 10/);
   });
@@ -83,7 +102,9 @@ describe('our own checks refusing to publish', () => {
     expect(second!.said).toBe(
       '2 write-ups were refused by our own checks — and that is the system working.',
     );
-    expect(second!.because).toMatch(/For Denso and ZF Friedrichshafen the check could not find the figure/);
+    expect(second!.because).toMatch(
+      /For Denso and ZF Friedrichshafen the check could not find the figure/,
+    );
     expect(second!.because).toMatch(/Nothing was lost except the attempt/);
   });
 
@@ -103,7 +124,15 @@ describe('our own checks refusing to publish', () => {
 describe('when there is nothing to flag', () => {
   const clean: RunsAnswerInput = {
     ...base,
-    runs: [{ id: 'r', label: 'a batch', state: 'done', jobs: { total: 5, done: 5, failed: 0, neverStarted: 0 }, actualUsd: 3 }],
+    runs: [
+      {
+        id: 'r',
+        label: 'a batch',
+        state: 'done',
+        jobs: { total: 5, done: 5, failed: 0, neverStarted: 0 },
+        actualUsd: 3,
+      },
+    ],
     refusedByOurChecks: [],
   };
 
@@ -128,7 +157,11 @@ describe('every answer is one a person could act on', () => {
     base,
     { ...base, refusedByOurChecks: [] },
     { ...base, runs: [], refusedByOurChecks: [] },
-    { ...base, runs: base.runs.map((r) => ({ ...r, jobs: { ...r.jobs, neverStarted: 0 } })), refusedByOurChecks: [] },
+    {
+      ...base,
+      runs: base.runs.map((r) => ({ ...r, jobs: { ...r.jobs, neverStarted: 0 } })),
+      refusedByOurChecks: [],
+    },
   ];
 
   it('never answers with a bare status word, and never with two priorities', () => {

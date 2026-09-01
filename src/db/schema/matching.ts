@@ -34,46 +34,54 @@ import { discriminatorVerdict, matchSettledBy, matchStatus } from './enums';
  * is *correct* — and it surfaces as a Shortlist finding, not a write failure
  * (SPEC §3.3).
  */
-export const match = pgTable('match', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  supplierId: uuid('supplier_id')
-    .notNull()
-    .references(() => supplier.id, { onDelete: 'cascade' })
-    .unique(),
-  status: matchStatus('status').notNull(),
-  /** Null unless `status = 'accepted'`. This row, so pointed at, is the Profile. */
-  entityId: text('entity_id').references(() => entity.id),
-  settledBy: matchSettledBy('settled_by').notNull(),
-  /** Sayari's own `matchStrength`. Null for a discovered Supplier reads as strong. */
-  matchStrength: text('match_strength'),
-  settledAt: timestamp('settled_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index('match_entity_idx').on(t.entityId)]);
+export const match = pgTable(
+  'match',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    supplierId: uuid('supplier_id')
+      .notNull()
+      .references(() => supplier.id, { onDelete: 'cascade' })
+      .unique(),
+    status: matchStatus('status').notNull(),
+    /** Null unless `status = 'accepted'`. This row, so pointed at, is the Profile. */
+    entityId: text('entity_id').references(() => entity.id),
+    settledBy: matchSettledBy('settled_by').notNull(),
+    /** Sayari's own `matchStrength`. Null for a discovered Supplier reads as strong. */
+    matchStrength: text('match_strength'),
+    settledAt: timestamp('settled_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('match_entity_idx').on(t.entityId)],
+);
 
 /**
  * **Append-only.** A human override after an agent accept writes a *new*
  * attempt, so the Needs Review page shows both settlements rather than one
  * overwriting the other (SPEC §6.8).
  */
-export const matchAttempt = pgTable('match_attempt', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  matchId: uuid('match_id')
-    .notNull()
-    .references(() => match.id, { onDelete: 'cascade' }),
-  jobId: uuid('job_id'),
-  attemptN: integer('attempt_n').notNull(),
-  /** The rung reached: R1 batch, R2 name+town, R3a address, R3b/R3c LEI. */
-  rungsUsed: jsonb('rungs_used'),
-  outcomeStatus: matchStatus('outcome_status').notNull(),
-  outcomeEntityId: text('outcome_entity_id').references(() => entity.id),
-  settledBy: matchSettledBy('settled_by').notNull(),
-  /** For a chat-driven settlement: which message asked for it (SPEC §6.8). */
-  threadMessageId: uuid('thread_message_id'),
-  note: text('note'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [
-  uniqueIndex('match_attempt_match_n_key').on(t.matchId, t.attemptN),
-  index('match_attempt_match_idx').on(t.matchId),
-]);
+export const matchAttempt = pgTable(
+  'match_attempt',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    matchId: uuid('match_id')
+      .notNull()
+      .references(() => match.id, { onDelete: 'cascade' }),
+    jobId: uuid('job_id'),
+    attemptN: integer('attempt_n').notNull(),
+    /** The rung reached: R1 batch, R2 name+town, R3a address, R3b/R3c LEI. */
+    rungsUsed: jsonb('rungs_used'),
+    outcomeStatus: matchStatus('outcome_status').notNull(),
+    outcomeEntityId: text('outcome_entity_id').references(() => entity.id),
+    settledBy: matchSettledBy('settled_by').notNull(),
+    /** For a chat-driven settlement: which message asked for it (SPEC §6.8). */
+    threadMessageId: uuid('thread_message_id'),
+    note: text('note'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('match_attempt_match_n_key').on(t.matchId, t.attemptN),
+    index('match_attempt_match_idx').on(t.matchId),
+  ],
+);
 
 /**
  * A Sayari entity that resolution returned for a Supplier, carrying the verdict
@@ -87,27 +95,31 @@ export const matchAttempt = pgTable('match_attempt', {
  * `score` is Sayari's, and is **not comparable between queries** — which is why
  * the auto-accept gate has no ratio margin over the runner-up (SPEC §6.3).
  */
-export const matchCandidate = pgTable('match_candidate', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  matchAttemptId: uuid('match_attempt_id')
-    .notNull()
-    .references(() => matchAttempt.id, { onDelete: 'cascade' }),
-  entityId: text('entity_id')
-    .notNull()
-    .references(() => entity.id),
-  /** Which query rung surfaced this Candidate. */
-  foundByRung: text('found_by_rung').notNull(),
-  /** Why that query term was tried — model knowledge may choose a term but is
-   * never evidence, so the provenance of the search is recorded (SPEC §6.6). */
-  queryProvenance: text('query_provenance'),
-  score: numeric('score', { precision: 12, scale: 6 }),
-  matchStrength: text('match_strength'),
-  explanation: jsonb('explanation'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [
-  uniqueIndex('match_candidate_attempt_entity_key').on(t.matchAttemptId, t.entityId),
-  index('match_candidate_attempt_idx').on(t.matchAttemptId),
-]);
+export const matchCandidate = pgTable(
+  'match_candidate',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    matchAttemptId: uuid('match_attempt_id')
+      .notNull()
+      .references(() => matchAttempt.id, { onDelete: 'cascade' }),
+    entityId: text('entity_id')
+      .notNull()
+      .references(() => entity.id),
+    /** Which query rung surfaced this Candidate. */
+    foundByRung: text('found_by_rung').notNull(),
+    /** Why that query term was tried — model knowledge may choose a term but is
+     * never evidence, so the provenance of the search is recorded (SPEC §6.6). */
+    queryProvenance: text('query_provenance'),
+    score: numeric('score', { precision: 12, scale: 6 }),
+    matchStrength: text('match_strength'),
+    explanation: jsonb('explanation'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('match_candidate_attempt_entity_key').on(t.matchAttemptId, t.entityId),
+    index('match_candidate_attempt_idx').on(t.matchAttemptId),
+  ],
+);
 
 /**
  * One row per (Candidate × Discriminator): the verdict and one line of
@@ -117,23 +129,27 @@ export const matchCandidate = pgTable('match_candidate', {
  * UI iterates and the Needs Review page renders as a ladder — and because
  * adding a ninth check should not be a migration on a wide table.
  */
-export const matchCandidateVerdict = pgTable('match_candidate_verdict', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  matchCandidateId: uuid('match_candidate_id')
-    .notNull()
-    .references(() => matchCandidate.id, { onDelete: 'cascade' }),
-  discriminator: text('discriminator').notNull(),
-  verdict: discriminatorVerdict('verdict').notNull(),
-  reasoning: text('reasoning').notNull(),
-  /** `rules` when code ran the check, or the agent role that reported it. */
-  reportedBy: text('reported_by').notNull(),
-}, (t) => [
-  uniqueIndex('match_candidate_verdict_key').on(
-    t.matchCandidateId,
-    t.discriminator,
-    t.reportedBy,
-  ),
-]);
+export const matchCandidateVerdict = pgTable(
+  'match_candidate_verdict',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    matchCandidateId: uuid('match_candidate_id')
+      .notNull()
+      .references(() => matchCandidate.id, { onDelete: 'cascade' }),
+    discriminator: text('discriminator').notNull(),
+    verdict: discriminatorVerdict('verdict').notNull(),
+    reasoning: text('reasoning').notNull(),
+    /** `rules` when code ran the check, or the agent role that reported it. */
+    reportedBy: text('reported_by').notNull(),
+  },
+  (t) => [
+    uniqueIndex('match_candidate_verdict_key').on(
+      t.matchCandidateId,
+      t.discriminator,
+      t.reportedBy,
+    ),
+  ],
+);
 
 export const matchRelations = relations(match, ({ one, many }) => ({
   supplier: one(supplier, { fields: [match.supplierId], references: [supplier.id] }),

@@ -102,7 +102,10 @@ describe('assess/published-with-objections replays', () => {
     const citations = await db.select().from(t.citation);
     const cited = new Set(citations.map((row) => row.sentenceId));
     const uncited = sentences.filter((row) => !cited.has(row.id));
-    expect(uncited.map((row) => row.text), 'these sentences resolve to no citation').toEqual([]);
+    expect(
+      uncited.map((row) => row.text),
+      'these sentences resolve to no citation',
+    ).toEqual([]);
 
     // `limits` is mandatory: an Assessment that admits nothing has not been
     // checked, it has been agreed with.

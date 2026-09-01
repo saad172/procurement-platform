@@ -2,7 +2,12 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
-import { DEFAULT_WEIGHTS, WEIGHTED_CRITERIA, WEIGHT_PRESETS, type WeightVector } from '@/domain/score';
+import {
+  DEFAULT_WEIGHTS,
+  WEIGHTED_CRITERIA,
+  WEIGHT_PRESETS,
+  type WeightVector,
+} from '@/domain/score';
 import { RESET_TO_DEFAULT_LABEL, historyModeFor } from '@/lib/view-state';
 
 /**
@@ -90,8 +95,8 @@ export function WeightRail({ programDefault, live }: WeightRailProps) {
           {WEIGHTED_CRITERIA.map((key) => `${LABELS[key]} ${weights[key]}`).join(' · ')}
         </p>
         <p className="note" style={{ marginTop: '0.4rem', opacity: 0.75 }}>
-          Read-only here — nothing on this page is scored, and a control that visibly changes nothing
-          is worse than no control.
+          Read-only here — nothing on this page is scored, and a control that visibly changes
+          nothing is worse than no control.
         </p>
       </section>
     );
@@ -99,9 +104,18 @@ export function WeightRail({ programDefault, live }: WeightRailProps) {
 
   return (
     <section className="card" aria-label="Weight rail">
-      <h3 style={{ marginTop: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <h3
+        style={{
+          marginTop: 0,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
         <span>Weights</span>
-        <span className="note" style={{ fontWeight: 400 }}>sum {total}</span>
+        <span className="note" style={{ fontWeight: 400 }}>
+          sum {total}
+        </span>
       </h3>
 
       <div className="rail">
@@ -148,7 +162,14 @@ export function WeightRail({ programDefault, live }: WeightRailProps) {
             <button
               type="button"
               onClick={() => write(programDefault as Required<WeightVector>, 'navigate')}
-              style={{ background: 'none', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+              style={{
+                background: 'none',
+                border: 0,
+                color: 'inherit',
+                cursor: 'pointer',
+                padding: 0,
+                textDecoration: 'underline',
+              }}
             >
               {RESET_TO_DEFAULT_LABEL}
             </button>

@@ -89,7 +89,11 @@ export async function recommendCategory(
     jobId: deps.jobId,
   });
 
-  return { ...published, evaluatorOutcome: outcome.evaluatorOutcome, roundsUsed: outcome.roundsUsed };
+  return {
+    ...published,
+    evaluatorOutcome: outcome.evaluatorOutcome,
+    roundsUsed: outcome.roundsUsed,
+  };
 }
 
 /** Everything a Round of the lead/evaluator loop reads, built once. */
@@ -292,7 +296,9 @@ async function runRecommendEvaluate(
 
 function textOf(result: Awaited<ReturnType<typeof runLoop>>): string {
   if (result.status !== 'done') return `the evaluator loop ended as ${result.status}`;
-  const message = result.finalMessage as { content?: { type: string; text?: string }[] } | undefined;
+  const message = result.finalMessage as
+    | { content?: { type: string; text?: string }[] }
+    | undefined;
   return (message?.content ?? [])
     .filter((block) => block.type === 'text')
     .map((block) => block.text ?? '')
@@ -307,7 +313,9 @@ export function narrativeHandlers(deps: {
 }) {
   return {
     recommend: async (job: typeof t.job.$inferSelect, db: Database) => {
-      const category = await db.query.category.findFirst({ where: eq(t.category.id, job.subjectId) });
+      const category = await db.query.category.findFirst({
+        where: eq(t.category.id, job.subjectId),
+      });
       if (!category) return { state: 'failed' as const, error: `no category ${job.subjectId}` };
       await recommendCategory(
         { db, toolCtx: deps.makeToolCtx(job), modelCtx: deps.makeModelCtx(job), jobId: job.id },

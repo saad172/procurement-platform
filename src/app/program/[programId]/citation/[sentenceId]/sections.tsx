@@ -29,9 +29,7 @@ export function Citations({ data }: { data: Data }) {
   const { citations } = data;
   return (
     <>
-      <h2>
-        {citations.length === 1 ? 'One citation' : `${citations.length} citations`}
-      </h2>
+      <h2>{citations.length === 1 ? 'One citation' : `${citations.length} citations`}</h2>
       <div className="card">
         {citations.length === 0 ? (
           /*

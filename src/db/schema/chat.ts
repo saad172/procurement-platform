@@ -17,15 +17,19 @@ import { confirmState, threadMessageRole } from './enums';
  */
 
 /** Many per Program, created by an explicit *new chat*, auto-titled, never deleted. */
-export const thread = pgTable('thread', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  programId: uuid('program_id')
-    .notNull()
-    .references(() => program.id, { onDelete: 'cascade' }),
-  /** Derived from the first message and the page it was opened from. */
-  title: text('title'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index('thread_program_idx').on(t.programId, t.createdAt)]);
+export const thread = pgTable(
+  'thread',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    programId: uuid('program_id')
+      .notNull()
+      .references(() => program.id, { onDelete: 'cascade' }),
+    /** Derived from the first message and the page it was opened from. */
+    title: text('title'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('thread_program_idx').on(t.programId, t.createdAt)],
+);
 
 /**
  * `role` widens to `user | assistant | tool`, which makes **the transcript the
@@ -43,23 +47,27 @@ export const thread = pgTable('thread', {
  * - `pageRef` — the page *and its view state*, so chat can see the weight
  *   vector the person is actually looking at.
  */
-export const threadMessage = pgTable('thread_message', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  threadId: uuid('thread_id')
-    .notNull()
-    .references(() => thread.id, { onDelete: 'cascade' }),
-  role: threadMessageRole('role').notNull(),
-  text: text('text'),
-  /** `display: 'summarized'` — a summary, never the chain of thought. */
-  thinkingSummary: text('thinking_summary'),
-  pageRef: text('page_ref'),
-  widget: jsonb('widget'),
-  confirm: jsonb('confirm'),
-  confirmState: confirmState('confirm_state'),
-  /** Set once a confirm is accepted and the Job it proposed is enqueued. */
-  jobId: uuid('job_id'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index('thread_message_thread_idx').on(t.threadId, t.createdAt)]);
+export const threadMessage = pgTable(
+  'thread_message',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    threadId: uuid('thread_id')
+      .notNull()
+      .references(() => thread.id, { onDelete: 'cascade' }),
+    role: threadMessageRole('role').notNull(),
+    text: text('text'),
+    /** `display: 'summarized'` — a summary, never the chain of thought. */
+    thinkingSummary: text('thinking_summary'),
+    pageRef: text('page_ref'),
+    widget: jsonb('widget'),
+    confirm: jsonb('confirm'),
+    confirmState: confirmState('confirm_state'),
+    /** Set once a confirm is accepted and the Job it proposed is enqueued. */
+    jobId: uuid('job_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('thread_message_thread_idx').on(t.threadId, t.createdAt)],
+);
 
 export const threadRelations = relations(thread, ({ one, many }) => ({
   program: one(program, { fields: [thread.programId], references: [program.id] }),

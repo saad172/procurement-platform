@@ -84,10 +84,44 @@ export type CandidateFacts = {
 
 /** Words a legal name carries that say nothing about which company it is. */
 const LEGAL_FORMS = new Set([
-  'gmbh', 'ag', 'kg', 'kgaa', 'se', 'mbh', 'co', 'ltd', 'limited', 'plc',
-  'inc', 'incorporated', 'corp', 'corporation', 'llc', 'lp', 'sa', 'sas',
-  'sarl', 'spa', 'srl', 'bv', 'nv', 'ab', 'as', 'oy', 'kk', 'kabushiki',
-  'kaisha', 'pte', 'pty', 'sdn', 'bhd', 'de', 'cv', 'sl', 'the', 'and',
+  'gmbh',
+  'ag',
+  'kg',
+  'kgaa',
+  'se',
+  'mbh',
+  'co',
+  'ltd',
+  'limited',
+  'plc',
+  'inc',
+  'incorporated',
+  'corp',
+  'corporation',
+  'llc',
+  'lp',
+  'sa',
+  'sas',
+  'sarl',
+  'spa',
+  'srl',
+  'bv',
+  'nv',
+  'ab',
+  'as',
+  'oy',
+  'kk',
+  'kabushiki',
+  'kaisha',
+  'pte',
+  'pty',
+  'sdn',
+  'bhd',
+  'de',
+  'cv',
+  'sl',
+  'the',
+  'and',
 ]);
 
 const significantTokens = (name: string): string[] =>
@@ -101,20 +135,54 @@ const significantTokens = (name: string): string[] =>
  * correctly-addressed investment arm.
  */
 const NON_OPERATING_MARKERS = [
-  'venture', 'ventures', 'capital', 'investment', 'investments', 'holding',
-  'holdings', 'beteiligung', 'beteiligungen', 'finance', 'financing',
-  'treasury', 'insurance', 'pension', 'trust', 'foundation', 'stiftung',
-  'real estate', 'immobilien', 'property', 'properties', 'leasing',
+  'venture',
+  'ventures',
+  'capital',
+  'investment',
+  'investments',
+  'holding',
+  'holdings',
+  'beteiligung',
+  'beteiligungen',
+  'finance',
+  'financing',
+  'treasury',
+  'insurance',
+  'pension',
+  'trust',
+  'foundation',
+  'stiftung',
+  'real estate',
+  'immobilien',
+  'property',
+  'properties',
+  'leasing',
 ];
 
 const OPERATING_MARKERS = [
-  'manufactur', 'produktion', 'production', 'works', 'werk', 'factory',
-  'industri', 'engineering', 'technolog', 'automotive', 'systems', 'components',
-  'electronics', 'machinery', 'assembly', 'plant',
+  'manufactur',
+  'produktion',
+  'production',
+  'works',
+  'werk',
+  'factory',
+  'industri',
+  'engineering',
+  'technolog',
+  'automotive',
+  'systems',
+  'components',
+  'electronics',
+  'machinery',
+  'assembly',
+  'plant',
 ];
 
 /** Runs all eight against one Candidate. Order matches DISCRIMINATOR_NAMES. */
-export function runDiscriminators(roster: RosterRow, candidate: CandidateFacts): DiscriminatorResult[] {
+export function runDiscriminators(
+  roster: RosterRow,
+  candidate: CandidateFacts,
+): DiscriminatorResult[] {
   const address = compareAddresses({
     rosterAddress: roster.address,
     rosterCountry: roster.country,
@@ -133,7 +201,10 @@ export function runDiscriminators(roster: RosterRow, candidate: CandidateFacts):
   ];
 }
 
-function countryDiscriminator(address: AddressComparison, candidate: CandidateFacts): DiscriminatorResult {
+function countryDiscriminator(
+  address: AddressComparison,
+  candidate: CandidateFacts,
+): DiscriminatorResult {
   const { candidateCountry, rosterCountry } = address.evidence;
   return {
     discriminator: 'country',
@@ -148,8 +219,10 @@ function countryDiscriminator(address: AddressComparison, candidate: CandidateFa
 }
 
 function localityDiscriminator(address: AddressComparison): DiscriminatorResult {
-  const { candidateCity, candidatePostcode, postcodeMatched, addressesConsidered } = address.evidence;
-  const across = addressesConsidered > 1 ? ` (across ${addressesConsidered} recorded addresses)` : '';
+  const { candidateCity, candidatePostcode, postcodeMatched, addressesConsidered } =
+    address.evidence;
+  const across =
+    addressesConsidered > 1 ? ` (across ${addressesConsidered} recorded addresses)` : '';
   return {
     discriminator: 'locality',
     verdict: address.locality,
@@ -193,7 +266,9 @@ function nameCover(roster: RosterRow, candidate: CandidateFacts): DiscriminatorR
     };
   }
   const candidateNormalised = normaliseAddress(candidate.label);
-  const covered = rosterSignificant.filter((token) => containsWholeWord(candidateNormalised, token));
+  const covered = rosterSignificant.filter((token) =>
+    containsWholeWord(candidateNormalised, token),
+  );
   const ratio = covered.length / rosterSignificant.length;
 
   return {
@@ -223,7 +298,8 @@ function aliasContext(roster: RosterRow, candidate: CandidateFacts): Discriminat
     return {
       discriminator: 'alias_context',
       verdict: 'unavailable',
-      reasoning: 'The roster name is only legal-form words, so there is no name to place in context.',
+      reasoning:
+        'The roster name is only legal-form words, so there is no name to place in context.',
     };
   }
 
@@ -271,7 +347,8 @@ function leiWitness(roster: RosterRow, candidate: CandidateFacts): Discriminator
     return {
       discriminator: 'lei_witness',
       verdict: 'unavailable',
-      reasoning: 'This record carries no LEI. That is common for large private companies and is not evidence against it.',
+      reasoning:
+        'This record carries no LEI. That is common for large private companies and is not evidence against it.',
     };
   }
   if (!candidate.gleif) {
@@ -291,9 +368,12 @@ function leiWitness(roster: RosterRow, candidate: CandidateFacts): Discriminator
   // against each other rejected the correct company on the strength of two
   // sources that were both telling the truth.
   const gleifCity = candidate.gleif.city;
-  const agreesWithRoster = gleifCity && roster.address ? containsWholeWord(roster.address, gleifCity) : null;
+  const agreesWithRoster =
+    gleifCity && roster.address ? containsWholeWord(roster.address, gleifCity) : null;
   const agreesWithSayari = gleifCity
-    ? candidate.addresses.some((a) => a.city && normaliseAddress(a.city).includes(normaliseAddress(gleifCity)))
+    ? candidate.addresses.some(
+        (a) => a.city && normaliseAddress(a.city).includes(normaliseAddress(gleifCity)),
+      )
     : null;
 
   if (agreesWithRoster) {
@@ -335,8 +415,12 @@ function businessPurpose(roster: RosterRow, candidate: CandidateFacts): Discrimi
   const name = normaliseAddress(`${candidate.label} ${candidate.companyType ?? ''}`);
   const purpose = normaliseAddress(candidate.businessPurposes.join(' '));
 
-  const nonOperatingInName = NON_OPERATING_MARKERS.filter((m) => name.includes(normaliseAddress(m)));
-  const nonOperatingInPurpose = NON_OPERATING_MARKERS.filter((m) => purpose.includes(normaliseAddress(m)));
+  const nonOperatingInName = NON_OPERATING_MARKERS.filter((m) =>
+    name.includes(normaliseAddress(m)),
+  );
+  const nonOperatingInPurpose = NON_OPERATING_MARKERS.filter((m) =>
+    purpose.includes(normaliseAddress(m)),
+  );
   const operating = OPERATING_MARKERS.filter((m) => `${name} ${purpose}`.includes(m));
 
   // The LEGAL NAME is decisive on its own. A company called "X Venture Capital
@@ -393,7 +477,9 @@ function liveness(candidate: CandidateFacts): DiscriminatorResult {
       reasoning: 'This record carries no status, so whether it is still trading cannot be checked.',
     };
   }
-  const dead = /dissolv|liquidat|struck off|deregist|cancelled|terminated|inactive/i.test(candidate.latestStatus);
+  const dead = /dissolv|liquidat|struck off|deregist|cancelled|terminated|inactive/i.test(
+    candidate.latestStatus,
+  );
   return {
     discriminator: 'liveness',
     verdict: dead ? 'fail' : 'pass',

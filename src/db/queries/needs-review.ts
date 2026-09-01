@@ -45,7 +45,12 @@ export async function loadParked(db: Database, programId: string): Promise<Parke
     ? await db
         .select({ id: t.matchCandidate.id, attemptId: t.matchCandidate.matchAttemptId })
         .from(t.matchCandidate)
-        .where(inArray(t.matchCandidate.matchAttemptId, attempts.map((a) => a.id)))
+        .where(
+          inArray(
+            t.matchCandidate.matchAttemptId,
+            attempts.map((a) => a.id),
+          ),
+        )
     : [];
 
   return waiting.map(({ supplier, match }) => {
@@ -101,14 +106,24 @@ export async function loadParkedRow(
         .select({ candidate: t.matchCandidate, entity: t.entity })
         .from(t.matchCandidate)
         .innerJoin(t.entity, eq(t.entity.id, t.matchCandidate.entityId))
-        .where(inArray(t.matchCandidate.matchAttemptId, attempts.map((a) => a.id)))
+        .where(
+          inArray(
+            t.matchCandidate.matchAttemptId,
+            attempts.map((a) => a.id),
+          ),
+        )
     : [];
 
   const verdicts = rows.length
     ? await db
         .select()
         .from(t.matchCandidateVerdict)
-        .where(inArray(t.matchCandidateVerdict.matchCandidateId, rows.map((r) => r.candidate.id)))
+        .where(
+          inArray(
+            t.matchCandidateVerdict.matchCandidateId,
+            rows.map((r) => r.candidate.id),
+          ),
+        )
     : [];
 
   /**

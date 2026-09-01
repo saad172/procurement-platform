@@ -108,10 +108,12 @@ describe('which way an edge points', () => {
   it('treats an unclassified type as lateral and never as an owner', () => {
     expect(directionOf('has_something_new')).toBe('lateral');
     expect(targetOwnsSubject('has_something_new')).toBe(false);
-    expect(parseRelationships(
-      { relationships: { data: [{ target: { id: 'X' }, types: { has_something_new: [{}] } }] } },
-      'S',
-    ).unclassified).toEqual(['has_something_new']);
+    expect(
+      parseRelationships(
+        { relationships: { data: [{ target: { id: 'X' }, types: { has_something_new: [{}] } }] } },
+        'S',
+      ).unclassified,
+    ).toEqual(['has_something_new']);
   });
 });
 

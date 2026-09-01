@@ -123,7 +123,20 @@ async function readSupplierRows(db: Database, programId: string, supplierId: str
 
   const firstCategory = supplier.categories[0]?.category;
 
-  return { program, supplier, match, snapshot, familyRows, enrichments, assessment, version, sentences, dissent, ownPayload, firstCategory };
+  return {
+    program,
+    supplier,
+    match,
+    snapshot,
+    familyRows,
+    enrichments,
+    assessment,
+    version,
+    sentences,
+    dissent,
+    ownPayload,
+    firstCategory,
+  };
 }
 
 /** The program's own weight vector, before any URL what-if is applied over it. */
@@ -182,7 +195,11 @@ export async function loadSupplierPage(
   const answer = supplierAnswer({
     name: supplier.rosterName ?? match?.entity?.label ?? 'This supplier',
     match: match
-      ? { status: match.status, settledBy: match.settledBy, entityLabel: match.entity?.label ?? null }
+      ? {
+          status: match.status,
+          settledBy: match.settledBy,
+          entityLabel: match.entity?.label ?? null,
+        }
       : undefined,
     assessment: version
       ? {

@@ -70,20 +70,22 @@ export async function buildFrozenInputs(
 }
 
 async function loadCriterionWeights(db: Database, programId: string) {
-  return db
-    .select()
-    .from(t.programCriterionWeight)
-    .where(eq(t.programCriterionWeight.programId, programId))
-    /**
-     * **Ordered, because these become the keys of a JSON object in a prompt.**
-     *
-     * `weights` and `criterionValues` are built by iterating these rows, and a
-     * JavaScript object preserves insertion order — so an unordered query makes
-     * a prompt whose *key order* differs between two databases holding
-     * identical data. It is invisible to a person reading the JSON and fatal to
-     * a replay.
-     */
-    .orderBy(asc(t.programCriterionWeight.criterionKey));
+  return (
+    db
+      .select()
+      .from(t.programCriterionWeight)
+      .where(eq(t.programCriterionWeight.programId, programId))
+      /**
+       * **Ordered, because these become the keys of a JSON object in a prompt.**
+       *
+       * `weights` and `criterionValues` are built by iterating these rows, and a
+       * JavaScript object preserves insertion order — so an unordered query makes
+       * a prompt whose *key order* differs between two databases holding
+       * identical data. It is invisible to a person reading the JSON and fatal to
+       * a replay.
+       */
+      .orderBy(asc(t.programCriterionWeight.criterionKey))
+  );
 }
 
 type PerSupplierFrozenFacts = {
@@ -199,7 +201,11 @@ async function computeFrozenScores(
     if (!snapshot) continue;
     scores[supplierId] = scoreSnapshot(snapshot, scoringWeights, null).score;
     for (const categoryId of categoriesBySupplier.get(supplierId) ?? []) {
-      scores[`${supplierId}:${categoryId}`] = scoreSnapshot(snapshot, scoringWeights, categoryId).score;
+      scores[`${supplierId}:${categoryId}`] = scoreSnapshot(
+        snapshot,
+        scoringWeights,
+        categoryId,
+      ).score;
     }
   }
   return scores;
@@ -209,7 +215,10 @@ async function computeFrozenScores(
  * The tariff flags on a set of Categories, ordered so the frozen inputs are
  * byte-identical between two runs over the same data.
  */
-async function tariffFlagsFor(db: Database, categoryIds: string[]): Promise<FrozenInputs['tariffFlags']> {
+async function tariffFlagsFor(
+  db: Database,
+  categoryIds: string[],
+): Promise<FrozenInputs['tariffFlags']> {
   if (categoryIds.length === 0) return [];
   return db
     .select({
@@ -251,7 +260,9 @@ export async function buildEvidence(
     const values = await db
       .select()
       .from(t.criterionValue)
-      .where(and(eq(t.criterionValue.supplierId, supplierId), eq(t.criterionValue.isCurrent, true)));
+      .where(
+        and(eq(t.criterionValue.supplierId, supplierId), eq(t.criterionValue.isCurrent, true)),
+      );
 
     for (const value of values) {
       if (value.value == null && WEIGHTED_CRITERIA.includes(value.criterionKey as never)) {
@@ -274,7 +285,8 @@ export async function buildEvidence(
       categoryIds: categories.map((c) => c.categoryId),
       hasScore: values.some((v) => v.value != null),
       disqualifying: profile?.sanctioned === true,
-      publishedWithObjections: assessment?.versions[0]?.evaluatorOutcome === 'published_with_objections',
+      publishedWithObjections:
+        assessment?.versions[0]?.evaluatorOutcome === 'published_with_objections',
       onShortlist: match?.status === 'accepted' && categories.length > 0,
     });
   }
@@ -357,7 +369,11 @@ export async function assessSupplier(
     jobId: deps.jobId,
   });
 
-  return { ...published, evaluatorOutcome: outcome.evaluatorOutcome, roundsUsed: outcome.roundsUsed };
+  return {
+    ...published,
+    evaluatorOutcome: outcome.evaluatorOutcome,
+    roundsUsed: outcome.roundsUsed,
+  };
 }
 
 /** Everything a Round of the proposer/evaluator loop reads, built once. */
@@ -397,7 +413,9 @@ async function loadAssessContext(
     { supplierId: args.supplierId, programId: args.programId },
     deps.toolCtx,
   );
-  const brief = briefResult.ok ? JSON.stringify(briefResult.data, null, 2) : '(the brief could not be built)';
+  const brief = briefResult.ok
+    ? JSON.stringify(briefResult.data, null, 2)
+    : '(the brief could not be built)';
 
   const proposerTools = [
     registry.byName.get('get_supplier')!,
@@ -472,7 +490,10 @@ async function runAssessPropose(
   return { kind: 'draft', draft: submitted, text: JSON.stringify(submitted) };
 }
 
-async function validateAssessDraft(ctx: AssessRoundContext, draft: AssessDraft): Promise<Objection[]> {
+async function validateAssessDraft(
+  ctx: AssessRoundContext,
+  draft: AssessDraft,
+): Promise<Objection[]> {
   const evidence = await buildEvidence(ctx.db, {
     programId: ctx.args.programId,
     supplierIds: [ctx.args.supplierId],
@@ -554,7 +575,9 @@ async function runAssessEvaluate(
 
 function textOf(result: Awaited<ReturnType<typeof runLoop>>): string {
   if (result.status !== 'done') return `the evaluator loop ended as ${result.status}`;
-  const message = result.finalMessage as { content?: { type: string; text?: string }[] } | undefined;
+  const message = result.finalMessage as
+    | { content?: { type: string; text?: string }[] }
+    | undefined;
   return (message?.content ?? [])
     .filter((block) => block.type === 'text')
     .map((block) => block.text ?? '')
@@ -606,7 +629,11 @@ export function parseObjections(text: string): string[] {
 
     // The verdict is what follows the item name, up to the first sentence end —
     // so a later "does not fail" in the explanation cannot flip a pass.
-    const verdict = plain.slice(item.length).replace(/^[\s:—–-]+/, '').split(/[.;]/)[0] ?? '';
+    const verdict =
+      plain
+        .slice(item.length)
+        .replace(/^[\s:—–-]+/, '')
+        .split(/[.;]/)[0] ?? '';
     if (/^\s*fail(ed|s)?\b/i.test(verdict)) objections.push(plain);
   }
 

@@ -34,7 +34,12 @@ async function main(): Promise<void> {
   if (!program) throw new Error('Seed the database first: pnpm db:seed');
   const [run] = await db
     .insert(t.run)
-    .values({ programId: program.id, state: 'running', trigger: 'smoke', subjectLabel: 'upstream smoke check' })
+    .values({
+      programId: program.id,
+      state: 'running',
+      trigger: 'smoke',
+      subjectLabel: 'upstream smoke check',
+    })
     .returning({ id: t.run.id });
 
   const upstream = createUpstream({
@@ -127,10 +132,15 @@ async function main(): Promise<void> {
   const usage = await db.select().from(t.usageEvent).where(eq(t.usageEvent.runId, run!.id));
   const live = usage.filter((u) => !u.cacheHit).length;
   console.log('─'.repeat(72));
-  console.log(`  ${usage.length} usage events · ${live} live outbound attempts · ${usage.length - live} served from cache`);
+  console.log(
+    `  ${usage.length} usage events · ${live} live outbound attempts · ${usage.length - live} served from cache`,
+  );
   console.log(`  Run ${run!.id}\n`);
 
-  await db.update(t.run).set({ state: 'done', finishedAt: new Date() }).where(eq(t.run.id, run!.id));
+  await db
+    .update(t.run)
+    .set({ state: 'done', finishedAt: new Date() })
+    .where(eq(t.run.id, run!.id));
   await closeDirectDb();
   process.exit(results.every((r) => r.ok) ? 0 : 1);
 }

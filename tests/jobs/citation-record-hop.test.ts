@@ -46,7 +46,12 @@ describe('a citation to a source record', () => {
     const program = await seededProgram(db);
     const [run] = await db
       .insert(t.run)
-      .values({ programId: program.id, state: 'running', trigger: 'full', subjectLabel: 'record hop' })
+      .values({
+        programId: program.id,
+        state: 'running',
+        trigger: 'full',
+        subjectLabel: 'record hop',
+      })
       .returning({ id: t.run.id });
 
     // The id as it appears INSIDE an entity: a plain three-part path. This is
@@ -56,10 +61,18 @@ describe('a citation to a source record', () => {
     expect(recordId).not.toContain('%2F');
 
     const upstream = replayUpstream(db, run!.id);
-    const result = await getRegistry().byName.get('sayari_get_record')!.handler(
-      { recordId } as never,
-      { db, upstream, meter: { addModelTokens: () => {} }, runId: run!.id, surface: 'job' } as never,
-    );
+    const result = await getRegistry()
+      .byName.get('sayari_get_record')!
+      .handler(
+        { recordId } as never,
+        {
+          db,
+          upstream,
+          meter: { addModelTokens: () => {} },
+          runId: run!.id,
+          surface: 'job',
+        } as never,
+      );
     expect(result.ok, 'the record could not be fetched from the cached body').toBe(true);
 
     // ── 1. It stored something ────────────────────────────────────────────

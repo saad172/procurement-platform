@@ -69,7 +69,11 @@ describe.skipIf(!up)(`call() (needs: ${START_TEST_DB_HINT})`, () => {
       INSERT INTO run (program_id, state, trigger) VALUES (${program!.id}, 'running', 'test')
       RETURNING id`;
     runId = run!.id;
-    ctx = { db, runId, credentials: { sayariClientId: 'id', sayariClientSecret: 's', nominatimUserAgent: 'ua' } };
+    ctx = {
+      db,
+      runId,
+      credentials: { sayariClientId: 'id', sayariClientSecret: 's', nominatimUserAgent: 'ua' },
+    };
   });
 
   beforeEach(async () => {

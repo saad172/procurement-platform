@@ -55,9 +55,10 @@ describe('resolveSupplier when the agents never converge', () => {
 
     // The Entities must exist locally: `match_candidate.entity_id` is a foreign
     // key, which is the constraint that caught finding 49.
-    await db.insert(t.entity).values(
-      CANDIDATES.map((c) => ({ id: c.id, label: c.label, country: c.countries[0]! })),
-    ).onConflictDoNothing();
+    await db
+      .insert(t.entity)
+      .values(CANDIDATES.map((c) => ({ id: c.id, label: c.label, country: c.countries[0]! })))
+      .onConflictDoNothing();
 
     const facts = CANDIDATES.map((c) => toCandidateFacts(c as never));
     let rounds = 0;

@@ -72,8 +72,7 @@ export function Heading({ data, programId }: { data: Data; programId: string }) 
             ) : match.status === 'accepted' ? (
               <>
                 we believe this is <strong>{match.entity?.label}</strong>
-                {match.entity?.city ? `, ${match.entity.city}` : ''}
-                {' '}
+                {match.entity?.city ? `, ${match.entity.city}` : ''}{' '}
                 {/*
                   Each of the three says something different about who decided,
                   and "settled by agents" on a page that also says "agreed
@@ -136,7 +135,8 @@ export function Answer({ data }: { data: Data }) {
   );
 }
 export function WhereItStands({ data }: { data: Data }) {
-  const { supplier, scored, coverage, exposure, firstCategory, rank, ownRiskFactors, freshest } = data;
+  const { supplier, scored, coverage, exposure, firstCategory, rank, ownRiskFactors, freshest } =
+    data;
   return (
     <>
       {/* ── Where it stands ── */}
@@ -151,9 +151,7 @@ export function WhereItStands({ data }: { data: Data }) {
           <span>{firstCategory ? `on ${firstCategory.name}` : 'on no category here'}</span>
         </div>
         <div>
-          <b>
-            {scored ? `${scored.coverage.computed} of ${scored.coverage.total}` : '—'}
-          </b>
+          <b>{scored ? `${scored.coverage.computed} of ${scored.coverage.total}` : '—'}</b>
           <span>things we could measure</span>
         </div>
         <div className={ownRiskFactors > 0 ? 'bad' : ''}>
@@ -184,10 +182,10 @@ export function WhereItStands({ data }: { data: Data }) {
             plainly next to it: a fit score is about this program, not a
             judgement of the company.
           */}
-          A low score is not a verdict on the company — it is a fit for{' '}
-          <em>this program</em>, over the {scored.coverage.computed} criteria that returned a
-          value. The rest dropped out and the weights renormalised, because a score over five
-          criteria is not the same claim as one over six.
+          A low score is not a verdict on the company — it is a fit for <em>this program</em>, over
+          the {scored.coverage.computed} criteria that returned a value. The rest dropped out and
+          the weights renormalised, because a score over five criteria is not the same claim as one
+          over six.
         </p>
       ) : null}
     </>
@@ -249,9 +247,9 @@ export function WhoItIs({ data }: { data: Data }) {
                       {code.standard ? ` (${code.standard})` : ''}
                     </span>
                   ))}
-                  . Filed under each country&rsquo;s own scheme and converted to one standard. The codes
-                  disagree on detail and agree on the main point, which is why the description leads
-                  with what the most records assert.
+                  . Filed under each country&rsquo;s own scheme and converted to one standard. The
+                  codes disagree on detail and agree on the main point, which is why the description
+                  leads with what the most records assert.
                 </p>
               </details>
             ) : null}
@@ -267,7 +265,9 @@ export function WhatWasConcluded({ data, programId }: { data: Data; programId: s
     <>
       {/* ── What was concluded ── */}
       <h2 id="assessment">
-        <span className="term">What the analysis concluded<i>Assessment</i></span>
+        <span className="term">
+          What the analysis concluded<i>Assessment</i>
+        </span>
       </h2>
       <div className="card">
         {!version ? (
@@ -279,7 +279,9 @@ export function WhatWasConcluded({ data, programId }: { data: Data; programId: s
               <span className={`badge ${version.evaluatorOutcome === 'passed' ? 'good' : 'warn'}`}>
                 {version.evaluatorOutcome.replace(/_/g, ' ')}
               </span>{' '}
-              {version.verdict ? <span className="badge">{version.verdict.replace(/_/g, ' ')}</span> : null}
+              {version.verdict ? (
+                <span className="badge">{version.verdict.replace(/_/g, ' ')}</span>
+              ) : null}
             </p>
             {groupBySection(sentences).map(([section, rows]) => (
               <section key={section} style={{ marginTop: '1rem' }}>
@@ -316,8 +318,8 @@ export function WhatWasConcluded({ data, programId }: { data: Data; programId: s
               <section style={{ marginTop: '1rem' }}>
                 <h3>Where the reviewer did not back down</h3>
                 <p className="note">
-                  Nobody writes this section. It is what the disagreement left behind — the objections
-                  this version published without resolving, each with the reply it drew.
+                  Nobody writes this section. It is what the disagreement left behind — the
+                  objections this version published without resolving, each with the reply it drew.
                 </p>
                 {dissent
                   .filter((round) => round.objection)
@@ -329,7 +331,11 @@ export function WhatWasConcluded({ data, programId }: { data: Data; programId: s
                         </span>{' '}
                         {round.objection}
                       </p>
-                      {round.reply ? <p className="note" style={{ margin: 0 }}>Reply: {round.reply}</p> : null}
+                      {round.reply ? (
+                        <p className="note" style={{ margin: 0 }}>
+                          Reply: {round.reply}
+                        </p>
+                      ) : null}
                     </div>
                   ))}
               </section>
@@ -340,7 +346,15 @@ export function WhatWasConcluded({ data, programId }: { data: Data; programId: s
     </>
   );
 }
-export function TheWorking({ data, programId, supplierId }: { data: Data; programId: string; supplierId: string }) {
+export function TheWorking({
+  data,
+  programId,
+  supplierId,
+}: {
+  data: Data;
+  programId: string;
+  supplierId: string;
+}) {
   const { programDefault, match, scored } = data;
   return (
     <>
@@ -393,11 +407,13 @@ export function TheWorking({ data, programId, supplierId }: { data: Data; progra
               </p>
               <p className="note">
                 {scored.coverage.computed} of {scored.coverage.total} criteria returned a value —
-                the rest dropped out and the weights renormalised. Coverage is shown wherever a score
-                is, because a score over five criteria is not the same claim as one over six.
+                the rest dropped out and the weights renormalised. Coverage is shown wherever a
+                score is, because a score over five criteria is not the same claim as one over six.
               </p>
               {scored.disqualifying ? (
-                <p><span className="badge bad">disqualifying factor</span></p>
+                <p>
+                  <span className="badge bad">disqualifying factor</span>
+                </p>
               ) : null}
             </>
           )}
@@ -421,7 +437,9 @@ export function TheWorking({ data, programId, supplierId }: { data: Data; progra
               {scored.criteria.map((criterion) => (
                 <tr key={criterion.key}>
                   <td>{criterion.key.replace(/_/g, ' ')}</td>
-                  <td><CriterionCell criterion={criterion} /></td>
+                  <td>
+                    <CriterionCell criterion={criterion} />
+                  </td>
                   <td className="num">
                     {criterion.effectiveWeight === 0 ? (
                       <span className="note">not scored</span>
@@ -447,7 +465,9 @@ export function CorporateFamily({ data, programId }: { data: Data; programId: st
     <>
       {/* ── Corporate family ── */}
       <h3>
-        <span className="term">Other companies in the group<i>Corporate family</i></span>
+        <span className="term">
+          Other companies in the group<i>Corporate family</i>
+        </span>
       </h3>
       <div className="card">
         <p style={{ marginTop: 0 }}>
@@ -479,7 +499,9 @@ export function CorporateFamily({ data, programId }: { data: Data; programId: st
                         {member.label}
                       </Link>
                     </td>
-                    <td><span className="badge warn">{member.level}</span></td>
+                    <td>
+                      <span className="badge warn">{member.level}</span>
+                    </td>
                     <td className="note">{member.factors.slice(0, 3).join(', ')}</td>
                   </tr>
                 ))}
@@ -503,7 +525,9 @@ export function Enrichments({ data }: { data: Data }) {
     <>
       {/* ── Enrichments ── */}
       <h3>
-        <span className="term">What we fetched, and when<i>Enrichments</i></span>
+        <span className="term">
+          What we fetched, and when<i>Enrichments</i>
+        </span>
       </h3>
       <div className="card scroll-x">
         {enrichments.length === 0 ? (
@@ -511,7 +535,12 @@ export function Enrichments({ data }: { data: Data }) {
         ) : (
           <table>
             <thead>
-              <tr><th>Source</th><th>Subject</th><th>Fetched</th><th>Age</th></tr>
+              <tr>
+                <th>Source</th>
+                <th>Subject</th>
+                <th>Fetched</th>
+                <th>Age</th>
+              </tr>
             </thead>
             <tbody>
               {enrichments.map((enrichment) => (

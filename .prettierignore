@@ -4,3 +4,7 @@ pnpm-lock.yaml
 src/db/migrations/
 docs/research/probe/
 *.md
+.scratch/
+.impeccable/
+tests/fixtures/
+**/world-110m.json

@@ -24,9 +24,21 @@ import tseslint from 'typescript-eslint';
  * lint rule — it quantifies over runtime values (per-surface and per-Round tool
  * lists), which a linter cannot see.
  */
-const SAYARI = { group: ['@sayari/sdk', '@sayari/sdk/*'], message: 'Only src/upstream/** may import @sayari/sdk. Every call through src/upstream/call() is cached, metered and traced; a call around it is not. See SPEC §2.4.' };
-const ANTHROPIC = { group: ['@anthropic-ai/sdk', '@anthropic-ai/sdk/*'], message: 'Only src/model/** may import @anthropic-ai/sdk. Every call through src/model/runLoop() writes a trace_turn and a usage_event; a call around it is not counted. See SPEC §2.4.' };
-const SETTLE_MATCH = { group: ['**/domain/match/settle-match', '@/domain/match/settle-match'], message: 'The agents propose and our code settles. No tool on any surface writes match.status or match.entity_id. See SPEC §15.4.' };
+const SAYARI = {
+  group: ['@sayari/sdk', '@sayari/sdk/*'],
+  message:
+    'Only src/upstream/** may import @sayari/sdk. Every call through src/upstream/call() is cached, metered and traced; a call around it is not. See SPEC §2.4.',
+};
+const ANTHROPIC = {
+  group: ['@anthropic-ai/sdk', '@anthropic-ai/sdk/*'],
+  message:
+    'Only src/model/** may import @anthropic-ai/sdk. Every call through src/model/runLoop() writes a trace_turn and a usage_event; a call around it is not counted. See SPEC §2.4.',
+};
+const SETTLE_MATCH = {
+  group: ['**/domain/match/settle-match', '@/domain/match/settle-match'],
+  message:
+    'The agents propose and our code settles. No tool on any surface writes match.status or match.entity_id. See SPEC §15.4.',
+};
 
 const NO_OUTBOUND_FETCH = [
   'error',
@@ -39,7 +51,6 @@ const NO_OUTBOUND_FETCH = [
 
 /** Raw count: comments and blank lines included. See chokepoint 7 below. */
 const BODY_CAP = { max: 120, skipBlankLines: false, skipComments: false };
-
 
 /**
  * One complete block per directory, rather than several partial blocks that

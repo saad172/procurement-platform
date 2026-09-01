@@ -108,7 +108,9 @@ const citedSentence = z.object({
         entityId: z
           .string()
           .optional()
-          .describe('A Sayari entity id, as returned by sayari_get_entity or get_supplier. Not a uuid.'),
+          .describe(
+            'A Sayari entity id, as returned by sayari_get_entity or get_supplier. Not a uuid.',
+          ),
         recordId: z
           .string()
           .optional()
@@ -122,22 +124,30 @@ const citedSentence = z.object({
         criterionValueId: z
           .string()
           .optional()
-          .describe('The `id` from get_assessment_brief\'s criterionValueIds, or from get_supplier\'s criterionValues.'),
+          .describe(
+            "The `id` from get_assessment_brief's criterionValueIds, or from get_supplier's criterionValues.",
+          ),
         matchId: z
           .string()
           .optional()
-          .describe("The `matchId` from get_assessment_brief, or the match's `id` from get_supplier."),
+          .describe(
+            "The `matchId` from get_assessment_brief, or the match's `id` from get_supplier.",
+          ),
         shortlist: z
           .object({
             programId: z
               .string()
-              .describe("The program's `id` from get_program or get_shortlist — a uuid, never its name."),
+              .describe(
+                "The program's `id` from get_program or get_shortlist — a uuid, never its name.",
+              ),
             categoryId: z
               .string()
               .describe("The category's `id` — a uuid, never its code like 'HAR'."),
           })
           .optional()
-          .describe('Both halves, for a claim about the shortlist itself rather than about one supplier.'),
+          .describe(
+            'Both halves, for a claim about the shortlist itself rather than about one supplier.',
+          ),
       }),
     )
     .min(1)
@@ -195,7 +205,8 @@ const submitRecommendation = defineTool({
  */
 const submitLeadClassification = defineTool({
   name: 'submit_lead_classification',
-  description: 'Classify this company into one closed category. "unclear" is a real answer and is often the right one.',
+  description:
+    'Classify this company into one closed category. "unclear" is a real answer and is often the right one.',
   input: z.object({
     classification: z.enum([
       'manufacturer',

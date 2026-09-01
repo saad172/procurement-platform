@@ -11,10 +11,7 @@ import { inArray } from 'drizzle-orm';
  * A page reads through `db/queries`, never through the schema — see
  * `supplier-page.ts` for why.
  */
-export async function loadRunsPage(
-  db: Database,
-  args: { programId: string },
-) {
+export async function loadRunsPage(db: Database, args: { programId: string }) {
   const { programId } = args;
 
   const program = await db.query.program.findFirst({ where: eq(t.program.id, programId) });
@@ -42,7 +39,12 @@ export async function loadRunsPage(
           error: t.job.error,
         })
         .from(t.job)
-        .where(inArray(t.job.runId, runs.map((r) => r.run.id)))
+        .where(
+          inArray(
+            t.job.runId,
+            runs.map((r) => r.run.id),
+          ),
+        )
     : [];
 
   /**
@@ -58,7 +60,12 @@ export async function loadRunsPage(
     ? await db
         .select({ id: t.supplier.id, rosterName: t.supplier.rosterName })
         .from(t.supplier)
-        .where(inArray(t.supplier.id, refusedIds.map((job) => job.subjectId)))
+        .where(
+          inArray(
+            t.supplier.id,
+            refusedIds.map((job) => job.subjectId),
+          ),
+        )
     : [];
   const nameOf = new Map(refusedSuppliers.map((row) => [row.id, row.rosterName]));
 
@@ -75,9 +82,8 @@ export async function loadRunsPage(
           failed: runJobs.filter((job) => job.state === 'failed').length,
           // Cancelled and still queued are both "never began", and to a reader
           // asking why the work is not done they are the same fact.
-          neverStarted: runJobs.filter(
-            (job) => job.state === 'cancelled' || job.state === 'queued',
-          ).length,
+          neverStarted: runJobs.filter((job) => job.state === 'cancelled' || job.state === 'queued')
+            .length,
         },
         actualUsd: summary.actualUsd,
       };

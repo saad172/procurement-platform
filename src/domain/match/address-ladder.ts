@@ -25,15 +25,17 @@
  * `Lowentaler Strasse`, and `Việt Nam` must match `Viet Nam`.
  */
 export function normaliseAddress(text: string): string {
-  return text
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    // ß folds to ss rather than to s, which NFD does not do.
-    .replace(/ß/g, 'ss')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return (
+    text
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      // ß folds to ss rather than to s, which NFD does not do.
+      .replace(/ß/g, 'ss')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
 }
 
 /** Tokens, for whole-word containment. */
@@ -96,9 +98,34 @@ export type AddressComparison = {
 
 /** A number-and-name token, e.g. `platz`, `strasse`, `1`. Street-level signal. */
 const STREET_STOPWORDS = new Set([
-  'strasse', 'str', 'street', 'st', 'road', 'rd', 'avenue', 'ave', 'platz',
-  'place', 'way', 'lane', 'drive', 'dr', 'chome', 'cho', 'ku', 'shi', 'gu',
-  'dong', 'ro', 'gil', 'calle', 'avenida', 'rue', 'via', 'no', 'building',
+  'strasse',
+  'str',
+  'street',
+  'st',
+  'road',
+  'rd',
+  'avenue',
+  'ave',
+  'platz',
+  'place',
+  'way',
+  'lane',
+  'drive',
+  'dr',
+  'chome',
+  'cho',
+  'ku',
+  'shi',
+  'gu',
+  'dong',
+  'ro',
+  'gil',
+  'calle',
+  'avenida',
+  'rue',
+  'via',
+  'no',
+  'building',
 ]);
 
 /**
@@ -234,10 +261,22 @@ export function compareAddress(args: {
 
 /** The roster is ISO3; Sayari returns ISO3 too, but a name sometimes arrives. */
 const COUNTRY_ALIASES: Record<string, string> = {
-  germany: 'DEU', deutschland: 'DEU', japan: 'JPN', 'united states': 'USA',
-  usa: 'USA', us: 'USA', france: 'FRA', spain: 'ESP', canada: 'CAN',
-  china: 'CHN', mexico: 'MEX', india: 'IND', 'united kingdom': 'GBR',
-  'korea republic of': 'KOR', 'south korea': 'KOR', 'republic of korea': 'KOR',
+  germany: 'DEU',
+  deutschland: 'DEU',
+  japan: 'JPN',
+  'united states': 'USA',
+  usa: 'USA',
+  us: 'USA',
+  france: 'FRA',
+  spain: 'ESP',
+  canada: 'CAN',
+  china: 'CHN',
+  mexico: 'MEX',
+  india: 'IND',
+  'united kingdom': 'GBR',
+  'korea republic of': 'KOR',
+  'south korea': 'KOR',
+  'republic of korea': 'KOR',
 };
 
 export function sameCountry(a: string, b: string): boolean {

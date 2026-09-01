@@ -32,7 +32,11 @@ export type FidelityCandidates = {
   dates: { iso: string; source: string }[];
 };
 
-export type FidelityFailure = { token: string; kind: 'number' | 'date' | 'identifier'; message: string };
+export type FidelityFailure = {
+  token: string;
+  kind: 'number' | 'date' | 'identifier';
+  message: string;
+};
 
 /**
  * Tokens that look numeric but are not claims about evidence.
@@ -207,7 +211,8 @@ export function candidatesFrom(
       // round-trip as strings through postgres.js, so a stored rate of "5.000"
       // must still match a sentence saying 5%.
       const asNumber = Number(value);
-      if (value.trim() !== '' && Number.isFinite(asNumber)) numbers.push({ value: asNumber, source });
+      if (value.trim() !== '' && Number.isFinite(asNumber))
+        numbers.push({ value: asNumber, source });
       if (/^\d{4}-\d{2}-\d{2}/.test(value)) dates.push({ iso: value, source });
 
       /**

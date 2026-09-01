@@ -30,7 +30,9 @@ async function main(): Promise<void> {
 
   const program = await db.query.program.findFirst({ where: eq(t.program.name, PROGRAM.name) });
   if (!program) throw new Error('Seed the database first: pnpm db:seed');
-  const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.rosterName, rosterName) });
+  const supplier = await db.query.supplier.findFirst({
+    where: eq(t.supplier.rosterName, rosterName),
+  });
   if (!supplier) throw new Error(`No roster row named "${rosterName}"`);
 
   const runId = await openRun(db, {
@@ -64,7 +66,10 @@ async function main(): Promise<void> {
   }
 
   console.log(`\nEnriching "${rosterName}"\n` + '═'.repeat(78));
-  const result = await enrichSupplier({ db, upstream }, { supplierId: supplier.id, programId: program.id });
+  const result = await enrichSupplier(
+    { db, upstream },
+    { supplierId: supplier.id, programId: program.id },
+  );
 
   console.log(`  enrichments written   ${result.enrichmentsWritten.length}`);
   console.log(`  criterion values      ${result.criterionValuesWritten}`);
@@ -78,7 +83,9 @@ async function main(): Promise<void> {
       .from(t.familyMember)
       .where(eq(t.familyMember.rootEntityId, match.entityId));
     const memberEntities = await Promise.all(
-      members.map(async (m) => db.query.entity.findFirst({ where: eq(t.entity.id, m.memberEntityId) })),
+      members.map(async (m) =>
+        db.query.entity.findFirst({ where: eq(t.entity.id, m.memberEntityId) }),
+      ),
     );
     const exposure = computeFamilyExposure(
       memberEntities.filter(Boolean).map((e) => ({
@@ -110,13 +117,16 @@ async function main(): Promise<void> {
     .where(and(eq(t.criterionValue.supplierId, supplier.id), eq(t.criterionValue.isCurrent, true)));
   console.log(`\n  CRITERION VALUES`);
   for (const v of values) {
-    const shown = v.value == null ? `unknown — ${v.unknownReason?.slice(0, 70)}` : v.value.toFixed(1);
+    const shown =
+      v.value == null ? `unknown — ${v.unknownReason?.slice(0, 70)}` : v.value.toFixed(1);
     console.log(`    ${v.criterionKey.padEnd(20)} ${shown}`);
   }
 
   const usage = await db.select().from(t.usageEvent).where(eq(t.usageEvent.runId, runId));
   console.log('\n' + '═'.repeat(78));
-  console.log(`  ${usage.length} upstream events · ${usage.filter((u) => !u.cacheHit).length} live\n`);
+  console.log(
+    `  ${usage.length} upstream events · ${usage.filter((u) => !u.cacheHit).length} live\n`,
+  );
 
   await db.update(t.run).set({ state: 'done', finishedAt: new Date() }).where(eq(t.run.id, runId));
   await closeDirectDb();

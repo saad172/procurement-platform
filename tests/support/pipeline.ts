@@ -47,7 +47,10 @@ export type PipelineResult = { supplierId: string; programId: string; runId: str
  * `enrich` has no fixture of turns because it runs no model; what its fixture
  * carries is the ten upstream bodies the fan-out read.
  */
-export async function buildAssessableSupplier(db: TestDb, rosterName: string): Promise<PipelineResult> {
+export async function buildAssessableSupplier(
+  db: TestDb,
+  rosterName: string,
+): Promise<PipelineResult> {
   const program = await seededProgram(db);
   const supplier = await db.query.supplier.findFirst({
     where: (row, { eq }) => eq(row.rosterName, rosterName),

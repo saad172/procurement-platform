@@ -43,7 +43,12 @@ async function readProgramRows(db: Database, programId: string) {
 
   const suppliers = await db.select().from(t.supplier).where(eq(t.supplier.programId, programId));
   const matches = await db
-    .select({ supplierId: t.match.supplierId, status: t.match.status, entityId: t.match.entityId, settledBy: t.match.settledBy })
+    .select({
+      supplierId: t.match.supplierId,
+      status: t.match.status,
+      entityId: t.match.entityId,
+      settledBy: t.match.settledBy,
+    })
     .from(t.match)
     .innerJoin(t.supplier, eq(t.supplier.id, t.match.supplierId))
     .where(eq(t.supplier.programId, programId));
@@ -115,7 +120,13 @@ async function readProgramRows(db: Database, programId: string) {
     .select({ subjectId: t.job.subjectId, state: t.job.state, jobId: t.job.id, runId: t.job.runId })
     .from(t.job)
     .innerJoin(t.run, eq(t.run.id, t.job.runId))
-    .where(and(eq(t.run.programId, programId), eq(t.job.kind, 'recommend'), eq(t.job.subjectType, 'category')))
+    .where(
+      and(
+        eq(t.run.programId, programId),
+        eq(t.job.kind, 'recommend'),
+        eq(t.job.subjectType, 'category'),
+      ),
+    )
     .orderBy(t.job.createdAt);
 
   // Real spend, summed from usage rather than from a Run's estimate: an
@@ -164,10 +175,14 @@ export async function loadProgramPage(
 
   const rows = await readProgramRows(db, programId);
   if (!rows) return undefined;
-  const { program, suppliers, matches, work, workerUp, running, assessedRows, uncategorisedRows } = rows;
-  const { profilePoints, geocodePoints, bidderCountRows, recommendations, recommendJobs, runs } = rows;
+  const { program, suppliers, matches, work, workerUp, running, assessedRows, uncategorisedRows } =
+    rows;
+  const { profilePoints, geocodePoints, bidderCountRows, recommendations, recommendJobs, runs } =
+    rows;
 
-  const programDefault = Object.fromEntries(program.weights.map((w) => [w.criterionKey, Number(w.weight)]));
+  const programDefault = Object.fromEntries(
+    program.weights.map((w) => [w.criterionKey, Number(w.weight)]),
+  );
   const view = parseViewState(query, programDefault);
   /**
    * The page's own query string, threaded into every chart that builds a link.
@@ -176,14 +191,23 @@ export async function loadProgramPage(
    */
   const search = new URLSearchParams(
     Object.entries(query).flatMap(([key, value]) =>
-      value == null ? [] : Array.isArray(value) ? value.map((v) => [key, v] as [string, string]) : [[key, value] as [string, string]],
+      value == null
+        ? []
+        : Array.isArray(value)
+          ? value.map((v) => [key, v] as [string, string])
+          : [[key, value] as [string, string]],
     ),
   ).toString();
 
   const matchBySupplier = deriveMatchBySupplier(matches);
   const assessedIds = deriveAssessedIds(assessedRows);
   const waitingOnYou = deriveWaitingOnYou(suppliers, matchBySupplier);
-  const plantPoints = program.plants.map((p) => ({ code: p.code, city: p.city, lat: p.lat, lon: p.lon }));
+  const plantPoints = program.plants.map((p) => ({
+    code: p.code,
+    city: p.city,
+    lat: p.lat,
+    lon: p.lon,
+  }));
   const { supplierPoints, bandBySupplier } = deriveSupplierPoints({
     suppliers,
     matchBySupplier,

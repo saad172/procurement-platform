@@ -28,7 +28,9 @@ export function CriterionCell({ criterion }: { criterion: ScoredCriterion }) {
       <span className="criterion-value">{outcome.value.toFixed(1)}</span>{' '}
       <span className="badge mute">{band(outcome.value)}</span>
       <div className="criterion-raw">{describeRawInputs(outcome.rawInputs)}</div>
-      <div className="criterion-raw" style={{ opacity: 0.75 }}>{outcome.anchorLine}</div>
+      <div className="criterion-raw" style={{ opacity: 0.75 }}>
+        {outcome.anchorLine}
+      </div>
       {outcome.clamped ? <span className="badge warn">clamped to the anchor</span> : null}
     </div>
   );
@@ -51,7 +53,9 @@ function describeRawInputs(raw: Record<string, unknown>): string {
   }
   if (Array.isArray(raw.factorsScored)) {
     const count = raw.factorsScored.length;
-    return count === 0 ? 'no risk factor deducted' : `${count} risk factor${count === 1 ? '' : 's'} deducted`;
+    return count === 0
+      ? 'no risk factor deducted'
+      : `${count} risk factor${count === 1 ? '' : 's'} deducted`;
   }
   if (typeof raw.articleCount === 'number') {
     return `${raw.articleCount} article${raw.articleCount === 1 ? '' : 's'}, weighted ${String(raw.weightedCount ?? '?')}`;

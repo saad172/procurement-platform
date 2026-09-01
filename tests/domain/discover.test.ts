@@ -45,7 +45,9 @@ describe('the unverified name-token flag', () => {
     // traversal.ubo returns nothing — so entity-id dedupe alone would propose a
     // company already on the list under a different id.
     expect(sharesNameToken('Yazaki Hải Phòng Vietnam Co', ['Yazaki', 'Aptiv'])).toBe('Yazaki');
-    expect(sharesNameToken('SUMI VIET NAM WIRING SYSTEMS', ['Sumitomo Electric', 'Yazaki'])).toBeNull();
+    expect(
+      sharesNameToken('SUMI VIET NAM WIRING SYSTEMS', ['Sumitomo Electric', 'Yazaki']),
+    ).toBeNull();
   });
 
   it('ignores short tokens, which would match almost anything', () => {

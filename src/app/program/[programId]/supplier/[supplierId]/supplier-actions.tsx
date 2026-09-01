@@ -28,8 +28,8 @@ export function SupplierActions({
       <section className="card" aria-label="Actions">
         <h3>Actions</h3>
         <p className="note">
-          Nothing can be run for this supplier until its match is settled — enrichment and assessment
-          both describe a company, and we have not identified one. Settle it under{' '}
+          Nothing can be run for this supplier until its match is settled — enrichment and
+          assessment both describe a company, and we have not identified one. Settle it under{' '}
           <a href={`/program/${programId}/needs-review`}>needs review</a>.
         </p>
       </section>
@@ -43,7 +43,11 @@ export function SupplierActions({
         <form action={reenrichSupplier}>
           <input type="hidden" name="programId" value={programId} />
           <input type="hidden" name="supplierId" value={supplierId} />
-          <button type="submit" className="badge" style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}>
+          <button
+            type="submit"
+            className="badge"
+            style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}
+          >
             Re-enrich
           </button>
         </form>

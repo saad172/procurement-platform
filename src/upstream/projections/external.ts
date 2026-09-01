@@ -92,8 +92,16 @@ export const gleifManySchema = z
  */
 const worldBankRow = z
   .object({
-    indicator: z.object({ id: z.string().nullish(), value: z.string().nullish() }).partial().loose().nullish(),
-    country: z.object({ id: z.string().nullish(), value: z.string().nullish() }).partial().loose().nullish(),
+    indicator: z
+      .object({ id: z.string().nullish(), value: z.string().nullish() })
+      .partial()
+      .loose()
+      .nullish(),
+    country: z
+      .object({ id: z.string().nullish(), value: z.string().nullish() })
+      .partial()
+      .loose()
+      .nullish(),
     countryiso3code: z.string().nullish(),
     date: z.string().nullish(),
     value: z.number().nullish(),
@@ -109,7 +117,12 @@ export const worldBankSchema = z.union([
     z.array(worldBankRow).nullable(),
   ]),
   // An error response is a one-element array of messages, not a tuple.
-  z.tuple([z.object({ message: z.array(z.unknown()).nullish() }).partial().loose()]),
+  z.tuple([
+    z
+      .object({ message: z.array(z.unknown()).nullish() })
+      .partial()
+      .loose(),
+  ]),
 ]);
 
 // ── USITC HTS ────────────────────────────────────────────────────────────────

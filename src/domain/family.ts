@@ -75,7 +75,8 @@ export function computeFamilyExposure(
     return { state: 'not_covered', explored: coverage.explored, reachable: coverage.reachable };
   }
 
-  const withExposure: { entityId: string; label: string; level: RiskLevel; factors: string[] }[] = [];
+  const withExposure: { entityId: string; label: string; level: RiskLevel; factors: string[] }[] =
+    [];
   for (const member of members) {
     const scored = dedupePsaAgainstBase(member.factors.filter((f) => !isCountryDerived(f)));
     let worst: RiskLevel | undefined;
@@ -86,11 +87,21 @@ export function computeFamilyExposure(
       names.push(factor.name);
       if (!worst || rank(level) > rank(worst)) worst = level;
     }
-    if (worst) withExposure.push({ entityId: member.entityId, label: member.label, level: worst, factors: names });
+    if (worst)
+      withExposure.push({
+        entityId: member.entityId,
+        label: member.label,
+        level: worst,
+        factors: names,
+      });
   }
 
   if (withExposure.length === 0) {
-    return { state: 'no_exposure_found', explored: coverage.explored, reachable: coverage.reachable };
+    return {
+      state: 'no_exposure_found',
+      explored: coverage.explored,
+      reachable: coverage.reachable,
+    };
   }
 
   const worstLevel = withExposure.reduce<RiskLevel>(
@@ -158,7 +169,10 @@ export function unionRiskFactors(
       // Where both report a level, keep the worse one: a factor reported as
       // `high` by one endpoint and `elevated` by another is at least elevated,
       // and understating it is the more dangerous error.
-      if (factor.level && (!existing.factor.level || rank(factor.level) > rank(existing.factor.level))) {
+      if (
+        factor.level &&
+        (!existing.factor.level || rank(factor.level) > rank(existing.factor.level))
+      ) {
         existing.factor = { ...existing.factor, level: factor.level };
       }
       // Keep whichever traversal path we have; it is the evidence a sentence cites.

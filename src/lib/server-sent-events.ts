@@ -38,7 +38,8 @@ export function parseServerSentEvents(buffer: string): {
       if (line.startsWith('event:')) event = line.slice('event:'.length).trim();
       // Per the spec a single leading space after the colon is part of the
       // delimiter, not the data — dropping more would corrupt indented JSON.
-      else if (line.startsWith('data:')) dataLines.push(line.slice('data:'.length).replace(/^ /, ''));
+      else if (line.startsWith('data:'))
+        dataLines.push(line.slice('data:'.length).replace(/^ /, ''));
     }
     if (dataLines.length > 0) events.push({ event, data: dataLines.join('\n') });
   }
@@ -52,7 +53,9 @@ export function parseServerSentEvents(buffer: string): {
  * An async generator rather than a callback, so the caller's `for await` loop
  * is where the handling lives and a `break` really stops reading.
  */
-export async function* readServerSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<ServerSentEvent> {
+export async function* readServerSentEvents(
+  body: ReadableStream<Uint8Array>,
+): AsyncGenerator<ServerSentEvent> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';

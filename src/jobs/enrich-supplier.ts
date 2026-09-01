@@ -136,7 +136,10 @@ type FanOutResult = {
 };
 
 /** Fetches what is missing: news, the Corporate family, country, GLEIF, tariffs, geocoding. */
-async function fanOutEnrichments(ctx: EnrichContext, profile: ResolvedProfile): Promise<FanOutResult> {
+async function fanOutEnrichments(
+  ctx: EnrichContext,
+  profile: ResolvedProfile,
+): Promise<FanOutResult> {
   const { db } = ctx;
   const { match, profileRow, supplier, categories } = profile;
   const written: string[] = [];

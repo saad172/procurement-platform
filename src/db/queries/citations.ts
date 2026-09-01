@@ -136,7 +136,10 @@ async function loadOwner(
         versionN: t.recommendationVersion.n,
       })
       .from(t.recommendationVersion)
-      .innerJoin(t.recommendation, eq(t.recommendation.id, t.recommendationVersion.recommendationId))
+      .innerJoin(
+        t.recommendation,
+        eq(t.recommendation.id, t.recommendationVersion.recommendationId),
+      )
       .innerJoin(t.category, eq(t.category.id, t.recommendation.categoryId))
       .where(
         and(
@@ -164,116 +167,163 @@ async function resolveCitation(
 ): Promise<ResolvedCitation> {
   const base = { id: row.id, dangling: false };
 
-  if (row.entityId) {
-    const entity = await db.query.entity.findFirst({ where: eq(t.entity.id, row.entityId) });
-    return {
-      ...base,
-      kind: 'entity',
-      title: entity?.label ?? row.entityId,
-      detail: entity ? [entity.entityType, entity.country].filter(Boolean).join(' · ') || null : null,
-      href: `/program/${programId}/entity/${row.entityId}`,
-      dangling: !entity,
-    };
-  }
-
-  if (row.recordId) {
-    const record = await db.query.record.findFirst({ where: eq(t.record.id, row.recordId) });
-    return {
-      ...base,
-      kind: 'record',
-      title: record?.sourceLabel ?? record?.source ?? 'Source record',
-      detail: row.recordId,
-      // A record id is a path, so the route takes it as a catch-all segment —
-      // see the record page for why encoding harder does not work.
-      href: `/program/${programId}/record/${row.recordId.split('/').map(encodeURIComponent).join('/')}`,
-      dangling: !record,
-    };
-  }
-
-  if (row.enrichmentId) {
-    const enrichment = await db.query.enrichment.findFirst({
-      where: eq(t.enrichment.id, row.enrichmentId),
-    });
-    return {
-      ...base,
-      kind: 'enrichment',
-      title: enrichment ? enrichment.source.replace(/_/g, ' ') : 'Enrichment',
-      detail: enrichment
-        ? `${enrichment.subjectKind} ${enrichment.subjectKey} · fetched ${enrichment.fetchedAt.toISOString().slice(0, 10)}`
-        : null,
-      // Enrichments are listed on the Supplier page rather than having a page
-      // of their own; naming the row is the honest thing this can offer.
-      href: null,
-      dangling: !enrichment,
-    };
-  }
-
+  if (row.entityId) return resolveEntityCitation(db, programId, row.entityId, base);
+  if (row.recordId) return resolveRecordCitation(db, programId, row.recordId, base);
+  if (row.enrichmentId) return resolveEnrichmentCitation(db, row.enrichmentId, base);
   if (row.criterionValueId) {
-    const [value] = await db
-      .select({
-        criterionKey: t.criterionValue.criterionKey,
-        label: t.criterion.label,
-        value: t.criterionValue.value,
-        unknownReason: t.criterionValue.unknownReason,
-        anchorLine: t.criterionValue.anchorLine,
-        supplierId: t.criterionValue.supplierId,
-      })
-      .from(t.criterionValue)
-      .leftJoin(t.criterion, eq(t.criterion.key, t.criterionValue.criterionKey))
-      .where(eq(t.criterionValue.id, row.criterionValueId));
-    return {
-      ...base,
-      kind: 'criterion_value',
-      title: value?.label ?? value?.criterionKey ?? 'Criterion',
-      // `anchor_line` is the criterion's own account of how the number was
-      // arrived at, stored beside it and never recomputed at render.
-      detail: value
-        ? `${value.value ?? value.unknownReason ?? 'unknown'} — ${value.anchorLine}`
-        : null,
-      href: value ? `/program/${programId}/supplier/${value.supplierId}` : null,
-      dangling: !value,
-    };
+    return resolveCriterionValueCitation(db, programId, row.criterionValueId, base);
   }
-
-  if (row.matchId) {
-    const [match] = await db
-      .select({
-        supplierId: t.match.supplierId,
-        status: t.match.status,
-        settledBy: t.match.settledBy,
-        entityLabel: t.entity.label,
-      })
-      .from(t.match)
-      .leftJoin(t.entity, eq(t.entity.id, t.match.entityId))
-      .where(eq(t.match.id, row.matchId));
-    return {
-      ...base,
-      kind: 'match',
-      title: match?.entityLabel ?? 'Match',
-      detail: match ? `${match.status.replace(/_/g, ' ')}, settled by ${match.settledBy}` : null,
-      href: match ? `/program/${programId}/supplier/${match.supplierId}` : null,
-      dangling: !match,
-    };
-  }
-
+  if (row.matchId) return resolveMatchCitation(db, programId, row.matchId, base);
   if (row.shortlistProgramId && row.shortlistCategoryId) {
-    const category = await db.query.category.findFirst({
-      where: and(
-        eq(t.category.id, row.shortlistCategoryId),
-        eq(t.category.programId, row.shortlistProgramId),
-      ),
-    });
-    return {
-      ...base,
-      kind: 'shortlist',
-      title: category ? `${category.code} shortlist` : 'Shortlist',
-      detail: category?.name ?? null,
-      href: category ? `/program/${row.shortlistProgramId}/category/${row.shortlistCategoryId}` : null,
-      dangling: !category,
-    };
+    return resolveShortlistCitation(db, row.shortlistProgramId, row.shortlistCategoryId, base);
   }
 
   // The one-of CHECK makes this unreachable; it is here so that if the CHECK
   // is ever loosened the page says so instead of rendering an empty row.
-  return { ...base, kind: 'entity', title: 'Unknown citation target', detail: null, href: null, dangling: true };
+  return {
+    ...base,
+    kind: 'entity',
+    title: 'Unknown citation target',
+    detail: null,
+    href: null,
+    dangling: true,
+  };
+}
+
+async function resolveEntityCitation(
+  db: Database,
+  programId: string,
+  entityId: string,
+  base: { id: string; dangling: boolean },
+): Promise<ResolvedCitation> {
+  const entity = await db.query.entity.findFirst({ where: eq(t.entity.id, entityId) });
+  return {
+    ...base,
+    kind: 'entity',
+    title: entity?.label ?? entityId,
+    detail: entity ? [entity.entityType, entity.country].filter(Boolean).join(' · ') || null : null,
+    href: `/program/${programId}/entity/${entityId}`,
+    dangling: !entity,
+  };
+}
+
+async function resolveRecordCitation(
+  db: Database,
+  programId: string,
+  recordId: string,
+  base: { id: string; dangling: boolean },
+): Promise<ResolvedCitation> {
+  const record = await db.query.record.findFirst({ where: eq(t.record.id, recordId) });
+  return {
+    ...base,
+    kind: 'record',
+    title: record?.sourceLabel ?? record?.source ?? 'Source record',
+    detail: recordId,
+    // A record id is a path, so the route takes it as a catch-all segment —
+    // see the record page for why encoding harder does not work.
+    href: `/program/${programId}/record/${recordId.split('/').map(encodeURIComponent).join('/')}`,
+    dangling: !record,
+  };
+}
+
+async function resolveEnrichmentCitation(
+  db: Database,
+  enrichmentId: string,
+  base: { id: string; dangling: boolean },
+): Promise<ResolvedCitation> {
+  const enrichment = await db.query.enrichment.findFirst({
+    where: eq(t.enrichment.id, enrichmentId),
+  });
+  return {
+    ...base,
+    kind: 'enrichment',
+    title: enrichment ? enrichment.source.replace(/_/g, ' ') : 'Enrichment',
+    detail: enrichment
+      ? `${enrichment.subjectKind} ${enrichment.subjectKey} · fetched ${enrichment.fetchedAt.toISOString().slice(0, 10)}`
+      : null,
+    // Enrichments are listed on the Supplier page rather than having a page
+    // of their own; naming the row is the honest thing this can offer.
+    href: null,
+    dangling: !enrichment,
+  };
+}
+
+async function resolveCriterionValueCitation(
+  db: Database,
+  programId: string,
+  criterionValueId: string,
+  base: { id: string; dangling: boolean },
+): Promise<ResolvedCitation> {
+  const [value] = await db
+    .select({
+      criterionKey: t.criterionValue.criterionKey,
+      label: t.criterion.label,
+      value: t.criterionValue.value,
+      unknownReason: t.criterionValue.unknownReason,
+      anchorLine: t.criterionValue.anchorLine,
+      supplierId: t.criterionValue.supplierId,
+    })
+    .from(t.criterionValue)
+    .leftJoin(t.criterion, eq(t.criterion.key, t.criterionValue.criterionKey))
+    .where(eq(t.criterionValue.id, criterionValueId));
+  return {
+    ...base,
+    kind: 'criterion_value',
+    title: value?.label ?? value?.criterionKey ?? 'Criterion',
+    // `anchor_line` is the criterion's own account of how the number was
+    // arrived at, stored beside it and never recomputed at render.
+    detail: value
+      ? `${value.value ?? value.unknownReason ?? 'unknown'} — ${value.anchorLine}`
+      : null,
+    href: value ? `/program/${programId}/supplier/${value.supplierId}` : null,
+    dangling: !value,
+  };
+}
+
+async function resolveMatchCitation(
+  db: Database,
+  programId: string,
+  matchId: string,
+  base: { id: string; dangling: boolean },
+): Promise<ResolvedCitation> {
+  const [match] = await db
+    .select({
+      supplierId: t.match.supplierId,
+      status: t.match.status,
+      settledBy: t.match.settledBy,
+      entityLabel: t.entity.label,
+    })
+    .from(t.match)
+    .leftJoin(t.entity, eq(t.entity.id, t.match.entityId))
+    .where(eq(t.match.id, matchId));
+  return {
+    ...base,
+    kind: 'match',
+    title: match?.entityLabel ?? 'Match',
+    detail: match ? `${match.status.replace(/_/g, ' ')}, settled by ${match.settledBy}` : null,
+    href: match ? `/program/${programId}/supplier/${match.supplierId}` : null,
+    dangling: !match,
+  };
+}
+
+async function resolveShortlistCitation(
+  db: Database,
+  shortlistProgramId: string,
+  shortlistCategoryId: string,
+  base: { id: string; dangling: boolean },
+): Promise<ResolvedCitation> {
+  const category = await db.query.category.findFirst({
+    where: and(
+      eq(t.category.id, shortlistCategoryId),
+      eq(t.category.programId, shortlistProgramId),
+    ),
+  });
+  return {
+    ...base,
+    kind: 'shortlist',
+    title: category ? `${category.code} shortlist` : 'Shortlist',
+    detail: category?.name ?? null,
+    href: category ? `/program/${shortlistProgramId}/category/${shortlistCategoryId}` : null,
+    dangling: !category,
+  };
 }

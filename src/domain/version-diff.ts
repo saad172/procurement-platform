@@ -80,7 +80,8 @@ export function diffVersions(args: {
 function flatten(inputs: FrozenInputs): Map<string, unknown> {
   const out = new Map<string, unknown>();
   for (const [key, value] of Object.entries(inputs.weights)) out.set(`weights.${key}`, value);
-  for (const [key, value] of Object.entries(inputs.criterionValues)) out.set(`criterionValues.${key}`, value);
+  for (const [key, value] of Object.entries(inputs.criterionValues))
+    out.set(`criterionValues.${key}`, value);
   for (const [key, value] of Object.entries(inputs.scores)) out.set(`scores.${key}`, value);
   out.set('shortlistOrder', inputs.shortlistOrder.join('|'));
   for (const [key, value] of Object.entries(inputs.supplierVerdicts)) {
@@ -114,7 +115,12 @@ function diffPicks(before: readonly DiffPick[], after: readonly DiffPick[]): Ver
   for (const [id, pick] of a) {
     const next = b.get(id);
     if (!next) {
-      out.push({ supplierId: id, supplierName: pick.supplierName, change: 'removed', from: { role: pick.role, rank: pick.rank } });
+      out.push({
+        supplierId: id,
+        supplierName: pick.supplierName,
+        change: 'removed',
+        from: { role: pick.role, rank: pick.rank },
+      });
       continue;
     }
     if (next.role !== pick.role) {
@@ -137,7 +143,12 @@ function diffPicks(before: readonly DiffPick[], after: readonly DiffPick[]): Ver
   }
   for (const [id, pick] of b) {
     if (!a.has(id)) {
-      out.push({ supplierId: id, supplierName: pick.supplierName, change: 'added', to: { role: pick.role, rank: pick.rank } });
+      out.push({
+        supplierId: id,
+        supplierName: pick.supplierName,
+        change: 'added',
+        to: { role: pick.role, rank: pick.rank },
+      });
     }
   }
   return out;
@@ -159,7 +170,8 @@ function diffSentences(
     // differently worded.
     if (index === -1) {
       index = remaining.findIndex(
-        (candidate) => candidate.section === sentence.section && similarity(candidate.text, sentence.text) > 0.6,
+        (candidate) =>
+          candidate.section === sentence.section && similarity(candidate.text, sentence.text) > 0.6,
       );
     }
 
@@ -198,7 +210,9 @@ function similarity(a: string, b: string): number {
  * `version → round → job_round → job → run` yields *"re-ran after traversing
  * Yazaki"* with no new column.
  */
-export function describeWhyWritten(run: { trigger: string; subjectLabel: string | null } | undefined): string {
+export function describeWhyWritten(
+  run: { trigger: string; subjectLabel: string | null } | undefined,
+): string {
   if (!run) return 'Written by the original run.';
   switch (run.trigger) {
     case 'full':

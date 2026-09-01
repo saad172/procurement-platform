@@ -247,7 +247,9 @@ export async function enrichTariff(
   });
 
   const rows = Array.isArray(result.data) ? result.data : [];
-  const line = rows.find((r) => r.htsno?.replace(/\./g, '').startsWith(args.hsCode.replace(/\./g, '')));
+  const line = rows.find((r) =>
+    r.htsno?.replace(/\./g, '').startsWith(args.hsCode.replace(/\./g, '')),
+  );
   const mfnRatePct = parseRate(line?.general ?? null);
 
   await ctx.db.insert(t.tariffLine).values({
@@ -329,9 +331,12 @@ export async function enrichGeocode(
  * missed at building precision**. A city centroid is not a factory, and the UI
  * must say which it got rather than imply a surveyed point.
  */
-export function precisionOf(addressType: string | null): (typeof t.geocodePrecision.enumValues)[number] {
+export function precisionOf(
+  addressType: string | null,
+): (typeof t.geocodePrecision.enumValues)[number] {
   if (!addressType) return 'unknown';
-  if (/^(building|house|amenity|industrial|commercial|office)$/i.test(addressType)) return 'building';
+  if (/^(building|house|amenity|industrial|commercial|office)$/i.test(addressType))
+    return 'building';
   if (/^(road|street|residential|pedestrian)$/i.test(addressType)) return 'street';
   if (/^(suburb|neighbourhood|quarter|hamlet|village)$/i.test(addressType)) return 'locality';
   if (/^(city|town|municipality)$/i.test(addressType)) return 'city';
@@ -482,7 +487,14 @@ function summarisePath(path: unknown): { field: string | null; entityId: string 
 export async function readOwnerEdges(
   ctx: EnrichContext,
   args: { entityId: string; entity: SayariEntity },
-): Promise<{ entityId: string; label: string; riskFactors: ReturnType<typeof parseRiskObject>; isStateOwned: boolean }[]> {
+): Promise<
+  {
+    entityId: string;
+    label: string;
+    riskFactors: ReturnType<typeof parseRiskObject>;
+    isStateOwned: boolean;
+  }[]
+> {
   const { edges, unclassified } = parseRelationships(args.entity, args.entityId);
 
   if (unclassified.length > 0) {
@@ -638,7 +650,10 @@ export async function writeCriterionValue(
     .returning({ id: t.criterionValue.id });
 
   if (previous) {
-    await db.update(t.criterionValue).set({ isCurrent: false }).where(eq(t.criterionValue.id, previous.id));
+    await db
+      .update(t.criterionValue)
+      .set({ isCurrent: false })
+      .where(eq(t.criterionValue.id, previous.id));
   }
   return row!.id;
 }

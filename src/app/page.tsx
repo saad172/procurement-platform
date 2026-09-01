@@ -21,8 +21,8 @@ export default async function HomePage() {
     <main>
       <h1>Procurement Platform</h1>
       <p className="sub">
-        No sourcing program is seeded yet. Run <code className="mono">pnpm db:seed</code> to load the
-        demo program and its 50-row roster.
+        No sourcing program is seeded yet. Run <code className="mono">pnpm db:seed</code> to load
+        the demo program and its 50-row roster.
       </p>
       <p className="note">
         <Link href={'/' as never}>Reload</Link> once the seed has run.

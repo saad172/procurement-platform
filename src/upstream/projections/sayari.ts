@@ -153,8 +153,6 @@ const entitySchemaInner = z
   .partial({ type: true })
   .loose();
 
-
-
 /**
  * One resolution candidate.
  *
@@ -205,7 +203,10 @@ const searchEntitySchemaInner = z
   .object({
     limit: z.number().nullish(),
     offset: z.number().nullish(),
-    size: z.object({ count: z.number().nullish(), qualifier: z.string().nullish() }).partial().nullish(),
+    size: z
+      .object({ count: z.number().nullish(), qualifier: z.string().nullish() })
+      .partial()
+      .nullish(),
     data: z.array(entitySchemaInner.loose()).nullish(),
   })
   .loose();
@@ -348,7 +349,11 @@ const tradeSearchSchemaInner = z
         }),
       )
       .nullish(),
-    size: z.object({ count: z.number().nullish(), qualifier: z.string().nullish() }).partial().loose().nullish(),
+    size: z
+      .object({ count: z.number().nullish(), qualifier: z.string().nullish() })
+      .partial()
+      .loose()
+      .nullish(),
     /** A boolean here, like `traversal`. Measured, not assumed. */
     next: z.union([z.boolean(), z.string()]).nullish(),
     limit: z.number().nullish(),
@@ -362,7 +367,6 @@ export type SayariTradeRow = z.infer<typeof tradeSearchSchemaInner>['data'] exte
   | undefined
   ? R
   : never;
-
 
 // ── Exported projections ─────────────────────────────────────────────────────
 // Each is wrapped so it accepts either key casing (see `key-case.ts`).
@@ -426,9 +430,9 @@ export function matchStrengthValue(
  * our own usage figure and Sayari's are shown separately scoped, with no delta
  * anywhere: reconciliation stays a human act.
  */
-export const usageSchema = z.record(z.string(), z.unknown()).and(
-  z.object({ from: z.string().nullish(), to: z.string().nullish() }).partial().loose(),
-);
+export const usageSchema = z
+  .record(z.string(), z.unknown())
+  .and(z.object({ from: z.string().nullish(), to: z.string().nullish() }).partial().loose());
 
 /** The boot call. Deliberately routed raw, and it gates nothing (SPEC §16.7). */
 export const metadataSchema = z.unknown();

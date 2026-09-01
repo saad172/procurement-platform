@@ -42,7 +42,10 @@ describe('nothing listening blocks everything under it', () => {
   });
 
   it('still says what is waiting on a person, underneath it', () => {
-    const result = answers({ workerUp: false, waitingOnYou: { count: 2, names: ['Nemak', 'NSK'] } });
+    const result = answers({
+      workerUp: false,
+      waitingOnYou: { count: 2, names: ['Nemak', 'NSK'] },
+    });
     expect(result).toHaveLength(2);
     expect(result[1]!.tone).toBe('you');
   });

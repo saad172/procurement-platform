@@ -57,7 +57,10 @@ function priceOf(usage: (typeof t.usageEvent.$inferSelect)[]): number {
   return usage.reduce((sum, row) => {
     if (!row.model) return sum;
     const price = MODEL_PRICE_USD_PER_MTOK[row.model] ?? MODEL_PRICE_USD_PER_MTOK['claude-opus-5']!;
-    const input = (row.inputTokens ?? 0) + (row.cacheCreationInputTokens ?? 0) + (row.cacheReadInputTokens ?? 0);
+    const input =
+      (row.inputTokens ?? 0) +
+      (row.cacheCreationInputTokens ?? 0) +
+      (row.cacheReadInputTokens ?? 0);
     return sum + (input / 1e6) * price.input + ((row.outputTokens ?? 0) / 1e6) * price.output;
   }, 0);
 }
@@ -257,7 +260,8 @@ export async function loadJobActivity(
       turns: jobTurns.length,
       toolCalls: jobTurns.reduce((sum, turn) => sum + (callsByTurn.get(turn.id)?.length ?? 0), 0),
       // Billed only: a cache hit spends no credit, and the ceiling bounds spend.
-      upstreamCalls: usage.filter((row) => row.jobId === jobId && !row.model && !row.cacheHit).length,
+      upstreamCalls: usage.filter((row) => row.jobId === jobId && !row.model && !row.cacheHit)
+        .length,
       tokens: usage
         .filter((row) => row.jobId === jobId)
         .reduce(
@@ -349,10 +353,10 @@ export async function rosterWork(db: Database, programId: string): Promise<Roste
 
   return {
     unresolved: suppliers.filter((row) => row.matchStatus == null).length,
-    unenriched: suppliers.filter(
-      (row) => row.matchStatus === 'accepted' && !hasValues.has(row.id),
-    ).length,
-    unassessed: suppliers.filter((row) => hasValues.has(row.id) && !hasAssessment.has(row.id)).length,
+    unenriched: suppliers.filter((row) => row.matchStatus === 'accepted' && !hasValues.has(row.id))
+      .length,
+    unassessed: suppliers.filter((row) => hasValues.has(row.id) && !hasAssessment.has(row.id))
+      .length,
   };
 }
 
@@ -412,7 +416,9 @@ const PHASE_ORDER = ['resolve', 'enrich', 'assess', 'recommend', 'discover', 'tr
 
 export type RunPhase = { kind: string; progress: RunProgress };
 
-export function runPhases(jobs: { kind: string; state: typeof t.job.$inferSelect.state }[]): RunPhase[] {
+export function runPhases(
+  jobs: { kind: string; state: typeof t.job.$inferSelect.state }[],
+): RunPhase[] {
   const kinds = [...new Set(jobs.map((job) => job.kind))].sort(
     (a, b) => PHASE_ORDER.indexOf(a) - PHASE_ORDER.indexOf(b),
   );

@@ -54,7 +54,11 @@ const subscribeNever = () => () => {};
  * question being asked, and it does not schedule a second render pass.
  */
 function useMountedOnClient() {
-  return useSyncExternalStore(subscribeNever, () => true, () => false);
+  return useSyncExternalStore(
+    subscribeNever,
+    () => true,
+    () => false,
+  );
 }
 
 type MapViewportProps = {
@@ -429,7 +433,11 @@ function MapCameraBadges({
           key={choice.key}
           href={`?region=${choice.key}`}
           className="badge"
-          style={choice.key === region ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
+          style={
+            choice.key === region
+              ? { borderColor: 'var(--accent)', color: 'var(--accent)' }
+              : undefined
+          }
           onClick={(event) => {
             if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
             event.preventDefault();
@@ -467,7 +475,10 @@ function MapLegend({
             key={band.key}
             href={`?proximityBand=${band.key}`}
             className="map-key"
-            style={{ opacity: activeBands.length > 0 && !on ? 0.45 : 1, fontWeight: on ? 600 : 400 }}
+            style={{
+              opacity: activeBands.length > 0 && !on ? 0.45 : 1,
+              fontWeight: on ? 600 : 400,
+            }}
             onClick={(event) => {
               if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
               event.preventDefault();
@@ -672,13 +683,14 @@ export function MapViewport({
   const router = useRouter();
   const mounted = useMountedOnClient();
 
-  const { camera, setCamera, clamp, zoomAbout, toWorld, zoomToFit, toPercent, zoomedIn } = useMapCamera({
-    initial,
-    worldWidth,
-    worldHeight,
-    minWidth,
-    svgRef,
-  });
+  const { camera, setCamera, clamp, zoomAbout, toWorld, zoomToFit, toPercent, zoomedIn } =
+    useMapCamera({
+      initial,
+      worldWidth,
+      worldHeight,
+      minWidth,
+      svgRef,
+    });
 
   const [selected, setSelected] = useState<Mark | null>(null);
   useEscapeToDeselect(selected, setSelected);

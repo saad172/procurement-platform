@@ -19,11 +19,7 @@ import { Answers, Ledger, TheWorking } from './sections';
  * strip, because *is my work done?* and *what did it cost?* are different
  * questions and only the first belongs where a person starts.
  */
-export default async function RunsPage({
-  params,
-}: {
-  params: Promise<{ programId: string }>;
-}) {
+export default async function RunsPage({ params }: { params: Promise<{ programId: string }> }) {
   const { programId } = await params;
 
   const data = await loadRunsPage(getPooledDb(), { programId });
@@ -33,12 +29,19 @@ export default async function RunsPage({
 
   return (
     <main>
-      <Breadcrumb trail={[{ label: program.name, href: `/program/${programId}` }, { label: 'What has run' }]} />
+      <Breadcrumb
+        trail={[{ label: program.name, href: `/program/${programId}` }, { label: 'What has run' }]}
+      />
       <h1>What has run, and what it cost</h1>
       <p className="sub">
-        {runs.length} {runs.length === 1 ? 'batch' : 'batches'} of work · $
-        {totalUsd.toFixed(2)} spent in total
-        {running ? <> · <LiveRefresh active /></> : null}
+        {runs.length} {runs.length === 1 ? 'batch' : 'batches'} of work · ${totalUsd.toFixed(2)}{' '}
+        spent in total
+        {running ? (
+          <>
+            {' '}
+            · <LiveRefresh active />
+          </>
+        ) : null}
       </p>
 
       <Answers data={data} />

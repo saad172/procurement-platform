@@ -58,14 +58,16 @@ export function RunPanel({
         </p>
       ) : null}
 
-      {stages.resolve > 0 ? <ResolveStage programId={programId} remaining={work.unresolved} /> : null}
+      {stages.resolve > 0 ? (
+        <ResolveStage programId={programId} remaining={work.unresolved} />
+      ) : null}
       {stages.enrich > 0 ? <EnrichStage programId={programId} remaining={work.unenriched} /> : null}
       {stages.assess > 0 ? <AssessStage programId={programId} remaining={work.unassessed} /> : null}
 
       {!workerUp && !idle ? (
         <p className="note warn" style={{ marginTop: '0.6rem' }}>
-          <strong>No worker has picked anything up recently.</strong> Jobs will queue and wait rather
-          than run. Start one with <code>pnpm worker</code>.
+          <strong>No worker has picked anything up recently.</strong> Jobs will queue and wait
+          rather than run. Start one with <code>pnpm worker</code>.
         </p>
       ) : null}
     </section>
@@ -111,17 +113,17 @@ function EnrichStage({ programId, remaining }: { programId: string; remaining: n
       verb="Enrich"
       lede={
         <>
-          {remaining} supplier{remaining === 1 ? ' has' : 's have'} a settled match but no
-          criterion values, so nothing about them can be scored or argued from yet. This picks the
-          pipeline up where it stopped and carries it to the end — <strong>enrich</strong>, then{' '}
+          {remaining} supplier{remaining === 1 ? ' has' : 's have'} a settled match but no criterion
+          values, so nothing about them can be scored or argued from yet. This picks the pipeline up
+          where it stopped and carries it to the end — <strong>enrich</strong>, then{' '}
           <strong>assess</strong>.
         </>
       }
       costNote={
         <>
           Enrichment itself runs no model; the assessment it chains into does. The estimate is{' '}
-          {`$${RUN_BUDGET_USD_PER_SUPPLIER.toFixed(2)}`} per supplier from the committed
-          constant — a ceiling for all three phases, so two of them will come in under it.
+          {`$${RUN_BUDGET_USD_PER_SUPPLIER.toFixed(2)}`} per supplier from the committed constant —
+          a ceiling for all three phases, so two of them will come in under it.
         </>
       }
       priced
@@ -182,15 +184,23 @@ function Stage({
   const options = [10, 25, remaining].filter((n, i, all) => n <= remaining && all.indexOf(n) === i);
 
   return (
-    <div style={{ borderTop: '1px solid var(--rule-2)', paddingTop: '0.7rem', marginTop: '0.7rem' }}>
-      <p className="note" style={{ marginTop: 0 }}>{lede}</p>
+    <div
+      style={{ borderTop: '1px solid var(--rule-2)', paddingTop: '0.7rem', marginTop: '0.7rem' }}
+    >
+      <p className="note" style={{ marginTop: 0 }}>
+        {lede}
+      </p>
 
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.7rem' }}>
         {options.map((n) => (
           <form key={n} action={action}>
             <input type="hidden" name="programId" value={programId} />
             <input type="hidden" name="count" value={n} />
-            <button type="submit" className="badge" style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}>
+            <button
+              type="submit"
+              className="badge"
+              style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}
+            >
               {verb} {n === remaining ? `all ${n}` : n}
               {priced ? ` · ~$${(RUN_BUDGET_USD_PER_SUPPLIER * n).toFixed(2)}` : ''}
             </button>
@@ -198,7 +208,9 @@ function Stage({
         ))}
       </div>
 
-      <p className="note" style={{ margin: '0.6rem 0 0' }}>{costNote}</p>
+      <p className="note" style={{ margin: '0.6rem 0 0' }}>
+        {costNote}
+      </p>
     </div>
   );
 }

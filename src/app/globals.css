@@ -53,9 +53,12 @@
   --gap: 1rem;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   font-family: var(--font-sans);
@@ -65,21 +68,58 @@ html, body {
   line-height: 1.5;
 }
 
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
 
-.shell { max-width: 78rem; margin: 0 auto; padding: 1.25rem 1.5rem 4rem; }
+.shell {
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: 1.25rem 1.5rem 4rem;
+}
 
 /* ── Breadcrumb: the only memory of where you came from ── */
-.breadcrumb { font-size: 0.85rem; color: var(--ink-3); margin-bottom: 0.75rem; }
-.breadcrumb a { color: var(--ink-3); }
-.breadcrumb span::after { content: ' / '; color: var(--rule); }
-.breadcrumb span:last-child::after { content: ''; }
+.breadcrumb {
+  font-size: 0.85rem;
+  color: var(--ink-3);
+  margin-bottom: 0.75rem;
+}
+.breadcrumb a {
+  color: var(--ink-3);
+}
+.breadcrumb span::after {
+  content: ' / ';
+  color: var(--rule);
+}
+.breadcrumb span:last-child::after {
+  content: '';
+}
 
-h1 { font-size: 1.5rem; margin: 0 0 0.25rem; font-weight: 620; letter-spacing: -0.01em; }
-h2 { font-size: 1.05rem; margin: 2rem 0 0.75rem; font-weight: 600; }
-h3 { font-size: 0.9rem; margin: 1.25rem 0 0.5rem; font-weight: 600; color: var(--ink-2); }
-.sub { color: var(--ink-2); margin: 0 0 1rem; }
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.25rem;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+}
+h2 {
+  font-size: 1.05rem;
+  margin: 2rem 0 0.75rem;
+  font-weight: 600;
+}
+h3 {
+  font-size: 0.9rem;
+  margin: 1.25rem 0 0.5rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.sub {
+  color: var(--ink-2);
+  margin: 0 0 1rem;
+}
 
 .card {
   background: var(--paper);
@@ -89,19 +129,50 @@ h3 { font-size: 0.9rem; margin: 1.25rem 0 0.5rem; font-weight: 600; color: var(-
 }
 
 /* ── The Program strip: exactly two figures ── */
-.strip { display: flex; gap: 2rem; flex-wrap: wrap; align-items: baseline; }
-.strip .figure { font-size: 1.15rem; font-weight: 600; }
-.strip .label { font-size: 0.8rem; color: var(--ink-3); display: block; }
-
-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-th {
-  text-align: left; font-weight: 600; color: var(--ink-3); font-size: 0.78rem;
-  text-transform: uppercase; letter-spacing: 0.04em;
-  padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--rule);
+.strip {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  align-items: baseline;
 }
-td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--rule-2); vertical-align: top; }
-tr:last-child td { border-bottom: none; }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.strip .figure {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+.strip .label {
+  font-size: 0.8rem;
+  color: var(--ink-3);
+  display: block;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--ink-3);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+}
+td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--rule-2);
+  vertical-align: top;
+}
+tr:last-child td {
+  border-bottom: none;
+}
+td.num,
+th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 
 /*
  * A filtered row keeps its true rank and is dimmed, never renumbered.
@@ -112,65 +183,171 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
  * and it must be impossible to overlook — so this recolours rather than fades,
  * and says so with `aria-hidden` left alone and an explicit note in the cell.
  */
-tr.hidden-by-filter td { color: var(--ink-3); background: var(--paper-2); }
-tr.hidden-by-filter td a { color: var(--ink-3); }
+tr.hidden-by-filter td {
+  color: var(--ink-3);
+  background: var(--paper-2);
+}
+tr.hidden-by-filter td a {
+  color: var(--ink-3);
+}
 
 .badge {
-  display: inline-block; font-size: 0.72rem; font-weight: 600;
-  padding: 0.1rem 0.42rem; border-radius: 999px;
-  border: 1px solid var(--rule); color: var(--ink-2); background: var(--paper-2);
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.42rem;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  color: var(--ink-2);
+  background: var(--paper-2);
   white-space: nowrap;
 }
-.badge.good { color: var(--good); border-color: #b6e0c8; background: #f1fbf5; }
-.badge.warn { color: var(--warn); border-color: #f0dcb4; background: #fdf8ee; }
-.badge.bad  { color: var(--bad);  border-color: #f2c4c1; background: #fdf3f2; }
-.badge.mute { color: var(--ink-3); }
-
-.note { font-size: 0.82rem; color: var(--ink-3); }
-.mono { font-family: var(--font-mono); font-size: 0.82rem; }
-
-/* ── A Criterion is never a bare number ── */
-.criterion-value { font-weight: 600; font-variant-numeric: tabular-nums; }
-.criterion-raw { font-size: 0.8rem; color: var(--ink-3); }
-.criterion-unknown { color: var(--ink-3); font-style: italic; }
-
-.grid { display: grid; gap: var(--gap); }
-.grid.two { grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); }
-.grid.four { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
-
-/* ── The weight rail ── */
-.rail { display: grid; gap: 0.5rem; }
-.rail-row { display: grid; grid-template-columns: 10rem 1fr 3rem; gap: 0.6rem; align-items: center; }
-.rail-row label { font-size: 0.82rem; color: var(--ink-2); }
-.rail-row output { font-variant-numeric: tabular-nums; text-align: right; font-size: 0.85rem; }
-.rail input[type='range'] { width: 100%; }
-
-.chip {
-  display: inline-flex; align-items: center; gap: 0.35rem;
-  font-size: 0.78rem; padding: 0.15rem 0.5rem; border-radius: 999px;
-  background: #fff7e6; border: 1px solid #f0dcb4; color: var(--warn);
+.badge.good {
+  color: var(--good);
+  border-color: #b6e0c8;
+  background: #f1fbf5;
+}
+.badge.warn {
+  color: var(--warn);
+  border-color: #f0dcb4;
+  background: #fdf8ee;
+}
+.badge.bad {
+  color: var(--bad);
+  border-color: #f2c4c1;
+  background: #fdf3f2;
+}
+.badge.mute {
+  color: var(--ink-3);
 }
 
-.bar { height: 0.5rem; background: var(--rule-2); border-radius: 999px; overflow: hidden; }
-.bar > i { display: block; height: 100%; background: var(--accent); }
+.note {
+  font-size: 0.82rem;
+  color: var(--ink-3);
+}
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
 
-.empty { color: var(--ink-3); padding: 1.5rem; text-align: center; }
-.scroll-x { overflow-x: auto; }
+/* ── A Criterion is never a bare number ── */
+.criterion-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.criterion-raw {
+  font-size: 0.8rem;
+  color: var(--ink-3);
+}
+.criterion-unknown {
+  color: var(--ink-3);
+  font-style: italic;
+}
+
+.grid {
+  display: grid;
+  gap: var(--gap);
+}
+.grid.two {
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+}
+.grid.four {
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+
+/* ── The weight rail ── */
+.rail {
+  display: grid;
+  gap: 0.5rem;
+}
+.rail-row {
+  display: grid;
+  grid-template-columns: 10rem 1fr 3rem;
+  gap: 0.6rem;
+  align-items: center;
+}
+.rail-row label {
+  font-size: 0.82rem;
+  color: var(--ink-2);
+}
+.rail-row output {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  font-size: 0.85rem;
+}
+.rail input[type='range'] {
+  width: 100%;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: #fff7e6;
+  border: 1px solid #f0dcb4;
+  color: var(--warn);
+}
+
+.bar {
+  height: 0.5rem;
+  background: var(--rule-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.empty {
+  color: var(--ink-3);
+  padding: 1.5rem;
+  text-align: center;
+}
+.scroll-x {
+  overflow-x: auto;
+}
 
 /* ── The live indicator: a page that is still re-reading, saying so ── */
 .live {
-  display: inline-flex; align-items: center; gap: 0.4rem;
-  font-size: 0.82rem; color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--ink-3);
 }
 .live > i {
-  width: 0.45rem; height: 0.45rem; border-radius: 999px;
-  background: var(--accent); animation: live-pulse 1.4s ease-in-out infinite;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: live-pulse 1.4s ease-in-out infinite;
 }
-@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
-@media (prefers-reduced-motion: reduce) { .live > i { animation: none; } }
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live > i {
+    animation: none;
+  }
+}
 
-.bar > i.warn { background: var(--warn); }
-.bar > i.bad { background: var(--bad); }
+.bar > i.warn {
+  background: var(--warn);
+}
+.bar > i.bad {
+  background: var(--bad);
+}
 
 /* ═══ Answer-first ═════════════════════════════════════════════════════════
  *
@@ -198,40 +375,91 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
  * grey badges is a verdict nobody reads.
  */
 .answer {
-  border: 1px solid var(--rule); border-left: 4px solid var(--ink-3);
-  border-radius: var(--radius); background: var(--paper);
-  padding: 0.9rem 1.1rem; margin: 0 0 1.1rem;
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--ink-3);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 0.9rem 1.1rem;
+  margin: 0 0 1.1rem;
 }
-.answer.stop { border-left-color: var(--bad); background: #fefaf9; }
-.answer.you  { border-left-color: var(--warn); background: #fffdf8; }
-.answer.ok   { border-left-color: var(--good); background: #f9fdfb; }
+.answer.stop {
+  border-left-color: var(--bad);
+  background: #fefaf9;
+}
+.answer.you {
+  border-left-color: var(--warn);
+  background: #fffdf8;
+}
+.answer.ok {
+  border-left-color: var(--good);
+  background: #f9fdfb;
+}
 .answer .said {
-  font-size: 1.12rem; line-height: 1.4; font-weight: 600;
-  margin: 0; letter-spacing: -0.005em;
+  font-size: 1.12rem;
+  line-height: 1.4;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.005em;
 }
-.answer .because { font-size: 0.9rem; color: var(--ink-2); margin: 0.45rem 0 0; max-width: 62rem; }
-.answer .do { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.75rem; }
-.answer .do .note { margin: 0; }
+.answer .because {
+  font-size: 0.9rem;
+  color: var(--ink-2);
+  margin: 0.45rem 0 0;
+  max-width: 62rem;
+}
+.answer .do {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.75rem;
+}
+.answer .do .note {
+  margin: 0;
+}
 
 /* A row of plain figures, each labelled in the words a buyer would use. */
 .where {
-  display: flex; flex-wrap: wrap; gap: 0;
-  border: 1px solid var(--rule); border-radius: var(--radius);
-  overflow: hidden; background: var(--rule); margin: 0 0 1.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--rule);
+  margin: 0 0 1.4rem;
 }
 .where > div {
-  background: var(--paper); padding: 0.7rem 0.95rem;
-  flex: 1 1 9rem; border-right: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 0.7rem 0.95rem;
+  flex: 1 1 9rem;
+  border-right: 1px solid var(--rule);
 }
-.where > div:last-child { border-right: 0; }
+.where > div:last-child {
+  border-right: 0;
+}
 .where b {
-  display: block; font-size: 1.25rem; font-weight: 650;
-  font-variant-numeric: tabular-nums; line-height: 1.15;
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
 }
-.where span { display: block; font-size: 0.78rem; color: var(--ink-3); margin-top: 0.1rem; }
-.where .bad b { color: var(--bad); }
-.where .warn b { color: var(--warn); }
-.where .good b { color: var(--good); }
+.where span {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--ink-3);
+  margin-top: 0.1rem;
+}
+.where .bad b {
+  color: var(--bad);
+}
+.where .warn b {
+  color: var(--warn);
+}
+.where .good b {
+  color: var(--good);
+}
 
 /*
  * The buyer's word on the surface, the canonical term still available.
@@ -241,21 +469,37 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
  * is what lets the surface speak plainly without the vocabulary going soft
  * underneath. Written `<span class="term">group companies<i>Corporate family</i></span>`.
  */
-.term { border-bottom: 1px dotted var(--ink-3); }
-.term i {
-  font-style: normal; font-size: 0.78em;
-  color: var(--ink-3); font-family: var(--font-mono);
+.term {
+  border-bottom: 1px dotted var(--ink-3);
 }
-.term i::before { content: ' · '; }
+.term i {
+  font-style: normal;
+  font-size: 0.78em;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+}
+.term i::before {
+  content: ' · ';
+}
 
 /* The working out: demoted, never hidden. */
 .working {
-  border: 1px solid var(--rule); border-radius: var(--radius);
-  background: var(--paper-2); padding: 0.7rem 0.9rem; margin: 1rem 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper-2);
+  padding: 0.7rem 0.9rem;
+  margin: 1rem 0;
 }
-.working > summary { cursor: pointer; font-size: 0.88rem; font-weight: 600; color: var(--ink-2); }
+.working > summary {
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
 .working[open] > summary {
-  margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--rule);
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
 }
 
 /*
@@ -266,14 +510,30 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
  * and it was previously drawn as one.
  */
 .btn {
-  display: inline-block; font: inherit; font-size: 0.85rem; font-weight: 600;
-  padding: 0.35rem 0.75rem; border-radius: var(--radius);
-  border: 1px solid var(--rule); background: var(--paper); color: var(--ink-2);
+  display: inline-block;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink-2);
   cursor: pointer;
 }
-.btn:hover { text-decoration: none; border-color: var(--ink-3); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn.primary:hover { border-color: var(--accent); filter: brightness(1.08); }
+.btn:hover {
+  text-decoration: none;
+  border-color: var(--ink-3);
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn.primary:hover {
+  border-color: var(--accent);
+  filter: brightness(1.08);
+}
 
 /* ═══ Settling by hand ═════════════════════════════════════════════════════
  *
@@ -294,58 +554,148 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
  * contrary evidence and must never read as the same thing.
  */
 .v {
-  display: inline-flex; align-items: center; gap: 0.28rem;
-  font-size: 0.72rem; font-weight: 600; white-space: nowrap;
-  padding: 0.12rem 0.45rem; border-radius: 999px;
-  border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  color: var(--ink-2);
 }
-.v i { font-style: normal; font-weight: 700; font-size: 0.78rem; line-height: 1; }
-.v.pass { color: var(--good); border-color: #b6e0c8; background: #f1fbf5; }
-.v.fail { color: var(--bad); border-color: #f2c4c1; background: #fdf3f2; }
-.v.dunno { color: var(--ink-3); border-style: dashed; }
+.v i {
+  font-style: normal;
+  font-weight: 700;
+  font-size: 0.78rem;
+  line-height: 1;
+}
+.v.pass {
+  color: var(--good);
+  border-color: #b6e0c8;
+  background: #f1fbf5;
+}
+.v.fail {
+  color: var(--bad);
+  border-color: #f2c4c1;
+  background: #fdf3f2;
+}
+.v.dunno {
+  color: var(--ink-3);
+  border-style: dashed;
+}
 /* Two reporters read it differently — the second read earning its keep. */
-.v.split { color: var(--warn); border-color: #f0dcb4; background: #fdf8ee; }
-.vs { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.v.split {
+  color: var(--warn);
+  border-color: #f0dcb4;
+  background: #fdf8ee;
+}
+.vs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
 .legend {
-  display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center;
-  font-size: 0.8rem; color: var(--ink-2); margin: 0.1rem 0 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--ink-2);
+  margin: 0.1rem 0 0.9rem;
 }
 
 /* A pickable record. The whole row is the label, so the target is the row. */
 .pick {
-  display: grid; grid-template-columns: 1.6rem 1fr; gap: 0.1rem 0.7rem;
-  align-items: start; padding: 0.7rem 0.8rem; margin-bottom: 0.5rem;
-  border: 1px solid var(--rule); border-radius: var(--radius);
-  background: var(--paper); cursor: pointer;
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  gap: 0.1rem 0.7rem;
+  align-items: start;
+  padding: 0.7rem 0.8rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper);
+  cursor: pointer;
 }
-.pick:hover { border-color: var(--ink-3); background: #fcfdff; }
+.pick:hover {
+  border-color: var(--ink-3);
+  background: #fcfdff;
+}
 /* `:has` so the selected row is drawn by the radio, with no script involved. */
-.pick:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: #f8faff; }
-.pick:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pick:has(input:checked) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  background: #f8faff;
+}
+.pick:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 /* Set apart: a record excluded on a fact, or the not-found choice. */
-.pick.out { background: var(--paper-2); border-style: dashed; }
-.pick input { margin-top: 0.28rem; width: 1rem; height: 1rem; accent-color: var(--accent); }
-.pick .who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.6rem; }
-.pick .who strong { font-size: 0.95rem; }
+.pick.out {
+  background: var(--paper-2);
+  border-style: dashed;
+}
+.pick input {
+  margin-top: 0.28rem;
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+}
+.pick .who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.6rem;
+}
+.pick .who strong {
+  font-size: 0.95rem;
+}
 
 /* The facts that separate one record from the next, on one line. */
 .facts {
-  display: flex; flex-wrap: wrap; gap: 0.15rem 1.1rem;
-  margin: 0.3rem 0 0.35rem; font-size: 0.82rem; color: var(--ink-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 1.1rem;
+  margin: 0.3rem 0 0.35rem;
+  font-size: 0.82rem;
+  color: var(--ink-2);
 }
-.facts > span { white-space: nowrap; }
-.facts b { font-weight: 600; color: var(--ink); }
+.facts > span {
+  white-space: nowrap;
+}
+.facts b {
+  font-weight: 600;
+  color: var(--ink);
+}
 /* An address is the one fact that must wrap rather than scroll. */
-.facts.addr > span { white-space: normal; }
+.facts.addr > span {
+  white-space: normal;
+}
 
 /* A group of records the resolver could not tell apart. */
 .same {
-  border: 1px dashed var(--rule); border-radius: var(--radius);
-  background: var(--paper-2); padding: 0.6rem 0.8rem; margin-bottom: 0.5rem;
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper-2);
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.5rem;
 }
-.same > summary { cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--ink-2); }
-.same[open] > summary { margin-bottom: 0.6rem; }
-.same .pick { background: var(--paper); }
+.same > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.same[open] > summary {
+  margin-bottom: 0.6rem;
+}
+.same .pick {
+  background: var(--paper);
+}
 
 /*
  * Text for a screen reader only.
@@ -355,8 +705,15 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
  * the verdict is spoken as *"street — pass"* rather than left to the colour.
  */
 .vh {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /*
@@ -390,11 +747,24 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
   touch-action: none;
 }
 
-.map-svg { display: block; width: 100%; height: 100%; cursor: grab; }
-.map-svg:active { cursor: grabbing; }
-.map-svg a { cursor: pointer; }
-.map-svg circle { transition: fill-opacity 0.12s ease; }
-.map-svg a:hover circle { fill-opacity: 1; }
+.map-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+.map-svg:active {
+  cursor: grabbing;
+}
+.map-svg a {
+  cursor: pointer;
+}
+.map-svg circle {
+  transition: fill-opacity 0.12s ease;
+}
+.map-svg a:hover circle {
+  fill-opacity: 1;
+}
 
 .map-zoom {
   position: absolute;
@@ -416,8 +786,14 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
   border-radius: 4px;
 }
 
-.map-zoom button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.map-zoom button:disabled { opacity: 0.4; cursor: default; }
+.map-zoom button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.map-zoom button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 
 /* Follows the cursor, so it must never sit under it and swallow the hover. */
 .map-tip {
@@ -437,7 +813,10 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.09);
 }
 
-.map-tip .tip-name { font-weight: 600; color: var(--ink); }
+.map-tip .tip-name {
+  font-weight: 600;
+  color: var(--ink);
+}
 
 /* The selected dot keeps a ring, so the card always has a visible owner. */
 .map-dot-halo {
@@ -448,8 +827,14 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
   opacity: 0.85;
 }
 
-.map-dot-hit { cursor: pointer; outline: none; }
-.map-dot-hit:focus-visible .map-dot { stroke: var(--accent); stroke-opacity: 1; }
+.map-dot-hit {
+  cursor: pointer;
+  outline: none;
+}
+.map-dot-hit:focus-visible .map-dot {
+  stroke: var(--accent);
+  stroke-opacity: 1;
+}
 
 /*
  * The detail card. Anchored to the dot in percentages, so it stays on its mark
@@ -482,10 +867,17 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
   margin: 0 0 0.5rem;
 }
 
-.map-card-facts dt { color: var(--ink-3); }
-.map-card-facts dd { margin: 0; color: var(--ink-2); }
+.map-card-facts dt {
+  color: var(--ink-3);
+}
+.map-card-facts dd {
+  margin: 0;
+  color: var(--ink-2);
+}
 
-.map-card-open { font-weight: 600; }
+.map-card-open {
+  font-weight: 600;
+}
 
 .map-card-close {
   position: absolute;
@@ -500,7 +892,9 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
   border: none;
 }
 
-.map-card-close:hover { color: var(--ink); }
+.map-card-close:hover {
+  color: var(--ink);
+}
 
 /*
  * Cameras and the band key sit ON the map rather than under it. The world box
@@ -519,7 +913,10 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
   color: var(--ink-2);
 }
 
-.map-cameras { top: 0.6rem; left: 0.6rem; }
+.map-cameras {
+  top: 0.6rem;
+  left: 0.6rem;
+}
 
 .map-legend {
   bottom: 0.6rem;
@@ -530,10 +927,22 @@ tr.hidden-by-filter td a { color: var(--ink-3); }
   border-radius: var(--radius);
 }
 
-.map-cameras .badge { background: color-mix(in srgb, var(--paper) 86%, transparent); }
-.map-key { display: inline-flex; align-items: center; gap: 0.25rem; color: inherit; text-decoration: none; }
-a.map-key:hover { color: var(--accent); }
-.map-note { margin: 0.4rem 0 1.6rem; }
+.map-cameras .badge {
+  background: color-mix(in srgb, var(--paper) 86%, transparent);
+}
+.map-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: inherit;
+  text-decoration: none;
+}
+a.map-key:hover {
+  color: var(--accent);
+}
+.map-note {
+  margin: 0.4rem 0 1.6rem;
+}
 
 /*
  * Marks hold their screen size at every camera. `--x`/`--y` are written by the
@@ -551,7 +960,9 @@ a.map-key:hover { color: var(--accent); }
  * white disc an earlier cut used, which merged into a blob wherever two Plants
  * were close.
  */
-.map-plant rect { filter: drop-shadow(0 0.35px 0.5px rgb(0 0 0 / 0.35)); }
+.map-plant rect {
+  filter: drop-shadow(0 0.35px 0.5px rgb(0 0 0 / 0.35));
+}
 
 /* The label rides a halo so a supplier on the same city cannot bury it. */
 .map-plant text {
@@ -571,14 +982,18 @@ a.map-key:hover { color: var(--accent); }
  * The server's unclustered dots are the map until the client takes over. They
  * are not a placeholder: with JavaScript off they are the whole data layer.
  */
-.map-shell.js .map-fallback { display: none; }
+.map-shell.js .map-fallback {
+  display: none;
+}
 
 /*
  * A dot is a target, so it answers to the cursor. The old hover moved fill
  * opacity 0.8 → 1.0, which nobody could see; this lifts the mark instead.
  */
 .map-dot {
-  transition: transform 0.1s ease, fill-opacity 0.1s ease;
+  transition:
+    transform 0.1s ease,
+    fill-opacity 0.1s ease;
 }
 
 .map-marks a:hover .map-dot {
@@ -587,7 +1002,9 @@ a.map-key:hover { color: var(--accent); }
   stroke-opacity: 1;
 }
 
-.map-cluster { cursor: zoom-in; }
+.map-cluster {
+  cursor: zoom-in;
+}
 /*
  * The count's halo width is set INLINE, in proportion to the mark.
  *
@@ -602,8 +1019,12 @@ a.map-key:hover { color: var(--accent); }
   paint-order: stroke;
 }
 
-.map-cluster:hover .map-cluster-count { fill: var(--accent); }
-.map-spider circle:last-child { cursor: zoom-out; }
+.map-cluster:hover .map-cluster-count {
+  fill: var(--accent);
+}
+.map-spider circle:last-child {
+  cursor: zoom-out;
+}
 
 /*
  * Painted last, hit-tested never. The Plant marker is an anchor to look at, not

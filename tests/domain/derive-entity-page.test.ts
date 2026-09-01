@@ -8,7 +8,14 @@ import { deriveEdgeGroups } from '@/domain/derive-entity-page';
  * testing here.
  */
 
-const edge = (overrides: Partial<{ relationshipType: string; fromEntityId: string; toEntityId: string; former: boolean }> = {}) => ({
+const edge = (
+  overrides: Partial<{
+    relationshipType: string;
+    fromEntityId: string;
+    toEntityId: string;
+    former: boolean;
+  }> = {},
+) => ({
   id: 'e1',
   relationshipType: overrides.relationshipType ?? 'owner_of',
   fromEntityId: overrides.fromEntityId ?? 'SUBJECT',
@@ -18,27 +25,46 @@ const edge = (overrides: Partial<{ relationshipType: string; fromEntityId: strin
 
 describe('deriveEdgeGroups', () => {
   it('reads "this company is above" when the subject owns the target', () => {
-    const groups = deriveEdgeGroups([edge({ relationshipType: 'owner_of', fromEntityId: 'SUBJECT', toEntityId: 'TARGET' })] as never, 'SUBJECT');
+    const groups = deriveEdgeGroups(
+      [
+        edge({ relationshipType: 'owner_of', fromEntityId: 'SUBJECT', toEntityId: 'TARGET' }),
+      ] as never,
+      'SUBJECT',
+    );
     expect(groups[0]).toMatchObject({ side: 'from', reading: 'this company is above' });
   });
 
   it('reads the identical relationship type as "below" from the other end', () => {
     // owner_of is downward — the entity we are standing at is the TARGET here,
     // so being on the receiving end of "owns" means it is owned, not owning.
-    const groups = deriveEdgeGroups([edge({ relationshipType: 'owner_of', fromEntityId: 'SUBJECT', toEntityId: 'TARGET' })] as never, 'TARGET');
+    const groups = deriveEdgeGroups(
+      [
+        edge({ relationshipType: 'owner_of', fromEntityId: 'SUBJECT', toEntityId: 'TARGET' }),
+      ] as never,
+      'TARGET',
+    );
     expect(groups[0]).toMatchObject({ side: 'to', reading: 'this company is below' });
   });
 
   it('reads an upward type ("has_shareholder") the opposite way round from a downward one', () => {
     const groups = deriveEdgeGroups(
-      [edge({ relationshipType: 'has_shareholder', fromEntityId: 'SUBJECT', toEntityId: 'TARGET' })] as never,
+      [
+        edge({
+          relationshipType: 'has_shareholder',
+          fromEntityId: 'SUBJECT',
+          toEntityId: 'TARGET',
+        }),
+      ] as never,
       'SUBJECT',
     );
     expect(groups[0]).toMatchObject({ reading: 'this company is below' });
   });
 
   it('reads a lateral type as neither owning the other, from either end', () => {
-    const groups = deriveEdgeGroups([edge({ relationshipType: 'has_officer' })] as never, 'SUBJECT');
+    const groups = deriveEdgeGroups(
+      [edge({ relationshipType: 'has_officer' })] as never,
+      'SUBJECT',
+    );
     expect(groups[0]).toMatchObject({ reading: 'neither owns the other' });
   });
 

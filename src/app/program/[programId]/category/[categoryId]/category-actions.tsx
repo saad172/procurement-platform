@@ -67,7 +67,11 @@ export function CategoryActions({
         <form action={runDiscover}>
           <input type="hidden" name="programId" value={programId} />
           <input type="hidden" name="categoryId" value={categoryId} />
-          <button type="submit" className="badge" style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}>
+          <button
+            type="submit"
+            className="badge"
+            style={{ cursor: 'pointer', padding: '0.45rem 0.8rem' }}
+          >
             Discover leads
           </button>
         </form>

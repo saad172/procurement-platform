@@ -101,7 +101,12 @@ async function main(): Promise<void> {
     const jobId =
       recipe === 'assess'
         ? await recordAssess(db, { supplierId, programId, runId, apiKey: env.ANTHROPIC_API_KEY })
-        : await recordRecommend(db, { supplierId, programId, runId, apiKey: env.ANTHROPIC_API_KEY });
+        : await recordRecommend(db, {
+            supplierId,
+            programId,
+            runId,
+            apiKey: env.ANTHROPIC_API_KEY,
+          });
 
     const fixture = await recordFixture(db, {
       name,
@@ -152,7 +157,9 @@ async function recordAssess(db: Db, args: Args): Promise<string> {
     },
     { supplierId: args.supplierId, programId: args.programId },
   );
-  console.warn(`  version ${result.n} · ${result.evaluatorOutcome} · ${result.roundsUsed} round(s)`);
+  console.warn(
+    `  version ${result.n} · ${result.evaluatorOutcome} · ${result.roundsUsed} round(s)`,
+  );
   return jobId;
 }
 

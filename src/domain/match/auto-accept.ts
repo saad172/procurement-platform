@@ -1,4 +1,8 @@
-import { DISCRIMINATOR_NAMES, type CandidateFacts, type DiscriminatorResult } from './discriminators';
+import {
+  DISCRIMINATOR_NAMES,
+  type CandidateFacts,
+  type DiscriminatorResult,
+} from './discriminators';
 
 /**
  * The auto-accept gate (SPEC §6.3).

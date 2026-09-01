@@ -26,10 +26,7 @@ describe('classify', () => {
     // They are opposite diagnoses — one means our client could not read a
     // response the API successfully returned, the other means the API refused
     // us — and confusing them sends someone to the wrong team.
-    const parse = classify(
-      Object.assign(new Error('x'), { name: 'ParseError', errors: [] }),
-      ctx,
-    );
+    const parse = classify(Object.assign(new Error('x'), { name: 'ParseError', errors: [] }), ctx);
     const entitlement = classify(Object.assign(new Error('x'), { statusCode: 403 }), ctx);
     expect(parse.message).toMatch(/the call itself succeeded/);
     expect(parse.message).not.toMatch(/not entitled/);

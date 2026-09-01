@@ -119,6 +119,16 @@ export type RunLoopOutcome =
       toolUses: { name: string; input: unknown }[];
     }
   /** The run budget was reached at a Round boundary. The ONLY resumable stop. */
-  | { status: 'paused_on_budget'; spentUsd: number; turns: number; toolCalls: number; tokens: number }
+  | {
+      status: 'paused_on_budget';
+      spentUsd: number;
+      turns: number;
+      toolCalls: number;
+      tokens: number;
+    }
   /** Something broke, including a whole-chain refusal. Red, and retryable. */
-  | { status: 'failed'; error: string; refusal?: { category: string | null; explanation: string | null } };
+  | {
+      status: 'failed';
+      error: string;
+      refusal?: { category: string | null; explanation: string | null };
+    };
