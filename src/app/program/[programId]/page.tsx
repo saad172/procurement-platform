@@ -186,7 +186,7 @@ export default async function ProgramPage({
           <b>
             {awardable} of {program.categories.length}
           </b>
-          <span>categories you could award today</span>
+          <span>categories with an argued case behind them</span>
         </div>
         <div className={assessedIds.size < suppliers.length / 2 ? 'warn' : ''}>
           <b>
@@ -206,7 +206,7 @@ export default async function ProgramPage({
         </div>
         <div>
           <b>{uncategorised.length}</b>
-          <span>bid on no category, so cannot be ranked</span>
+          <span>not mapped to any category, so cannot be ranked</span>
         </div>
         <div>
           <b>${spent.toFixed(2)}</b>
@@ -294,7 +294,7 @@ export default async function ProgramPage({
       <h3>
         Every company on the roster{' '}
         <span className="note">
-          {uncategorised.length} of {suppliers.length} bid on no category, and reach no shortlist
+          {uncategorised.length} of {suppliers.length} are not mapped to any category, and reach no shortlist
         </span>
       </h3>
       <SupplierTable

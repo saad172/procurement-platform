@@ -524,7 +524,7 @@ export default async function SupplierPage({
                   thing about this page that was false.
                 */}
                 {scored?.scoreAbsentReason === 'no_category'
-                  ? 'This supplier bids on no category in this programme, so it reaches no shortlist. It still carries criterion values and an assessment.'
+                  ? 'This supplier is not mapped to any category in this programme, so it reaches no shortlist. It still carries criterion values and an assessment.'
                   : scored?.scoreAbsentReason === 'no_match'
                     ? 'Its match is not settled, so there is no profile to measure — and no estimated criterion is shown, because a number about a company we have not identified would be worse than none.'
                     : 'Its match is settled, but no criterion has a value yet — nothing has been enriched, so every weight dropped out and there is nothing left to average. Re-enrich fetches the six sources a score is computed from.'}

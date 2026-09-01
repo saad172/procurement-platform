@@ -217,7 +217,7 @@ export default async function CategoryPage({
 
       {shortlist.excluded.length > 0 ? (
         <>
-          <h2>Bidding, but not rankable yet</h2>
+          <h2>In this programme, but not rankable yet</h2>
           <div className="card">
             {/*
               Two DISTINCT reasons, rendered differently. A Supplier we could not
@@ -233,7 +233,7 @@ export default async function CategoryPage({
                   <h3 style={{ marginTop: 0 }}>
                     {reason === 'no_match'
                       ? 'No settled match — we could not say which company this is'
-                      : 'Bids on no category in this programme'}
+                      : 'Not mapped to any category in this programme'}
                   </h3>
                   <p className="note">
                     {reason === 'no_match'

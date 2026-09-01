@@ -174,7 +174,7 @@ describe('what is missing, said as what is missing', () => {
     const noCategory = answer({ score: null, scoreAbsentReason: 'no_category' });
     const noValues = answer({ score: null, scoreAbsentReason: 'no_values' });
 
-    expect(noCategory.said).toMatch(/bids on nothing in this programme/);
+    expect(noCategory.said).toMatch(/is mapped to no category in this programme/);
     expect(noValues.said).toMatch(/have not looked it up yet/);
     expect(noValues.actions[0]).toMatchObject({ action: 'enrich', primary: true });
   });
