@@ -160,7 +160,8 @@ src/
   app/          Next.js App Router — the five-page spine, the chat route handler;
                 each page.tsx is a loader call and one component per <h2>, in the
                 sections.tsx beside it
-  components/   client components shared across pages: the chat dock, the weight rail
+  components/   client components shared across pages: the chat dock, the weight rail,
+                and widgets/ — one renderer per frozen chat widget type
   chat/         one chat turn: the Thread, the Run, the tools, the transcript
   config/       env.ts (boot validation), constants.ts (the shared numbers)
   db/           Drizzle schema, migrations, the idempotent seed;
@@ -256,6 +257,6 @@ Sequenced so each step is verifiable before the next depends on it
 
 All sixteen are done. What each step actually cost, and every place the spec's
 assumptions turned out to be wrong, is in
-[`docs/BUILD-NOTES.md`](docs/BUILD-NOTES.md) — 102 numbered findings, each one a
+[`docs/BUILD-NOTES.md`](docs/BUILD-NOTES.md) — 103 numbered findings, each one a
 measurement rather than an opinion. **The write-up should quote that file, not
 the spec, for any number.**
