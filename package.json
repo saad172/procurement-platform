@@ -38,7 +38,8 @@
     "fixtures:rehash": "tsx scripts/rehash-fixture.ts",
     "reproject:relationships": "tsx scripts/reproject-relationships.ts",
     "reproject:entities": "tsx scripts/reproject-entities.ts",
-    "remeasure:discriminators": "tsx scripts/remeasure-discriminators.ts"
+    "remeasure:discriminators": "tsx scripts/remeasure-discriminators.ts",
+    "basemap:build": "tsx scripts/build-basemap.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.122.0",
