@@ -1,6 +1,7 @@
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import type { BetaRunnableTool } from '@anthropic-ai/sdk/lib/tools/BetaRunnableTool';
 import type { Estimate, ToolContext, ToolDefinition, Widget } from '@/tools';
+import { upstreamObjection, visibleObjections } from './tool-adapter';
 
 /**
  * The chat adapter (SPEC §14.5, §14.6).
@@ -70,17 +71,29 @@ export function toChatTools(
             ];
           }
 
-          const result = await tool.handler(input, ctx);
+          /**
+           * An upstream failure is told to the person's question as a sentence,
+           * not as the SDK's `Error: <message>` string.
+           *
+           * Chat is the surface where this matters most: a 429 or a timeout on
+           * a raw lookup is the *source* failing, and the answer a person
+           * deserves is "Sayari did not answer" rather than a stack-shaped
+           * apology. There is no upstream ceiling to hit here — chat's Run
+           * carries none, because the confirm gate is its bound.
+           */
+          let result: Awaited<ReturnType<typeof tool.handler>>;
+          try {
+            result = await tool.handler(input, ctx);
+          } catch (error) {
+            const objection = upstreamObjection(error);
+            if (!objection) throw error;
+            return visibleObjections([objection]);
+          }
           if (!result.ok) {
             // A handler returning objections renders as a VISIBLE block listing
             // them verbatim, and the model is told so it adjusts rather than
             // retrying blind. Never an apology in place of what happened.
-            return [
-              {
-                type: 'text',
-                text: `This did not work. The reasons, verbatim:\n${result.objections.map((o) => `- ${o}`).join('\n')}`,
-              },
-            ];
+            return visibleObjections(result.objections);
           }
 
           // Every chat-reachable read returns `{ data, widget }` with NO OPT-OUT:

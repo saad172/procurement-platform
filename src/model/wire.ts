@@ -164,11 +164,52 @@ export function normaliseRowIds(text: string): string {
   return text.replace(INSTANT_ANYWHERE, '«ts»').replace(UUID_ANYWHERE, '«id»');
 }
 
+/**
+ * Cache markers, dropped at every depth.
+ *
+ * ## Why a marker is not content
+ *
+ * `cache_control` says nothing about what was asked. It is a hint about how the
+ * transport should treat a prefix — the same question, with a note about where
+ * to break for caching — and the answer it draws is identical either way. The
+ * wire hash exists to answer *"is this the same request?"*, and by that
+ * question a marked and an unmarked body are the same request.
+ *
+ * The alternative was measured and rejected: switching prompt caching on
+ * changes the bytes of every outbound body, so every fixture in the suite would
+ * have gone red at turn 1 and been re-recorded — spending a full pipeline's
+ * tokens to record answers to questions that had not changed. **A fixture
+ * re-recorded for a reason that is not drift is a fixture that has stopped
+ * proving anything.**
+ *
+ * What is given up is sensitivity to *where the breakpoints are*, which is a
+ * genuine loss and a bounded one: `rawBodyHash` is stored beside the wire hash
+ * on every turn and is taken over the bytes as sent, so a recording still shows
+ * the markers were present, and `MODEL_REQUEST_DUMP_DIR` still dumps the body
+ * verbatim. The layout itself is asserted directly, in `caching.test.ts`, over
+ * the request `buildRunner` produces.
+ *
+ * This is the **fourth** refinement of what "the same request" means, and each
+ * one is why `rawBodyHash` exists: a recovery mechanism keyed on the thing it
+ * recovers from breaks on its second use.
+ */
+function withoutCacheControl(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutCacheControl);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => key !== 'cache_control')
+        .map(([key, nested]) => [key, withoutCacheControl(nested)]),
+    );
+  }
+  return value;
+}
+
 /** Hashes an outbound request body, tolerating a body that is not JSON. */
 export function wireHash(bodyText: string): string {
   let canonical: string;
   try {
-    canonical = canonicalJson(JSON.parse(bodyText));
+    canonical = canonicalJson(withoutCacheControl(JSON.parse(bodyText)));
   } catch {
     canonical = bodyText;
   }

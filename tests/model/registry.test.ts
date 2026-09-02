@@ -188,6 +188,62 @@ describe('finalizeRegistry rejects', () => {
   });
 });
 
+describe('an enqueue_* tool whose Job kind no worker runs', () => {
+  /**
+   * The twelfth invariant, and the only one that does not throw.
+   *
+   * Chat can propose `enqueue_deep_traversal` (kind `traverse`) and
+   * `enqueue_dossier` (kind `dossier`), and the worker has a handler for
+   * neither — so an accepted proposal produced a Job that dequeued and failed
+   * with *"no handler registered"*, from a button a person deliberately
+   * pressed. Refusing to boot on it would refuse to boot the application rather
+   * than the mistake, so it is a **warning** until those two kinds are either
+   * handled or withdrawn.
+   */
+  it('is reported by name, with the kind it names and the kinds that run', () => {
+    const registry = finalizeRegistry([
+      ...scaffold(),
+      tool({
+        name: 'enqueue_dreaming',
+        effect: 'write',
+        surfaces: ['chat'],
+        enqueues: 'dossier',
+        confirm: async () => ({ what: '', spends: {}, basis: '', caveats: [] }),
+      }),
+    ]);
+
+    expect(registry.warnings).toHaveLength(1);
+    expect(registry.warnings[0]).toContain('enqueue_dreaming');
+    expect(registry.warnings[0]).toContain('dossier');
+    expect(registry.warnings[0]).toContain('no worker handler runs');
+  });
+
+  it('says nothing about a tool whose kind a worker does run', () => {
+    const registry = finalizeRegistry([
+      ...scaffold(),
+      tool({
+        name: 'enqueue_working',
+        effect: 'write',
+        surfaces: ['chat'],
+        enqueues: 'assess',
+        confirm: async () => ({ what: '', spends: {}, basis: '', caveats: [] }),
+      }),
+    ]);
+    expect(registry.warnings).toEqual([]);
+  });
+
+  it('names the two the real catalog carries, and no others', async () => {
+    // The finding, kept where a reader will see it: these are the two, and the
+    // list is short enough to state rather than count.
+    const { getRegistry, resetRegistryForTesting } = await import('@/tools');
+    resetRegistryForTesting();
+    const warnings = getRegistry().warnings.join(' ');
+    expect(warnings).toContain('enqueue_deep_traversal');
+    expect(warnings).toContain('enqueue_dossier');
+    expect(getRegistry().warnings).toHaveLength(2);
+  });
+});
+
 describe('per-surface and per-Round lists are DERIVED, never hand-written', () => {
   it('derives a surface list from the tools themselves', () => {
     const registry = finalizeRegistry(scaffold());

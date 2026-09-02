@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { RUNNABLE_JOB_KINDS } from '@/config/constants';
 import type { ToolDefinition, ToolSurface } from './define';
 
 /**
@@ -17,6 +18,16 @@ import type { ToolDefinition, ToolSurface } from './define';
 export type Registry = {
   all: ToolDefinition[];
   byName: Map<string, ToolDefinition>;
+  /**
+   * Problems that are **stated rather than refused**.
+   *
+   * The invariants throw, because each one prevents a tool somebody adds later
+   * without thinking about it. This one cannot yet: two `enqueue_*` tools in
+   * the catalog today name Job kinds the worker has no handler for, and
+   * refusing to boot on them would refuse to boot the app. Carried here so a
+   * test can read the finding, and logged at boot so it is not silent.
+   */
+  warnings: string[];
   /** Derived. There is no way to hand-write one of these. */
   forSurface: (surface: ToolSurface) => ToolDefinition[];
   /** Derived per Round — see `MATCH_RUNGS_BY_ROUND` for why this exists. */
@@ -102,7 +113,40 @@ export function finalizeRegistry(tools: readonly ToolDefinition[]): Registry {
 
   if (problems.length > 0) throw new RegistryError(problems);
 
-  return buildRegistry(tools, byName);
+  const warnings = enqueueKindWarnings(tools);
+  for (const warning of warnings) console.warn(`[registry] ${warning}`);
+
+  return { ...buildRegistry(tools, byName), warnings };
+}
+
+/**
+ * 12. **Every `enqueue_*` tool names a Job kind a worker can run.**
+ *
+ * Chat can propose `enqueue_deep_traversal` (kind `traverse`) and
+ * `enqueue_dossier` (kind `dossier`); the worker registers handlers for six
+ * kinds, and neither is among them. So an accepted proposal — a person reading
+ * an estimate and pressing a button — produced a Job that dequeued and failed
+ * with *"no handler registered for job kind"*. The confirm gate's whole claim
+ * is that a spend is a person's act; a button that cannot work is worse than
+ * no button.
+ *
+ * **A warning, not a refusal, and only for now.** Every other invariant here
+ * throws, which is what makes them invariants. This one cannot: the two tools
+ * are in the catalog today, so throwing would refuse to boot the application
+ * rather than the mistake — and *removing* them from chat changes the tool list
+ * in the recorded chat request, which reddens `chat/one-turn` for a reason that
+ * is not drift. It becomes a refusal the moment the `traverse` handler lands
+ * and `enqueue_dossier` is either handled or withdrawn.
+ */
+function enqueueKindWarnings(tools: readonly ToolDefinition[]): string[] {
+  const runnable = new Set<string>(RUNNABLE_JOB_KINDS);
+  return tools
+    .filter((tool) => tool.enqueues !== undefined && !runnable.has(tool.enqueues))
+    .map(
+      (tool) =>
+        `"${tool.name}" enqueues job kind "${tool.enqueues!}", which no worker handler runs — ` +
+        `an accepted proposal would fail with "no handler registered". Runnable kinds: ${[...runnable].join(', ')}.`,
+    );
 }
 
 function checkEachTool(
@@ -214,7 +258,7 @@ function checkRoundRungs(byName: Map<string, ToolDefinition>, problems: string[]
 function buildRegistry(
   tools: readonly ToolDefinition[],
   byName: Map<string, ToolDefinition>,
-): Registry {
+): Omit<Registry, 'warnings'> {
   const digest = (subset: readonly ToolDefinition[]) => {
     // Sorted by name, because the tool list is the very front of the cached
     // prefix and a set-ordering wobble at position 0 invalidates everything.

@@ -2,9 +2,18 @@ import type { BetaMessage } from '@anthropic-ai/sdk/resources/beta';
 import type { BetaMessageStream } from '@anthropic-ai/sdk/lib/BetaMessageStream';
 import { eq, sql } from 'drizzle-orm';
 import * as t from '@/db/schema';
-import { MODEL_PRICE_USD_PER_MTOK } from '@/config/constants';
+/**
+ * The two counter functions live in `src/jobs/runs.ts` because **the `job`
+ * table has one owner** — an ESLint rule refuses a write to it from anywhere
+ * else, after the UI turned out to be a second owner of the Job state machine.
+ * The chokepoint reads its ceiling from that owner rather than growing a second
+ * writer of the same two columns.
+ */
+import { jobCountersSoFar, recordJobCounters } from '@/jobs/runs';
+import { CACHE_CONTROL } from './caching';
 import { getAnthropicClient } from './client';
 import { describeModelError } from './describe-model-error';
+import { takeFatalToolError } from './tool-adapter';
 import { takeWireHash } from './wire';
 import {
   BASE_BETAS,
@@ -32,31 +41,19 @@ import type { ModelContext, RunLoopOutcome, RunLoopParams } from './types';
  * already breached its ceiling does not spend one more tool call proving it.
  */
 
-/** Sums the four token counts a turn reports, for the cap and for the price. */
+/**
+ * The tokens **the cap counts**, which is not the tokens the bill counts.
+ *
+ * `cache_read_input_tokens` is deliberately excluded. A per-Job ceiling is a
+ * correctness backstop on how much work a Job does, and a cached read is work
+ * the Job is *not* redoing — counting it would make the ceiling fire earlier on
+ * the Jobs that cache best, which is the opposite of what it is for. Dollars
+ * are a separate question with a separate function (`src/lib/price.ts`), and
+ * that one counts every token, cached or not.
+ */
 function tokensOf(message: BetaMessage): number {
   const u = message.usage;
-  return (
-    (u.input_tokens ?? 0) +
-    (u.output_tokens ?? 0) +
-    (u.cache_creation_input_tokens ?? 0) +
-    (u.cache_read_input_tokens ?? 0)
-  );
-}
-
-/**
- * Dollars from a **committed price constant, not a bill** — which the UI says
- * out loud wherever it renders one.
- *
- * Keyed by model id though we only ever ask for one, because server-side
- * refusal fallback can serve a turn from a model we did not choose.
- */
-export function priceOf(message: BetaMessage): number {
-  const price =
-    MODEL_PRICE_USD_PER_MTOK[message.model] ?? MODEL_PRICE_USD_PER_MTOK['claude-opus-5']!;
-  const u = message.usage;
-  const input =
-    (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
-  return (input / 1_000_000) * price.input + ((u.output_tokens ?? 0) / 1_000_000) * price.output;
+  return (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
 }
 
 /** Counts `tool_use` blocks, which is what the ceiling actually bounds. */
@@ -104,11 +101,26 @@ function isMessageStream(value: BetaMessage | BetaMessageStream): value is BetaM
  * before yielding the next turn.
  */
 export async function runLoop(params: RunLoopParams, ctx: ModelContext): Promise<RunLoopOutcome> {
+  /**
+   * **The ceilings are per JOB, and a Job calls this up to twelve times.**
+   *
+   * Both counters therefore start from what the Job has already spent, read
+   * back from `usage_event` and `trace_tool_call`. Starting them at zero made
+   * `JOB_CAPS` a per-call ceiling while SPEC §17.6 and §18.3 both describe a
+   * per-Job one — a recommend Job crossed its 900,000-token cap by half a
+   * percent and nothing fired, because no single Round crossed it alone.
+   *
+   * Chat has no `jobId` and keeps counting per call, which is the right answer
+   * there: chat is not a Job, has no Round boundary and no resume checkpoint,
+   * and `CHAT_TOOL_CALL_CAP` is a runaway backstop on one turn.
+   */
+  const seed = ctx.jobId ? await jobCountersSoFar(ctx.db, ctx.jobId) : { toolCalls: 0, tokens: 0 };
+
   const { runner, controller } = buildRunner(params, ctx);
 
   let turns = 0;
-  let toolCalls = 0;
-  let tokens = 0;
+  let toolCalls = seed.toolCalls;
+  let tokens = seed.tokens;
   let lastMessage: BetaMessage | undefined;
   const toolUses: { name: string; input: unknown }[] = [];
 
@@ -133,7 +145,11 @@ export async function runLoop(params: RunLoopParams, ctx: ModelContext): Promise
       toolCalls += written.toolCalls;
       tokens += written.tokens;
 
-      const decision = await checkCapsAndBudget(params, controller, turn, {
+      // The Job's own ledger, brought up to date before anything can stop the
+      // loop — so a Job killed mid-Round still says what it had spent.
+      if (ctx.jobId) await recordJobCounters(ctx.db, ctx.jobId, { toolCalls, tokens });
+
+      const decision = await checkCapsAndBudget(params, ctx, controller, turn, {
         turns,
         toolCalls,
         tokens,
@@ -163,6 +179,18 @@ export async function runLoop(params: RunLoopParams, ctx: ModelContext): Promise
   return { status: 'done', finalMessage: lastMessage, toolUses, turns, toolCalls, tokens };
 }
 
+/**
+ * The tool list with a breakpoint on its last definition.
+ *
+ * Copied rather than marked in place: the caller's array is reused across a
+ * Round's free retries, and a marker written into it would be written twice.
+ */
+function withCacheBreakpoint(tools: RunLoopParams['tools']): RunLoopParams['tools'] {
+  if (tools.length === 0) return [...tools];
+  const last = { ...tools[tools.length - 1]!, cache_control: CACHE_CONTROL };
+  return [...tools.slice(0, -1), last as RunLoopParams['tools'][number]];
+}
+
 /** Constructs the Tool Runner and the controller that aborts it — the setup the loop runs on. */
 function buildRunner(params: RunLoopParams, ctx: ModelContext) {
   const settings = LOOP_SETTINGS[params.loop];
@@ -180,7 +208,30 @@ function buildRunner(params: RunLoopParams, ctx: ModelContext) {
       max_tokens: MAX_TOKENS,
       system: params.system,
       messages: params.messages,
-      tools: params.tools as never,
+      /**
+       * **The static prefix ends on the last tool definition** (SPEC §17.4).
+       *
+       * Nothing marked anything before this: `system` and `tools` went to the
+       * SDK unmarked and `cache_read_input_tokens` was zero on every turn of
+       * every Job ever run — 30 turns of the measured recommend Job included.
+       * A Job's prefix is the app's best cache by a distance, because 50
+       * resolve Jobs share one `system` plus tool digest and the stateless
+       * evaluator shares a third across every Supplier.
+       *
+       * The list is **not sorted here**. `finalizeRegistry()`'s digest order is
+       * already deterministic, and re-ordering it would change the bytes of
+       * every recorded request body for no cache anybody was getting.
+       */
+      tools: withCacheBreakpoint(params.tools) as never,
+      /**
+       * Top-level `cache_control` **carries the tail**: it applies a marker to
+       * the last cacheable block of the request automatically, which is what
+       * makes the growing end of the conversation cacheable without this file
+       * knowing where a Round boundary is. The Tool Runner constrains nothing
+       * here — it hands the parameter straight to `messages.create` — so this
+       * was never a decision about the runner (SPEC §17.1).
+       */
+      cache_control: CACHE_CONTROL,
       thinking: THINKING,
       output_config: { effort: settings.effort },
       /**
@@ -233,33 +284,75 @@ async function recordTurn(
   return { toolUses, toolCalls, tokens };
 }
 
+/** The Job's running totals as of this turn, which every stop reports back. */
+type TurnCounts = {
+  turns: number;
+  toolCalls: number;
+  tokens: number;
+  toolUses: { name: string; input: unknown }[];
+};
+
 /**
  * ── Check caps, before letting the next tools run ────────────────────────
  *
- * Refusal, the `max_iterations` backstop, the tool-call and token ceilings,
- * and the Run budget, in that order — the whole "decide to continue" step.
- * Returns the outcome to return from `runLoop` when the loop must stop, or
- * `undefined` to let the `for await` fall through to the next turn.
+ * This turn's stop reason, then the numbers somebody set, then the Run budget —
+ * the whole "decide to continue" step, in that order. Returns the outcome to
+ * return from `runLoop` when the loop must stop, or `undefined` to let the
+ * `for await` fall through to the next turn.
+ *
+ * **The abort lives here and nowhere else.** Aborting through `signal` is the
+ * only per-call lever the runner exposes, and a stop that forgot it would leave
+ * the runner still running the tools of the turn it had just refused.
  */
 async function checkCapsAndBudget(
   params: RunLoopParams,
+  ctx: ModelContext,
   controller: AbortController,
   turn: BetaMessage,
-  counts: {
-    turns: number;
-    toolCalls: number;
-    tokens: number;
-    toolUses: { name: string; input: unknown }[];
-  },
+  counts: TurnCounts,
 ): Promise<RunLoopOutcome | undefined> {
-  const { turns, toolCalls, tokens, toolUses } = counts;
+  const stopped = stopFromThisTurn(params, turn) ?? stopFromCeilings(params, ctx, counts);
+  if (stopped) {
+    controller.abort();
+    return stopped;
+  }
 
+  // ── The run budget: checked at the Round boundary only ───────────────────
+  // It PAUSES rather than terminating, because it is a spending decision a
+  // person may revise. `paused_on_budget` is the only state that returns to
+  // `running`.
+  //
+  // The check comes from the CONTEXT for a Job and from the params only where a
+  // caller states one for a single loop; before both existed, nothing anywhere
+  // supplied one and this branch was dead.
+  const budgetCheck = params.budgetCheck ?? ctx.budgetCheck;
+  if (budgetCheck && turn.stop_reason !== 'tool_use') {
+    const budget = await budgetCheck();
+    if (!budget.withinBudget) {
+      controller.abort();
+      return {
+        status: 'paused_on_budget',
+        spentUsd: budget.spentUsd,
+        turns: counts.turns,
+        toolCalls: counts.toolCalls,
+        tokens: counts.tokens,
+      };
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * What this turn's own `stop_reason` says: a refusal, or a truncation. Both are
+ * `failed` — *something broke* — and neither is a number anybody set.
+ */
+function stopFromThisTurn(params: RunLoopParams, turn: BetaMessage): RunLoopOutcome | undefined {
   // ── A whole-chain refusal fails the Job ──────────────────────────────────
   // `failed`, meaning *something broke* — never `terminated`, which means
   // *a number you set*. The parameter routes what it can; this handles
   // what it cannot.
   if (turn.stop_reason === 'refusal') {
-    controller.abort();
     const details = turn.stop_details as {
       category?: string | null;
       explanation?: string | null;
@@ -271,18 +364,79 @@ async function checkCapsAndBudget(
     };
   }
 
+  /**
+   * ── A truncated turn is a failure of ours, and says so ───────────────────
+   *
+   * `max_tokens` and `model_context_window_exceeded` both end the SDK's loop —
+   * `determineNextStepFromStopReason` sorts them into `stop` — so the turn
+   * arrived here as an ordinary `done` carrying a half-written final message.
+   * Every caller then read that as *the model mis-shaped its output*, which
+   * bought it two free retries against the same truncation and put the wrong
+   * sentence in front of whoever read the Job afterwards.
+   *
+   * **A diagnostic that is wrong is worse than one that is missing** (finding
+   * 72), so this is `failed` and it names the stop reason. Callers route
+   * `failed` to a free retry too — a truncation is worth another attempt — but
+   * they report it as the loop failing rather than as the draft's shape.
+   */
+  if (turn.stop_reason === 'max_tokens' || turn.stop_reason === 'model_context_window_exceeded') {
+    return {
+      status: 'failed',
+      error:
+        `the turn was cut off with stop_reason "${turn.stop_reason}", so its output is incomplete ` +
+        `(max_tokens is ${MAX_TOKENS.toLocaleString('en-US')} — a truncation guard, never a budget)`,
+    };
+  }
+
+  return undefined;
+}
+
+/**
+ * The three numbers somebody set: the request backstop, the tool-call ceiling
+ * and the token ceiling — plus the Job's upstream ceiling, which is reached
+ * inside a tool and filed for this to find. Every one of them is `terminated`.
+ */
+function stopFromCeilings(
+  params: RunLoopParams,
+  ctx: ModelContext,
+  counts: TurnCounts,
+): RunLoopOutcome | undefined {
+  const { turns, toolCalls, tokens, toolUses } = counts;
+
+  /**
+   * ── The Job's upstream ceiling, reached inside a tool ────────────────────
+   *
+   * Filed by the adapter, because a throw inside a tool becomes an `is_error`
+   * tool result rather than escaping the loop. It is **the Job's own cap**, so
+   * it terminates — the amber, re-runnable state — naming the ceiling rather
+   * than the tool.
+   */
+  const fatal = ctx.jobId ? takeFatalToolError(ctx.jobId) : undefined;
+  if (fatal) {
+    return { status: 'terminated', reason: fatal.message, turns, toolCalls, tokens, toolUses };
+  }
+
   // `max_iterations` stops SILENTLY, leaving stop_reason: 'tool_use' on a
   // truncated run. It is a backstop set far above our own ceiling, so if it
-  // fires that is a bug in our counting, not a limit doing its job.
+  // fires that is a bug in our counting, not a limit doing its job — and it
+  // STOPS rather than only logging, because a backstop that is announced and
+  // then stepped over is not a backstop.
   if (turns >= MAX_ITERATIONS_BACKSTOP) {
     console.error(
       `[model] runLoop(${params.loop}) hit max_iterations (${MAX_ITERATIONS_BACKSTOP}). ` +
         `This is a backstop and should be unreachable — our own ceiling is ${params.caps.toolCalls} tool calls.`,
     );
+    return {
+      status: 'terminated',
+      reason: `stopped at the ${MAX_ITERATIONS_BACKSTOP}-request backstop, which should have been unreachable`,
+      turns,
+      toolCalls,
+      tokens,
+      toolUses,
+    };
   }
 
   if (toolCalls > params.caps.toolCalls) {
-    controller.abort();
     return {
       status: 'terminated',
       reason: `stopped at its ${params.caps.toolCalls}-tool-call ceiling`,
@@ -293,7 +447,6 @@ async function checkCapsAndBudget(
     };
   }
   if (params.caps.tokens > 0 && tokens > params.caps.tokens) {
-    controller.abort();
     return {
       status: 'terminated',
       reason: `stopped at its ${params.caps.tokens.toLocaleString('en-US')}-token ceiling`,
@@ -302,18 +455,6 @@ async function checkCapsAndBudget(
       tokens,
       toolUses,
     };
-  }
-
-  // ── The run budget: checked at the Round boundary only ───────────────────
-  // It PAUSES rather than terminating, because it is a spending decision a
-  // person may revise. `paused_on_budget` is the only state that returns to
-  // `running`.
-  if (params.budgetCheck && turn.stop_reason !== 'tool_use') {
-    const budget = await params.budgetCheck();
-    if (!budget.withinBudget) {
-      controller.abort();
-      return { status: 'paused_on_budget', spentUsd: budget.spentUsd, turns, toolCalls, tokens };
-    }
   }
 
   return undefined;

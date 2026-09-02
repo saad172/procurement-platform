@@ -80,6 +80,51 @@ describe('what the projection still catches', () => {
 });
 
 /**
+ * A cache marker is a hint about the transport, not content.
+ *
+ * It says nothing about what was asked and changes nothing about the answer, so
+ * by the only question the wire hash asks — *is this the same request?* — a
+ * marked body and an unmarked one are the same request. Without this,
+ * switching prompt caching on would have reddened every fixture at turn 1 and
+ * cost a full pipeline's tokens to re-record answers to questions that had not
+ * changed.
+ */
+describe('cache markers', () => {
+  const marked = JSON.stringify({
+    system: 'Answer briefly.',
+    cache_control: { type: 'ephemeral' },
+    tools: [
+      { name: 'get_a', description: 'a' },
+      { name: 'get_b', description: 'b', cache_control: { type: 'ephemeral' } },
+    ],
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'hi', cache_control: null }] }],
+  });
+  const unmarked = JSON.stringify({
+    system: 'Answer briefly.',
+    tools: [
+      { name: 'get_a', description: 'a' },
+      { name: 'get_b', description: 'b' },
+    ],
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+  });
+
+  it('hash identically under wireHash, at every depth', () => {
+    expect(wireHash(marked)).toBe(wireHash(unmarked));
+  });
+
+  it('and differently under rawBodyHash, so a recording still shows they were sent', () => {
+    expect(rawBodyHash(marked)).not.toBe(rawBodyHash(unmarked));
+  });
+
+  it('without making the hash blind to the thing the marker sits on', () => {
+    // Stripping the marker must not strip its neighbours: a changed tool
+    // description behind a breakpoint is still drift.
+    const changed = marked.replace('"description":"b"', '"description":"B"');
+    expect(wireHash(changed)).not.toBe(wireHash(marked));
+  });
+});
+
+/**
  * `rawBodyHash` makes no judgement at all, which is exactly why
  * `fixtures:rehash` keys on it: the wire hash is *designed* to change as the
  * notion of "the same request" is refined, and a recovery mechanism keyed on

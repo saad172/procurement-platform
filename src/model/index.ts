@@ -14,17 +14,10 @@
  *    exercises; the model's fallback is server-side, so there is no cold path
  *    of ours to keep warm.
  */
-export { runLoop, priceOf } from './run-loop';
+export { runLoop } from './run-loop';
 export { getAnthropicClient, resetAnthropicClients } from './client';
 export { describeModelError } from './describe-model-error';
-export {
-  CACHE_CONTROL,
-  isSystemRoleUnsupported,
-  markRoundBoundary,
-  pageBlock,
-  pageBlockAsUserTurn,
-  sortToolsByName,
-} from './caching';
+export { CACHE_CONTROL } from './caching';
 export { assertModelConfigIsLegal, buildManifest, LOOP_SYSTEMS } from './manifest';
 export {
   BASE_BETAS,

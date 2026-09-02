@@ -23,6 +23,7 @@ import * as schema from './schema';
 export type Database = ReturnType<typeof drizzle<typeof schema>>;
 
 let pooledDb: Database | undefined;
+let pooledClient: postgres.Sql | undefined;
 let directDb: Database | undefined;
 let directClient: postgres.Sql | undefined;
 
@@ -30,11 +31,11 @@ let directClient: postgres.Sql | undefined;
 export function getPooledDb(): Database {
   if (!pooledDb) {
     const env = loadEnv();
-    const client = postgres(env.DATABASE_URL, {
+    pooledClient = postgres(env.DATABASE_URL, {
       prepare: false,
       max: 10,
     });
-    pooledDb = drizzle(client, { schema });
+    pooledDb = drizzle(pooledClient, { schema });
   }
   return pooledDb;
 }
@@ -56,6 +57,19 @@ export async function closeDirectDb(): Promise<void> {
   await directClient?.end();
   directClient = undefined;
   directDb = undefined;
+}
+
+/**
+ * The same courtesy for the pooled connection, which only a test ever needs.
+ *
+ * The web process holds it for its whole life, so nothing there closes it. A
+ * test that exercises a route handler opens it in-process, and ten idle
+ * connections are enough to keep a runner from exiting.
+ */
+export async function closePooledDb(): Promise<void> {
+  await pooledClient?.end();
+  pooledClient = undefined;
+  pooledDb = undefined;
 }
 
 export { schema };

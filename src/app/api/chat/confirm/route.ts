@@ -28,6 +28,27 @@ export async function POST(request: Request): Promise<Response> {
   });
   if (!message?.confirm) return Response.json({ error: 'no such proposal' }, { status: 404 });
 
+  /**
+   * **A proposal is answered once.**
+   *
+   * The frozen state is the record of the answer, and nothing read it: posting
+   * the same `messageId` twice ran the tool twice, which for an `enqueue_*`
+   * means a second Run and a second Job — spending, from a double-click or a
+   * retried request, that no one pressed a button for. The confirm gate's whole
+   * claim is that a spend is a person's act, and an act happens once.
+   *
+   * Refused with a sentence rather than silently ignored, because the second
+   * caller is usually a client that thinks it has not been answered yet.
+   */
+  if (message.confirmState !== 'proposed') {
+    return Response.json(
+      {
+        error: `This proposal was already ${message.confirmState ?? 'answered'}. A proposal is answered once, so nothing ran.`,
+      },
+      { status: 409 },
+    );
+  }
+
   const proposal = message.confirm as { toolName: string; input: unknown; estimate: Estimate };
 
   if (!accept) {

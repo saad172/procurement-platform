@@ -16,8 +16,11 @@ import { getRegistry, type ToolContext, type ToolDefinition } from '@/tools';
 import type { ModelContext } from '@/model/types';
 import { buildEvidence, buildFrozenInputs, parseObjections } from './assess';
 import { publishVersion } from './publish';
+import { roundCheckpoint } from './round-checkpoint';
+import { readSubmission } from './submission';
 import { UnpublishableDraftError, type EvaluationResult, type ProposalResult } from './rounds';
 import { runProposerEvaluatorLoop } from './rounds';
+import { raiseIfStopped } from './stops';
 
 /**
  * The recommend Job (SPEC §10).
@@ -57,6 +60,9 @@ export async function recommendCategory(
     propose: (roundArgs) => runRecommendPropose(ctx, roundArgs),
     validate: (draft) => validateRecommendDraft(ctx, draft),
     evaluate: (roundArgs) => runRecommendEvaluate(ctx, roundArgs),
+    // Eight Categories at up to three Rounds each is where a restart costs
+    // most, so a paused recommend continues from the Round it reached.
+    ...(deps.jobId ? { checkpoint: roundCheckpoint<RecommendDraft>(db, deps.jobId) } : {}),
   });
 
   /**
@@ -189,32 +195,27 @@ async function runRecommendPropose(
   );
 
   if (result.status !== 'done') {
-    // The LOOP failed — transport, refusal, a cap. Distinct from our zod
-    // refinements rejecting a well-formed request's answer.
+    // A ceiling or a budget pause is not the draft's fault, and retrying it
+    // three times only spends the ceiling three more times.
+    raiseIfStopped(result);
+    // The LOOP failed — transport, refusal, a truncated turn. Distinct from our
+    // zod refinements rejecting a well-formed request's answer.
     return {
       kind: 'loop_failure',
       message:
-        `the loop ended as ${result.status}` +
-        ('error' in result ? `: ${result.error}` : '') +
-        ('reason' in result ? `: ${result.reason}` : ''),
+        `the loop ended as ${result.status}` + ('error' in result ? `: ${result.error}` : ''),
     };
   }
 
-  const submitted = result.toolUses.find((u) => u.name === 'submit_recommendation')?.input as
-    | RecommendDraft
-    | undefined;
-  if (!submitted?.sentences?.length) {
-    return {
-      kind: 'refinement_failure',
-      message:
-        `the loop ended without a usable submit_recommendation payload ` +
-        `(tools called: ${result.toolUses.map((u) => u.name).join(', ') || 'none'})`,
-    };
-  }
+  // The LAST submission, parsed against the tool's own schema: a first one the
+  // SDK's parse refused never reached `run()`, and what follows it is the
+  // model's answer to that objection.
+  const submitted = readSubmission<RecommendDraft>(result.toolUses, 'submit_recommendation');
+  if (!submitted.ok) return { kind: 'refinement_failure', message: submitted.message };
   return {
     kind: 'draft',
-    draft: { picks: submitted.picks ?? [], sentences: submitted.sentences },
-    text: JSON.stringify(submitted),
+    draft: { picks: submitted.value.picks ?? [], sentences: submitted.value.sentences },
+    text: JSON.stringify(submitted.value),
   };
 }
 
@@ -286,6 +287,10 @@ async function runRecommendEvaluate(
     },
     ctx.deps.modelCtx,
   );
+
+  // A terminated evaluator produces no rubric, and no rubric parses as no
+  // objections — which is a pass. It is a stop, and it is raised as one.
+  raiseIfStopped(result);
 
   const text = textOf(result);
   const objections = parseObjections(text);

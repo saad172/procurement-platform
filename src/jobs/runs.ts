@@ -1,8 +1,14 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, lt, notExists, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
-import { JOB_CAPS, RUN_BUDGET_USD_PER_SUPPLIER, type JobKind } from '@/config/constants';
-import { MODEL_PRICE_USD_PER_MTOK } from '@/config/constants';
+import {
+  JOB_CAPS,
+  RUN_BUDGET_USD_PER_SUPPLIER,
+  STALE_LOCK_MINUTES,
+  STALE_SILENCE_MINUTES,
+  type JobKind,
+} from '@/config/constants';
+import { priceOf } from '@/lib/price';
 
 /**
  * Runs and Jobs (SPEC §5, §18).
@@ -151,26 +157,28 @@ export async function dequeueJob(db: Database): Promise<typeof t.job.$inferSelec
  * What a Run has actually spent, from `usage_event` — the one home of usage.
  *
  * Computed from a **committed price constant, not a bill**, and the UI says so
- * wherever it renders a dollar figure.
+ * wherever it renders a dollar figure. The arithmetic itself lives in
+ * `src/lib/price.ts`: it was written out here, in `db/queries/runs.ts` and in
+ * the model chokepoint, and all three priced a cached read at the plain input
+ * rate.
+ *
+ * An upstream row prices at zero, because Sayari publishes no per-call price —
+ * so this bounds Anthropic dollars and nothing else, which is why the per-Job
+ * upstream call ceilings had to start being enforced.
  */
 export async function runSpendUsd(db: Database, runId: string): Promise<number> {
   const rows = await db
     .select({
       model: t.usageEvent.model,
-      input: t.usageEvent.inputTokens,
-      output: t.usageEvent.outputTokens,
-      cacheCreate: t.usageEvent.cacheCreationInputTokens,
-      cacheRead: t.usageEvent.cacheReadInputTokens,
+      inputTokens: t.usageEvent.inputTokens,
+      outputTokens: t.usageEvent.outputTokens,
+      cacheCreationInputTokens: t.usageEvent.cacheCreationInputTokens,
+      cacheReadInputTokens: t.usageEvent.cacheReadInputTokens,
     })
     .from(t.usageEvent)
     .where(eq(t.usageEvent.runId, runId));
 
-  return rows.reduce((sum, row) => {
-    if (!row.model) return sum; // an upstream row: Sayari publishes no per-call price
-    const price = MODEL_PRICE_USD_PER_MTOK[row.model] ?? MODEL_PRICE_USD_PER_MTOK['claude-opus-5']!;
-    const input = (row.input ?? 0) + (row.cacheCreate ?? 0) + (row.cacheRead ?? 0);
-    return sum + (input / 1e6) * price.input + ((row.output ?? 0) / 1e6) * price.output;
-  }, 0);
+  return rows.reduce((sum, row) => sum + priceOf(row), 0);
 }
 
 /**
@@ -188,6 +196,69 @@ export async function checkRunBudget(
   const spentUsd = await runSpendUsd(db, runId);
   const budgetUsd = run?.budgetUsd == null ? null : Number(run.budgetUsd);
   return { withinBudget: budgetUsd == null || spentUsd < budgetUsd, spentUsd, budgetUsd };
+}
+
+/**
+ * What this Job has already spent, read back from the rows that recorded it.
+ *
+ * **A Job calls `runLoop()` up to twelve times** — a proposer attempt and an
+ * evaluator per Round, plus the free retries — and each call used to start its
+ * counters at zero. So `JOB_CAPS` (SPEC §17.6, §18.3) bounded a *call* while
+ * every comment and both spec sections called it a Job. A recommend Job spent
+ * 904,207 tokens against its 900,000 ceiling and nothing fired, because no
+ * single Round crossed it alone.
+ *
+ * Seeding from the database rather than threading a counter through the callers
+ * is what makes the ceiling survive the thing it exists for: a Job re-queued
+ * after a crash resumes with its spend still counted against it.
+ *
+ * The token sum is `input + cache_creation + output` — **`cache_read` is
+ * excluded**, because the cap measures the Job's own work and not its cache hit
+ * rate. `src/lib/price.ts` counts every token, because a bill does.
+ */
+export async function jobCountersSoFar(
+  db: Database,
+  jobId: string,
+): Promise<{ toolCalls: number; tokens: number }> {
+  const [tokenRow] = await db
+    .select({
+      tokens: sql<string>`coalesce(sum(
+        coalesce(${t.usageEvent.inputTokens}, 0)
+        + coalesce(${t.usageEvent.cacheCreationInputTokens}, 0)
+        + coalesce(${t.usageEvent.outputTokens}, 0)
+      ), 0)`,
+    })
+    .from(t.usageEvent)
+    .where(eq(t.usageEvent.jobId, jobId));
+
+  const [callRow] = await db
+    .select({ toolCalls: sql<string>`count(*)` })
+    .from(t.traceToolCall)
+    .innerJoin(t.traceTurn, eq(t.traceToolCall.traceTurnId, t.traceTurn.id))
+    .where(eq(t.traceTurn.jobId, jobId));
+
+  return { toolCalls: Number(callRow?.toolCalls ?? 0), tokens: Number(tokenRow?.tokens ?? 0) };
+}
+
+/**
+ * The running totals, written after every turn.
+ *
+ * `job.tokens_used` and `job.tool_calls_used` have existed since the first
+ * migration and were written by nothing — 174 Job rows read `0` start to
+ * finish, so there was no persisted counter a cap check could have read even if
+ * one had existed. They are the Job's own ledger; the Run page still derives its
+ * figures from `trace_tool_call` and `usage_event`, because those land turn by
+ * turn and cannot fall behind a Job that died between them.
+ */
+export async function recordJobCounters(
+  db: Database,
+  jobId: string,
+  counters: { toolCalls: number; tokens: number },
+): Promise<void> {
+  await db
+    .update(t.job)
+    .set({ toolCallsUsed: counters.toolCalls, tokensUsed: counters.tokens })
+    .where(eq(t.job.id, jobId));
 }
 
 /**
@@ -234,9 +305,16 @@ export async function finishJob(
  * It does **not** settle the Run — the caller does, because a retry of one Job
  * and a retry of every stopped Job in a Run are one act each, and both end with
  * the same single settle.
+ *
+ * **It discards the Round checkpoints**, which is the whole difference between
+ * this and `resumeRun`: *a Job at its ceiling is re-runnable, never resumable*
+ * (SPEC §18.2). A retry is a person saying *do it again*, and continuing from
+ * the Round that ran into a runaway loop would be the opposite of what they
+ * asked for. A pause is the other case, and `resumeRun` leaves them standing.
  */
 export async function requeueJobs(db: Database, jobIds: readonly string[]): Promise<void> {
   if (jobIds.length === 0) return;
+  await db.delete(t.jobRound).where(inArray(t.jobRound.jobId, [...jobIds]));
   await db
     .update(t.job)
     .set({
@@ -249,6 +327,82 @@ export async function requeueJobs(db: Database, jobIds: readonly string[]): Prom
       attempt: sql`${t.job.attempt} + 1`,
     })
     .where(inArray(t.job.id, [...jobIds]));
+}
+
+/**
+ * Puts back the Jobs whose worker went away (SPEC §2.2).
+ *
+ * A worker killed mid-Job leaves its row `running` with a `locked_at` that
+ * nothing ever clears — no heartbeat, no expiry — so the Job was stuck until a
+ * person noticed and pressed Retry, which is the one thing an automatic
+ * recovery is for.
+ *
+ * **Silence is half the test.** A long lock alone is not evidence: a real
+ * recommend Job ran 62 minutes and would have been taken away from the worker
+ * still spending on it. A Job that has written no turn and no usage row for
+ * fifteen minutes has stopped doing anything, and that is the difference
+ * between slow and gone.
+ *
+ * Unlike `requeueJobs` this **keeps the Round checkpoints**: the Job lost its
+ * worker, it did not run away, so it resumes at the Round boundary it reached.
+ * `attempt` still counts up, because *"this has been tried twice"* is the fact
+ * a person reading the row needs.
+ *
+ * It does not settle the Runs — the caller does, for the same reason
+ * `requeueJobs` does not.
+ */
+export async function requeueStaleJobs(
+  db: Database,
+  now = new Date(),
+): Promise<{ id: string; kind: JobKind; runId: string; lockedAt: Date | null }[]> {
+  const lockedBefore = new Date(now.getTime() - STALE_LOCK_MINUTES * 60_000);
+  const silentSince = new Date(now.getTime() - STALE_SILENCE_MINUTES * 60_000);
+
+  const stale = await db
+    .select({
+      id: t.job.id,
+      kind: t.job.kind,
+      runId: t.job.runId,
+      lockedAt: t.job.lockedAt,
+    })
+    .from(t.job)
+    .where(
+      and(
+        eq(t.job.state, 'running'),
+        lt(t.job.lockedAt, lockedBefore),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(t.traceTurn)
+            .where(and(eq(t.traceTurn.jobId, t.job.id), gt(t.traceTurn.createdAt, silentSince))),
+        ),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(t.usageEvent)
+            .where(and(eq(t.usageEvent.jobId, t.job.id), gt(t.usageEvent.createdAt, silentSince))),
+        ),
+      ),
+    );
+
+  if (stale.length === 0) return [];
+
+  await db
+    .update(t.job)
+    .set({
+      state: 'queued',
+      lockedAt: null,
+      startedAt: null,
+      attempt: sql`${t.job.attempt} + 1`,
+    })
+    .where(
+      inArray(
+        t.job.id,
+        stale.map((job) => job.id),
+      ),
+    );
+
+  return stale;
 }
 
 /**

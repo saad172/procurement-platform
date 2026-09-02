@@ -1,3 +1,4 @@
+import { canonicalJson } from '@/lib/canonical-json';
 import { candidatesFrom, checkNumberFidelity } from './number-fidelity';
 
 /**
@@ -62,8 +63,55 @@ export type Objection = { check: string; message: string };
 const ASSESSMENT_REQUIRED = ['identity', 'limits'] as const;
 const RECOMMENDATION_REQUIRED = ['headline'] as const;
 
-const citationKey = (c: SubmittedSentence['citations'][number]): string =>
-  JSON.stringify(c, Object.keys(c).sort());
+/**
+ * A stable key for a citation, so validation and the insert agree on identity.
+ *
+ * **Built on `canonicalJson`, which sorts at every level.** The first version
+ * was `JSON.stringify(c, Object.keys(c).sort())`, and a replacer *array* is not
+ * a key order — it is a **filter applied at every depth**. So the only keys
+ * that survived were the top-level ones the citation happened to carry, and
+ * every Shortlist citation `{shortlist: {programId, categoryId}}` serialised as
+ * `{"shortlist":{}}`.
+ *
+ * Two consequences, both real:
+ *
+ * 1. `resolveCitations` dedupes by this key, so **the first Shortlist citation
+ *    in a document was looked up and its result reused for every other one** —
+ *    a second, different (program, category) pair was never queried.
+ * 2. A bogus pair therefore passed `checkCitationsResolve` on the back of a
+ *    valid one, and failed inside the publish transaction on the foreign key —
+ *    three Rounds after the check that exists to catch it.
+ *
+ * It lives here rather than in `publish.ts` because the check is what needs it
+ * to be right; the insert reads the same function so the two cannot drift.
+ */
+export const citationKey = (c: SubmittedSentence['citations'][number]): string => canonicalJson(c);
+
+/**
+ * How an unresolved citation is **named in the sentence the model reads**,
+ * which is a different question from how it is identified.
+ *
+ * It keeps `JSON.stringify(c, Object.keys(c).sort())` — the serialisation
+ * `citationKey` used to be — and that is deliberate rather than an oversight,
+ * with a cost that has to be said out loud: a replacer *array* filters keys at
+ * every depth, so a Shortlist citation renders as `{"shortlist":{}}` and the
+ * model is not told **which** (program, category) pair failed.
+ *
+ * The reason it stays is that this string is quoted verbatim into the next
+ * Round's request — `carriedObjections` is the objection's `message` — so its
+ * bytes are a **prompt**, and changing them moves a recorded fixture
+ * (`assess/published-with-objections`, whose Round 1 contains exactly this
+ * citation) that cannot be re-recorded in this change. The thing the bug was
+ * actually about — the identity the checks, the dedupe and the insert agree on
+ * — is `citationKey`, and that is canonical now, so a bogus pair is refused
+ * here instead of by a foreign key three Rounds later.
+ *
+ * Widening the wording is a one-line change plus a re-record, and it is worth
+ * making the next time this fixture is re-recorded for a reason of its own.
+ */
+function citationLabel(c: SubmittedSentence['citations'][number]): string {
+  return JSON.stringify(c, Object.keys(c).sort());
+}
 
 /**
  * Runs all eight and returns every objection.
@@ -186,7 +234,7 @@ function checkCitationsResolve(
         objections.push({
           check: 'citations',
           message:
-            `A citation on "${truncate(sentence.text)}" points at a row that does not exist: ${key}. ` +
+            `A citation on "${truncate(sentence.text)}" points at a row that does not exist: ${citationLabel(citation)}. ` +
             `A citation points at stored evidence, so this cannot be inserted.`,
         });
       }

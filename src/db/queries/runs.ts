@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
-import { MODEL_PRICE_USD_PER_MTOK } from '@/config/constants';
+import { priceOf } from '@/lib/price';
 
 /**
  * The Runs branch's queries (SPEC §18.5, §18.6).
@@ -43,7 +43,7 @@ export async function loadRuns(db: Database, programId: string): Promise<RunSumm
       // "2 jobs stopped at their ceiling".
       terminatedCount: runJobs.filter((j) => j.state === 'terminated').length,
       failedCount: runJobs.filter((j) => j.state === 'failed').length,
-      actualUsd: priceOf(runUsage),
+      actualUsd: runUsage.reduce((sum, row) => sum + priceOf(row), 0),
       // Sayari's own counters are account-scoped and lag; this is OUR count of
       // outbound attempts, which is a different number and is labelled as one.
       sayariCalls: runUsage.filter((u) => u.source === 'sayari' && !u.cacheHit).length,
@@ -51,18 +51,6 @@ export async function loadRuns(db: Database, programId: string): Promise<RunSumm
         run.startedAt && run.finishedAt ? run.finishedAt.getTime() - run.startedAt.getTime() : null,
     };
   });
-}
-
-function priceOf(usage: (typeof t.usageEvent.$inferSelect)[]): number {
-  return usage.reduce((sum, row) => {
-    if (!row.model) return sum;
-    const price = MODEL_PRICE_USD_PER_MTOK[row.model] ?? MODEL_PRICE_USD_PER_MTOK['claude-opus-5']!;
-    const input =
-      (row.inputTokens ?? 0) +
-      (row.cacheCreationInputTokens ?? 0) +
-      (row.cacheReadInputTokens ?? 0);
-    return sum + (input / 1e6) * price.input + ((row.outputTokens ?? 0) / 1e6) * price.output;
-  }, 0);
 }
 
 /**
@@ -179,12 +167,12 @@ export function runProgress(jobs: { state: typeof t.job.$inferSelect.state }[]):
 /**
  * What each Job has actually done so far, **derived rather than stored**.
  *
- * `job.tool_calls_used` and `job.tokens_used` are written by nothing: the run
- * loop counts both in local variables to enforce the ceilings (SPEC §18.3) and
- * the handler contract carries no counters back, so those two columns render 0
- * for every Job that ever ran. Reading `trace_tool_call` and `usage_event`
- * instead fixes the number *and* makes it live — the rows land turn by turn
- * while the Job is still running, which a write-back at the end never could.
+ * `job.tool_calls_used` and `job.tokens_used` used to be written by nothing, and
+ * this read exists because of it. The run loop now writes both after every turn
+ * — it has to, since the ceilings are per-Job and it seeds its counters from
+ * these same rows — but the derived figure stays the one the page renders,
+ * because it is the same arithmetic the cap check itself performs and it cannot
+ * fall behind a Job that died between turns.
  *
  * One home for usage stays one home: this counts the rows, it does not add a
  * second place they are written.
@@ -262,6 +250,9 @@ export async function loadJobActivity(
       // Billed only: a cache hit spends no credit, and the ceiling bounds spend.
       upstreamCalls: usage.filter((row) => row.jobId === jobId && !row.model && !row.cacheHit)
         .length,
+      // Cache reads are excluded, because this figure is rendered against
+      // `job.token_cap` and the cap counts the Job's own work rather than its
+      // cache hit rate — see `tokensOf` in the run loop, which is the same sum.
       tokens: usage
         .filter((row) => row.jobId === jobId)
         .reduce(
@@ -269,8 +260,7 @@ export async function loadJobActivity(
             sum +
             (row.inputTokens ?? 0) +
             (row.outputTokens ?? 0) +
-            (row.cacheCreationInputTokens ?? 0) +
-            (row.cacheReadInputTokens ?? 0),
+            (row.cacheCreationInputTokens ?? 0),
           0,
         ),
       lastTools: latest ? (callsByTurn.get(latest.id) ?? []) : [],

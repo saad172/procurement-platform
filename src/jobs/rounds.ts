@@ -116,14 +116,35 @@ export type LoopDeps<TDraft> = {
    */
   evaluate: (args: { roundN: number; draft: TDraft }) => Promise<EvaluationResult>;
   maxRounds?: number | undefined;
+  /**
+   * Where a paused Job picks the ladder back up (SPEC §5.3, §18.2).
+   *
+   * Absent outside a Job — the deterministic tests run the ladder with no
+   * database at all — and a Job on its first attempt simply loads nothing.
+   */
+  checkpoint?: LoopCheckpoint<TDraft> | undefined;
 };
 
-type RoundState<TDraft> = {
+/**
+ * Everything a Round after the first reads back.
+ *
+ * It is the checkpoint's payload as well as the loop's working state, and
+ * deliberately the same object: a resume that restored *some* of what a Round
+ * had accumulated would produce a Round arguing with objections it could no
+ * longer see.
+ */
+export type RoundState<TDraft> = {
   rounds: RoundRecord[];
   carriedObjections: string[];
   lastDraft: TDraft | undefined;
   /** Empty unless the most recent draft failed the code checks. */
   lastCodeObjections: Objection[];
+};
+
+export type LoopCheckpoint<TDraft> = {
+  /** The last Round that finished, and the state it finished in. */
+  load: () => Promise<{ roundN: number; state: RoundState<TDraft> } | undefined>;
+  save: (roundN: number, state: RoundState<TDraft>) => Promise<void>;
 };
 
 export async function runProposerEvaluatorLoop<TDraft>(
@@ -137,9 +158,26 @@ export async function runProposerEvaluatorLoop<TDraft>(
     lastCodeObjections: [],
   };
 
-  for (let roundN = 1; roundN <= maxRounds; roundN += 1) {
+  /**
+   * **Resume continues; it does not restart.**
+   *
+   * A budget pause is the only stop that returns to `running`, and the Rounds
+   * already paid for are exactly the spend the person agreed to. Restarting
+   * would charge for them twice and produce a different argument besides —
+   * the objections a resumed Round answers are the ones the paused Round drew.
+   */
+  const resumed = await deps.checkpoint?.load();
+  if (resumed) Object.assign(state, resumed.state);
+
+  for (let roundN = (resumed?.roundN ?? 0) + 1; roundN <= maxRounds; roundN += 1) {
     const round = await runOneRound(deps, roundN, state);
     if (round.outcome) return round.outcome;
+
+    // ── The Round boundary ──────────────────────────────────────────────────
+    // Reached only when the Round produced no outcome, which is what makes it
+    // a boundary: the next Round starts from here, whether it starts now or
+    // after somebody presses Resume.
+    await deps.checkpoint?.save(roundN, state);
   }
 
   return settleAfterMaxRounds(state, maxRounds);
@@ -186,25 +224,7 @@ async function runOneRound<TDraft>(
   }
 
   if (!proposal || proposal.kind !== 'draft') {
-    /**
-     * Out of attempts. A broken loop, not a disagreement — and **which** kind
-     * of broken is the whole value of the message.
-     */
-    const attempts = MAX_FREE_RETRIES_PER_ROUND + 1;
-    const objection =
-      proposal?.kind === 'loop_failure'
-        ? `The model loop failed on all ${attempts} attempts. The last failure was: ${proposal.message}`
-        : `The proposer could not produce a well-shaped draft in ${attempts} attempts.`;
-
-    return {
-      outcome: {
-        draft: state.lastDraft,
-        evaluatorOutcome: 'published_with_objections',
-        rounds: state.rounds,
-        dissent: [{ objection, reply: undefined }],
-        roundsUsed: roundN,
-      },
-    };
+    return { outcome: settleAfterAttemptsRunOut(proposal, state, roundN) };
   }
 
   state.lastDraft = proposal.draft;
@@ -252,6 +272,61 @@ async function runOneRound<TDraft>(
   }
   state.carriedObjections = evaluation.objections;
   return { outcome: null };
+}
+
+/**
+ * Every attempt in this Round failed to produce a draft at all.
+ *
+ * A broken loop, not a disagreement — and **which** kind of broken is the whole
+ * value of the message: three `Connection error`s once exhausted the retries
+ * and the Job announced *"the proposer could not produce a well-shaped draft in
+ * 3 attempts"*, blaming the model for a network fault.
+ *
+ * **The draft it falls back on may be one the code rejected.** `lastDraft` is
+ * cleared only when a draft passes the checks, so a draft that failed the
+ * validator in Round N was still sitting there when Round N+1's three attempts
+ * all failed — and this published it, which is the fault `settleAfterMaxRounds`
+ * exists to stop, reached by the one path that did not go through it. A code
+ * objection is not a matter of judgement: a Citation pointing at a row that
+ * does not exist cannot be inserted whatever anyone thinks of it, so carrying
+ * one forward as dissent treats an impossibility as an opinion.
+ */
+function settleAfterAttemptsRunOut<TDraft>(
+  proposal: ProposalResult<TDraft> | undefined,
+  state: RoundState<TDraft>,
+  roundN: number,
+): LoopOutcome<TDraft> {
+  const attempts = MAX_FREE_RETRIES_PER_ROUND + 1;
+  const objection =
+    proposal?.kind === 'loop_failure'
+      ? `The model loop failed on all ${attempts} attempts. The last failure was: ${proposal.message}`
+      : `The proposer could not produce a well-shaped draft in ${attempts} attempts.`;
+
+  if (state.lastCodeObjections.length > 0) {
+    return {
+      draft: undefined,
+      evaluatorOutcome: 'rejected_by_code',
+      rounds: state.rounds,
+      // Both halves of the answer: what the code refused, and why there is no
+      // newer draft to put in its place.
+      dissent: [
+        ...state.lastCodeObjections.map((o) => ({
+          objection: `[${o.check}] ${o.message}`,
+          reply: undefined,
+        })),
+        { objection, reply: undefined },
+      ],
+      roundsUsed: roundN,
+    };
+  }
+
+  return {
+    draft: state.lastDraft,
+    evaluatorOutcome: 'published_with_objections',
+    rounds: state.rounds,
+    dissent: [{ objection, reply: undefined }],
+    roundsUsed: roundN,
+  };
 }
 
 /**

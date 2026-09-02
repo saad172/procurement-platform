@@ -1,94 +1,111 @@
 import { describe, expect, it } from 'vitest';
-import type { BetaMessageParam } from '@anthropic-ai/sdk/resources/beta';
-import {
-  CACHE_CONTROL,
-  isSystemRoleUnsupported,
-  markRoundBoundary,
-  pageBlock,
-  pageBlockAsUserTurn,
-  sortToolsByName,
-} from '@/model';
+import { z } from 'zod/v4';
+import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
+import * as t from '@/db/schema';
+import { runLoop } from '@/model';
+import { resetAnthropicClients } from '@/model/client';
+import { JOB_CAPS } from '@/config/constants';
+import { getTestDb, testDatabaseIsUp } from '../support/test-db';
+import { seededProgram } from '../support/seeded-program';
 
 /**
- * SPEC §17.4 and §14.3. Caching is a prefix match over `tools → system →
- * messages`, so every test here is really about *not moving the prefix*.
+ * The prompt-cache layout, asserted over **the body actually sent** (SPEC
+ * §17.4).
+ *
+ * The previous version of this file tested three exported helpers — a tool
+ * sorter, a Round-boundary marker and a page block — none of which had a caller
+ * anywhere in `src/`. They passed for as long as they existed while
+ * `cache_read_input_tokens` was zero on every turn of every Job the build ever
+ * ran: **a layout nothing applies is not a layout**, and a test of it is a test
+ * that cannot fail for the reason it exists.
+ *
+ * So this drives the real `runLoop` through a canned `fetch` and reads the
+ * request off the wire.
  */
 
-describe('tool ordering', () => {
-  it('sorts by name, because a set-ordering wobble at position 0 invalidates everything', () => {
-    const sorted = sortToolsByName([{ name: 'get_z' }, { name: 'get_a' }, { name: 'get_m' }]);
-    expect(sorted.map((t) => t.name)).toEqual(['get_a', 'get_m', 'get_z']);
-  });
-
-  it('is stable, so two runs offering the same tools share a cache', () => {
-    const a = sortToolsByName([{ name: 'b' }, { name: 'a' }]);
-    const b = sortToolsByName([{ name: 'a' }, { name: 'b' }]);
-    expect(a).toEqual(b);
-  });
-});
-
-describe('the Round boundary breakpoint', () => {
-  it('marks the last block of the last message', () => {
-    const messages: BetaMessageParam[] = [
-      { role: 'user', content: [{ type: 'text', text: 'one' }] },
-      {
+function capturingFetch(): { fetch: typeof fetch; bodies: string[] } {
+  const bodies: string[] = [];
+  const fetchImpl = (async (_input: unknown, init?: { body?: unknown }) => {
+    if (typeof init?.body === 'string') bodies.push(init.body);
+    return new Response(
+      JSON.stringify({
+        id: 'msg_cache_layout',
+        type: 'message',
         role: 'assistant',
-        content: [
-          { type: 'text', text: 'two' },
-          { type: 'text', text: 'three' },
-        ],
-      },
-    ];
-    const marked = markRoundBoundary(messages);
-    const last = marked[1]!.content as { cache_control?: unknown }[];
-    expect(last[1]!.cache_control).toEqual(CACHE_CONTROL);
-    expect(last[0]!.cache_control).toBeUndefined();
-  });
-
-  it('does not mutate the input, so a retry starts from the same array', () => {
-    const messages: BetaMessageParam[] = [{ role: 'user', content: [{ type: 'text', text: 'x' }] }];
-    markRoundBoundary(messages);
-    expect(
-      (messages[0]!.content as { cache_control?: unknown }[])[0]!.cache_control,
-    ).toBeUndefined();
-  });
-
-  it('leaves a string-content message alone rather than reshaping it', () => {
-    const messages: BetaMessageParam[] = [{ role: 'user', content: 'plain' }];
-    expect(markRoundBoundary(messages)).toEqual(messages);
-  });
-});
-
-describe('the chat page block', () => {
-  it('is a mid-conversation system message, not an edit to top-level system', () => {
-    // A per-turn edit at the front re-processes every cached turn behind it,
-    // and the cache is the whole reason the choice exists.
-    const block = pageBlock('/program/p1/category/HAR', { w: { compliance_risk: 40 } });
-    expect(block.role).toBe('system');
-  });
-
-  it('carries the page AND its view state, so chat sees the ranking the person sees', () => {
-    const block = pageBlock('/program/p1', { weights: { compliance_risk: 40 }, facets: ['DEU'] });
-    const text = (block.content as { text: string }[])[0]!.text;
-    expect(text).toContain('/program/p1');
-    expect(text).toContain('compliance_risk');
-    expect(text).toContain('DEU');
-  });
-
-  it('says it is from the application, because it is the operator channel', () => {
-    // It matters because chat tool results carry Sayari-sourced third-party
-    // text, and this block must not be spoofable from inside one.
-    const text = (pageBlock('/x', {}).content as { text: string }[])[0]!.text;
-    expect(text).toMatch(/from the application, not from the person/);
-  });
-
-  it('has a documented fallback into a user turn', () => {
-    expect(isSystemRoleUnsupported(new Error("role 'system' is not supported on this model"))).toBe(
-      true,
+        model: 'claude-opus-5',
+        content: [{ type: 'text', text: 'done' }],
+        stop_reason: 'end_turn',
+        stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
     );
-    expect(isSystemRoleUnsupported(new Error('rate limited'))).toBe(false);
-    const fallback = pageBlockAsUserTurn('/x', { a: 1 });
-    expect(fallback.role).toBe('user');
-    expect((fallback.content as { text: string }[])[0]!.text).toContain('/x');
+  }) as unknown as typeof fetch;
+  return { fetch: fetchImpl, bodies };
+}
+
+const tool = (name: string) =>
+  betaZodTool({
+    name,
+    description: `Does ${name}.`,
+    inputSchema: z.object({}),
+    run: async () => 'nothing',
+  });
+
+async function sentBody(): Promise<{
+  tools: { name: string; cache_control?: unknown }[];
+  cache_control?: unknown;
+}> {
+  const db = await getTestDb();
+  const program = await seededProgram(db);
+  const [run] = await db
+    .insert(t.run)
+    .values({ programId: program!.id, state: 'running', trigger: 'test', subjectLabel: 'cache' })
+    .returning({ id: t.run.id });
+
+  resetAnthropicClients();
+  const capture = capturingFetch();
+  await runLoop(
+    {
+      loop: 'assess',
+      system: 'A frozen system prompt.',
+      // Deliberately NOT in name order: the digest order is what is sent.
+      tools: [tool('get_zebra'), tool('get_apple')],
+      messages: [{ role: 'user', content: 'A question.' }],
+      caps: JOB_CAPS.assess,
+    },
+    { db, runId: run!.id, credentials: { apiKey: 'not-a-key', fetch: capture.fetch } },
+  );
+
+  return JSON.parse(capture.bodies[0]!) as never;
+}
+
+describe('the request carries two cache markers', () => {
+  it('breaks the static prefix on the LAST tool definition', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const body = await sentBody();
+
+    expect(body.tools.at(-1)!.cache_control).toEqual({ type: 'ephemeral' });
+    expect(body.tools[0]!.cache_control).toBeUndefined();
+  });
+
+  it('carries the tail with top-level cache_control', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const body = await sentBody();
+
+    // It marks the last cacheable block automatically, which is what lets the
+    // growing end of a conversation cache without this layer knowing where a
+    // Round boundary falls.
+    expect(body.cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  it('does not re-order the tool list to get the breakpoint', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const body = await sentBody();
+
+    // `finalizeRegistry()`'s digest order is already deterministic. Sorting here
+    // would change the bytes of every recorded request for a cache nobody was
+    // getting.
+    expect(body.tools.map((each) => each.name)).toEqual(['get_zebra', 'get_apple']);
   });
 });

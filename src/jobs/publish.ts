@@ -3,6 +3,7 @@ import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { isDatabaseId } from '@/tools/ids';
 import type { RoundRecord } from './rounds';
+import { citationKey } from '@/domain/validation/submit-checks';
 import type { SubmittedPick, SubmittedSentence } from '@/domain/validation/submit-checks';
 
 /**
@@ -21,8 +22,12 @@ import type { SubmittedPick, SubmittedSentence } from '@/domain/validation/submi
 
 export type CitationTarget = SubmittedSentence['citations'][number];
 
-/** A stable key for a citation, so validation and insert agree on identity. */
-export const citationKey = (c: CitationTarget): string => JSON.stringify(c, Object.keys(c).sort());
+/**
+ * The key the eight checks use, re-exported so the insert cannot drift from the
+ * validation. See `submit-checks.ts` for why a replacer array was the wrong
+ * tool and what it cost.
+ */
+export { citationKey };
 
 /**
  * Resolves every citation target to a **live local row**, before anything is

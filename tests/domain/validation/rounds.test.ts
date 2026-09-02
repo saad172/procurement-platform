@@ -126,6 +126,60 @@ describe('a validator failure COSTS a round', () => {
   });
 });
 
+describe('a draft the code rejected is never the fallback', () => {
+  it('ends rejected_by_code when the attempts run out on a Round after a code rejection', async () => {
+    /**
+     * The exact sequence, which the `MAX_ROUNDS` guard does not cover:
+     * Round 1's draft fails the code checks, and Round 2's three attempts all
+     * fail to produce a draft at all. `state.lastDraft` still held Round 1's
+     * rejected draft — cleared only when a draft passes — so the early return
+     * published it, three Rounds before the insert would have refused it.
+     */
+    let round = 0;
+    const outcome = await runProposerEvaluatorLoop<Draft>({
+      propose: async () => {
+        round += 1;
+        return round === 1 ? draft('rejected-in-round-1') : refinementFailure('no draft at all');
+      },
+      validate: async () => [
+        { check: 'citations', message: 'points at a row that does not exist' },
+      ],
+      evaluate: async () => {
+        throw new Error('the evaluator must not run on a draft the code rejected');
+      },
+    });
+
+    expect(outcome.evaluatorOutcome).toBe('rejected_by_code');
+    expect(outcome.draft, 'the withheld draft is the whole point').toBeUndefined();
+    // Both halves of the answer: what the code refused, and why no newer draft.
+    const said = outcome.dissent.map((d) => d.objection).join(' ');
+    expect(said).toContain('points at a row that does not exist');
+    expect(said).toContain('well-shaped');
+  });
+
+  it('still publishes the last draft when nothing was wrong with it', async () => {
+    // The contrast: with no code objection standing, an exhausted Round falls
+    // back on a draft the checks had passed, and a run completes.
+    let round = 0;
+    const outcome = await runProposerEvaluatorLoop<Draft>({
+      propose: async () => {
+        round += 1;
+        return round === 1 ? draft('checked-and-clean') : refinementFailure('no draft at all');
+      },
+      validate: async () => [],
+      evaluate: async ({ roundN }) => ({
+        kind: 'objections',
+        objections: [`a matter of judgement at round ${roundN}`],
+        rubric: {},
+        text: 'objecting',
+      }),
+    });
+
+    expect(outcome.evaluatorOutcome).toBe('published_with_objections');
+    expect(outcome.draft).toEqual({ id: 'checked-and-clean' });
+  });
+});
+
 describe('non-convergence PUBLISHES — a run must complete', () => {
   it('publishes with objections at MAX_ROUNDS', async () => {
     const outcome = await runProposerEvaluatorLoop<Draft>({

@@ -19,6 +19,36 @@ export type UpstreamErrorKind = (typeof upstreamErrorKind.enumValues)[number];
 /** The single kind a tool handler may turn into an objection. */
 export const OBJECTIONABLE_KINDS = new Set<UpstreamErrorKind>(['not_found']);
 
+/**
+ * The kinds the **model adapter** turns into an objection, which is a wider set
+ * than the one above — and the difference is not a softening of the rule but a
+ * fact about where a throw actually goes.
+ *
+ * *"Every other kind throws"* was written as though a throw inside a tool
+ * escaped the loop. It does not: `BetaToolRunner.generateToolResponse` runs
+ * every tool inside its own `try` and turns anything thrown into
+ * `is_error: true` with the content `Error: <message>`. So a 429 was **already**
+ * being handed to the model — as an unstructured string, with no source, no
+ * endpoint and no kind, and with the loop spending on regardless.
+ *
+ * The choice was therefore never *objection or throw*; it was *a sentence the
+ * model can act on, or the same failure spelled worse*. These arrive in the
+ * repo's existing shape — **"This did not work. The reasons, verbatim:"** —
+ * naming source, endpoint and kind, and every one is recorded on the
+ * `trace_tool_call` row.
+ *
+ * `auth`, `entitlement`, `bad_request`, `parse` and `projection` are **not**
+ * here: each names something only we can fix, and telling a model to work
+ * around our own broken credentials is asking it to invent an answer.
+ */
+export const TOOL_OBJECTION_KINDS = new Set<UpstreamErrorKind>([
+  'not_found',
+  'rate_limit',
+  'timeout',
+  'transport',
+  'upstream_5xx',
+]);
+
 export class UpstreamError extends Error {
   readonly kind: UpstreamErrorKind;
   readonly source: string;
