@@ -1,4 +1,5 @@
 import { MAX_ROUNDS } from '@/config/constants';
+import { WEIGHTED_CRITERIA } from '@/domain/score';
 
 /**
  * The Assessment loop: proposer → evaluator (SPEC §10).
@@ -6,6 +7,16 @@ import { MAX_ROUNDS } from '@/config/constants';
  * One per Supplier × Program, **never per Category**, though it carries a Score
  * for each Category that Supplier bids on.
  */
+
+/**
+ * The six weighted Criteria **in the words the caveat check accepts**.
+ *
+ * `checkLimitsNamesUnknowns` reads the limits section for a Criterion's key or
+ * that key with its underscores as spaces, and nothing shorter. Derived from
+ * `WEIGHTED_CRITERIA` rather than typed here, so a seventh Criterion reaches
+ * the prompt the day it reaches the Score.
+ */
+const CRITERION_WORDS = WEIGHTED_CRITERIA.map((key) => key.replace(/_/g, ' ')).join(', ');
 
 const CITATION_RULE = `THE CITATION RULE, WHICH IS NOT NEGOTIABLE
 Every sentence you write carries at least one citation to a stored row: an
@@ -19,7 +30,11 @@ Recommendation. A citation points at evidence, not at prose.
 
 Every number you write must be traceable to a frozen input or to a cited row,
 matched at the precision you wrote it. Do not paraphrase a figure: "roughly
-800 km" matches nothing, while "824 km" matches the row it came from.
+800 km" matches nothing, while "824 km" matches the row it came from. Write a
+stored figure rounded to one decimal unless the stored value has fewer — the
+check accepts any figure that rounds to the decimals you wrote, so a stored
+20.190218190717246 is written "20.2" and copying all fifteen decimals buys
+nothing.
 
 A NUMBER YOU COUNTED IS NOT A NUMBER YOU WERE GIVEN
 If you tally rows yourself — how many family members carry a factor, how many
@@ -65,6 +80,12 @@ It names every criterion that returned unknown and why, the data-confidence
 band, and every mandatory caveat. It is the section that stops the rest of the
 document reading as more certain than it is, so it is the one section that may
 never be empty.
+
+The six weighted criteria are named, exactly, ${CRITERION_WORDS}. An unknown
+criterion is named in limits with those words and not with a paraphrase of
+them: "the tariff exposure criterion returned unknown" carries the name, and
+"the tariff criterion returned unknown" does not, so a reader looking for which
+criterion dropped out cannot find it and the submission is refused.
 
 THE VERDICT
 A closed choice: recommend, recommend with conditions, do not shortlist, or
