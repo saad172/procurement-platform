@@ -360,13 +360,36 @@ async function currentN(
 export async function versionToShow(
   db: Database,
   recommendationId: string,
-): Promise<{ shown: typeof t.recommendationVersion.$inferSelect | undefined; newer: number }> {
+): Promise<VersionToShow> {
   const versions = await db
     .select()
     .from(t.recommendationVersion)
     .where(eq(t.recommendationVersion.recommendationId, recommendationId))
     .orderBy(desc(t.recommendationVersion.n));
 
+  return versionToShowFrom(versions);
+}
+
+export type VersionToShow = {
+  shown: typeof t.recommendationVersion.$inferSelect | undefined;
+  newer: number;
+};
+
+/**
+ * The same rule over rows a caller already holds.
+ *
+ * `loadRecommendationPage` reads every version anyway, to list them with their
+ * marks, so asking the database again for the same rows would be a second read
+ * to answer a question about rows in hand. The rule stays in one function
+ * rather than being restated there, which is the part that matters: a page that
+ * decided *which version to show* on its own would be a second implementation
+ * of "acceptance never moves", free to disagree with this one.
+ *
+ * Takes the versions **newest first**, as both callers read them.
+ */
+export function versionToShowFrom(
+  versions: (typeof t.recommendationVersion.$inferSelect)[],
+): VersionToShow {
   const accepted = versions.find((v) => v.humanMark === 'accepted');
   const shown = accepted ?? versions[0];
   const newer = shown ? versions.filter((v) => v.n > shown.n).length : 0;
