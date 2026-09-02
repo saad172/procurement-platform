@@ -43,8 +43,15 @@ export function resetRegistryForTesting(): void {
   registry = undefined;
 }
 
-export { finalizeRegistry, DOSSIER_PROFILE, MATCH_RUNGS_BY_ROUND } from './registry';
-export type { Registry } from './registry';
+export {
+  finalizeRegistry,
+  DOSSIER_PROFILE,
+  MATCH_RUNGS_BY_ROUND,
+  NARRATIVE_PROFILES,
+} from './registry';
+export type { NarrativeLoop, NarrativeRole, Registry } from './registry';
+export { EVALUATION_PAYLOAD, RUBRIC_ITEMS } from './catalog/writes';
+export type { EvaluationPayload } from './catalog/writes';
 export { defineTool } from './define';
 export type {
   Estimate,

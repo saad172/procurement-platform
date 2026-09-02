@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { rubricItem } from '@/db/schema/enums';
 import { defineTool } from '../define';
 
 /**
@@ -199,6 +200,74 @@ const submitRecommendation = defineTool({
 });
 
 /**
+ * The six rubric items (SPEC §10.3), taken from the database enum so the
+ * verdict the evaluator submits and the verdict a `round` row records cannot
+ * drift into two lists that mean the same thing.
+ */
+export const RUBRIC_ITEMS = rubricItem.enumValues;
+
+/**
+ * One rubric item's verdict.
+ *
+ * `unavailable` is a verdict distinct from `fail`, exactly as *can't tell* is
+ * for a Discriminator: an item the evaluator could not check is not an item the
+ * draft failed, and only `fail` carries forward as an objection.
+ */
+const rubricVerdict = z.object({
+  item: z.enum(RUBRIC_ITEMS),
+  verdict: z.enum(['pass', 'fail', 'unavailable']),
+  reasoning: z
+    .string()
+    .describe(
+      'One line. Where this fails, say what specifically is wrong — this line is the objection the writer answers.',
+    ),
+});
+
+/**
+ * The evaluator's verdict, as a payload rather than as prose (SPEC §10.3).
+ *
+ * Exported because the Job parses the submitted payload with **this** schema:
+ * the tool's `run()` may or may not execute (finding 21), so the verdict is
+ * read out of the `tool_use` block the model emitted and validated here, which
+ * is the same path `submit_assessment` and `submit_recommendation` take.
+ */
+export const EVALUATION_PAYLOAD = z.object({
+  items: z
+    .array(rubricVerdict)
+    .length(RUBRIC_ITEMS.length)
+    .describe('One verdict per rubric item, all six, in any order.'),
+  summary: z.string().describe('What you concluded overall, in your own words.'),
+});
+
+export type EvaluationPayload = z.infer<typeof EVALUATION_PAYLOAD>;
+
+/**
+ * The evaluator's write, and the only way its review is recorded.
+ *
+ * It replaces a parse over the evaluator's prose that anchored on the six item
+ * names and a leading "fail". That parse decided whether a Round was spent, so
+ * every phrasing it did not anticipate was a Round spent or saved by accident —
+ * *"caveats: pass … so this does not fail"* had to be defended against in a
+ * regular expression. A verdict the model **submits** cannot be mis-read,
+ * because there is nothing to read: `strict: true` makes the shape impossible
+ * to get wrong, and the six items are an enum rather than a heading.
+ *
+ * It is a `submit_*`, so invariant 7 makes it job-only: chat asks questions and
+ * makes no record (SPEC §14.2).
+ */
+const submitEvaluation = defineTool({
+  name: 'submit_evaluation',
+  description:
+    'Submit your review: a verdict for every rubric item, and a summary. Call it once, last — prose in your reply is not recorded, so a review that does not call this has produced nothing.',
+  input: EVALUATION_PAYLOAD,
+  surfaces: ['job'],
+  effect: 'write',
+  spends: [],
+  latency: 'fast',
+  handler: async (input) => ({ ok: true, data: input }),
+});
+
+/**
  * A closed enum, so **Discover adds a table and no new Citation target group**
  * (SPEC §11.1). No rationale sentence is written; the reasoning stays
  * inspectable in the Trace.
@@ -246,6 +315,7 @@ export const AGENT_WRITES = [
   submitMatchVerdict,
   submitAssessment,
   submitRecommendation,
+  submitEvaluation,
   submitLeadClassification,
   submitDossier,
 ];

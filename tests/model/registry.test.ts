@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod/v4';
-import { DOSSIER_PROFILE, MATCH_RUNGS_BY_ROUND, finalizeRegistry } from '@/tools/registry';
+import {
+  DOSSIER_PROFILE,
+  MATCH_RUNGS_BY_ROUND,
+  NARRATIVE_PROFILES,
+  finalizeRegistry,
+} from '@/tools/registry';
 import type { ToolDefinition } from '@/tools/define';
 
 /**
@@ -46,6 +51,16 @@ const scaffold = (): ToolDefinition[] => [
   ].map((name) => tool({ name, surfaces: ['job'], spends: ['sayari'] })),
   tool({ name: 'submit_match_proposal', surfaces: ['job'], effect: 'write' }),
   tool({ name: 'submit_match_verdict', surfaces: ['job'], effect: 'write' }),
+  // The two narrative profiles, minus what the Dossier scaffold already names.
+  ...[...new Set(Object.values(NARRATIVE_PROFILES).flatMap((roles) => Object.values(roles).flat()))]
+    .filter((name) => !DOSSIER_PROFILE.includes(name as never))
+    .map((name) =>
+      tool({
+        name,
+        surfaces: ['job'],
+        effect: name.startsWith('submit_') ? 'write' : 'read',
+      }),
+    ),
 ];
 
 describe('finalizeRegistry accepts a legal registry', () => {
@@ -167,6 +182,23 @@ describe('finalizeRegistry rejects', () => {
     expect(() => finalizeRegistry(jobOnly)).toThrow(/does not carry the mcp surface/);
   });
 
+  it('a narrative profile whose named tool is missing', () => {
+    const withoutBrief = scaffold().filter((t) => t.name !== 'get_assessment_brief');
+    expect(() => finalizeRegistry(withoutBrief)).toThrow(
+      /assess proposer profile names "get_assessment_brief", which is not in the registry/,
+    );
+  });
+
+  it('a registry with no submit_evaluation at all, so no evaluator could answer', () => {
+    // The verdict tool is the evaluator's only write. Without it the loop would
+    // run, read the draft and record nothing — which is the failure the prose
+    // parse it replaced could not tell apart from agreement.
+    const withoutVerdict = scaffold().filter((t) => t.name !== 'submit_evaluation');
+    expect(() => finalizeRegistry(withoutVerdict)).toThrow(
+      /evaluator profile names "submit_evaluation", which is not in the registry/,
+    );
+  });
+
   it('a Match Round naming a rung that does not exist', () => {
     const withoutRung = scaffold().filter((t) => t.name !== 'join_lei');
     expect(() => finalizeRegistry(withoutRung)).toThrow(/names rung "join_lei"/);
@@ -275,6 +307,40 @@ describe('per-surface and per-Round lists are DERIVED, never hand-written', () =
       const names = registry.forMatchRound(round).map((t) => t.name);
       expect(names).toEqual(expect.arrayContaining(MATCH_RUNGS_BY_ROUND[round]!));
     }
+  });
+
+  it('gives each narrative role the same reads and a different write', () => {
+    // The asymmetry that matters is what they may WRITE. A verifier weaker than
+    // the thing it verifies measures its own window rather than the draft
+    // (finding 76), so the read lists are identical by construction.
+    const registry = finalizeRegistry(scaffold());
+    for (const loop of ['assess', 'recommend'] as const) {
+      const proposer = registry.forNarrativeRole(loop, 'proposer').map((t) => t.name);
+      const evaluator = registry.forNarrativeRole(loop, 'evaluator').map((t) => t.name);
+      expect(proposer.filter((n) => n.startsWith('submit_'))).toEqual([
+        loop === 'assess' ? 'submit_assessment' : 'submit_recommendation',
+      ]);
+      expect(evaluator.filter((n) => n.startsWith('submit_'))).toEqual(['submit_evaluation']);
+      expect(proposer.filter((n) => !n.startsWith('submit_'))).toEqual(
+        evaluator.filter((n) => !n.startsWith('submit_')),
+      );
+    }
+  });
+
+  it('offers submit_evaluation to the two evaluators and to nobody else', () => {
+    const registry = finalizeRegistry(scaffold());
+    const holders = (['assess', 'recommend'] as const).flatMap((loop) =>
+      (['proposer', 'evaluator'] as const)
+        .filter((role) =>
+          registry.forNarrativeRole(loop, role).some((t) => t.name === 'submit_evaluation'),
+        )
+        .map((role) => `${loop} ${role}`),
+    );
+    expect(holders).toEqual(['assess evaluator', 'recommend evaluator']);
+    for (const round of [1, 2, 3]) {
+      expect(registry.forMatchRound(round).map((t) => t.name)).not.toContain('submit_evaluation');
+    }
+    expect(DOSSIER_PROFILE).not.toContain('submit_evaluation' as never);
   });
 
   it('gives every Round the tools it needs to propose and to read an entity', () => {
