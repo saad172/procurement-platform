@@ -22,6 +22,7 @@ import { EXPECTED_BY_INDEX, type ExpectedMatch } from '@/db/seed-data/expected-m
  * | Outcome | What happened |
  * |---|---|
  * | accepted right | accepted, and it is the expected entity |
+ * | accepted a Twin | accepted another Sayari record of the same legal entity |
  * | accepted wrong | accepted, and it is not — the expensive kind |
  * | parked correctly | parked, and parking is what the truth set expects |
  * | parked with the answer in hand | parked, and the expected entity **is** among the Candidates it recorded |
@@ -47,6 +48,7 @@ type Row = {
 
 type Outcome =
   | 'accepted right'
+  | 'accepted a Twin'
   | 'accepted wrong'
   | 'parked correctly'
   | 'parked with the answer in hand'
@@ -55,6 +57,7 @@ type Outcome =
 
 const ORDER: Outcome[] = [
   'accepted right',
+  'accepted a Twin',
   'accepted wrong',
   'parked correctly',
   'parked with the answer in hand',
@@ -69,6 +72,11 @@ function grade(row: Row, expected: ExpectedMatch | undefined): Outcome {
   const wanted = typeof expected.expected === 'string' ? null : expected.expected;
 
   if (row.status === 'accepted') {
+    // A Twin is the same company on a different Sayari record, so settling on
+    // one is neither the right answer nor the wrong company — its own finding.
+    if (row.entityId != null && (expected.twins ?? []).includes(row.entityId)) {
+      return 'accepted a Twin';
+    }
     if (!wanted) return 'accepted wrong';
     return row.entityId === wanted.entityId ? 'accepted right' : 'accepted wrong';
   }

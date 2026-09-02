@@ -62,6 +62,13 @@ export type ExpectedMatch = {
   rosterName: string;
   expected: { entityId: string; label: string } | 'parking_is_correct' | 'not_in_sayari';
   /**
+   * Sayari entity ids known, from the Candidates read when the row was drafted,
+   * to describe the same legal entity as `expected` — the same company for the
+   * truth set's purpose, a different record for the Match's. A settlement on
+   * one is reported as *accepted a Twin*, never as right and never as wrong.
+   */
+  twins?: readonly string[];
+  /**
    * `high` — an LEI GLEIF corroborates against the roster's own country and
    * city, or an address that matches the roster line outright.
    * `medium` — the company is not in doubt, the record is: several Twins carry
@@ -196,6 +203,7 @@ export const EXPECTED_MATCHES: readonly ExpectedMatch[] = [
     rosterIndex: 13,
     rosterName: 'Panasonic Automotive',
     expected: { entityId: 'Jj9e4e0z8LTbH3Wiurb54w', label: 'PANASONIC AUTOMOTIVE SYSTEMS CO.,LT' },
+    twins: ['TIrVRi2ASLt1HGjZGg4rxw'],
     confidence: 'low',
     reason:
       'No Candidate is at the roster’s Osaka address (540-6207), which is a Panasonic group site rather than this company’s registered office. Two records carry the operating company’s legal name: this one at Yokohama 224-8520, and TIrVRi2ASLt1HGjZGg4rxw at Matsumoto City, which is a plant. Neither carries an LEI. The roster row may name the division rather than the legal entity, which is exactly what the Identity Standard forbids matching on.',
@@ -241,6 +249,7 @@ export const EXPECTED_MATCHES: readonly ExpectedMatch[] = [
     rosterIndex: 18,
     rosterName: 'Yanfeng',
     expected: { entityId: 'W2YFHfhhljD8pimLnnk0tg', label: '延锋汽车饰件系统有限公司' },
+    twins: ['NPll4sC0zEczebruZ-iS4w'],
     confidence: 'low',
     reason:
       'Two records carry the operating company’s exact Chinese legal name and neither carries an LEI: this one at 上海 201805 and NPll4sC0zEczebruZ-iS4w at a truncated city. Neither matches the roster’s 200235. The LEI-bearing Candidates are the group (雁峰集团有限公司, Wenzhou) and two other Shanghai companies. Nothing read here separates the two same-named records.',
@@ -316,6 +325,7 @@ export const EXPECTED_MATCHES: readonly ExpectedMatch[] = [
     rosterIndex: 26,
     rosterName: 'Brose',
     expected: { entityId: '8Fna1B9ZrytLgMFpUjWVBA', label: 'BROSE FAHRZEUGTEILE SE & CO.KG' },
+    twins: ['DvSWZuRXAFi0U6xljx-JQw', 'l0tVwdW3_WKVNSFUVDNUUw'],
     confidence: 'low',
     reason:
       'The roster address is Max-Brose-Straße 1, 96450 Coburg, and three Candidates carry a Brose Fahrzeugteile legal name at Coburg 96450 with no LEI — this one, DvSWZuRXAFi0U6xljx-JQw and l0tVwdW3_WKVNSFUVDNUUw. The only Brose Fahrzeugteile record with an LEI (529900ZQ6DYC0ZUD9S28) is the Bamberg company, a different registered seat, and Brose SE (529900EX4MMSGGEYA696) is the group. Nothing read here separates the three Coburg records.',
@@ -325,6 +335,7 @@ export const EXPECTED_MATCHES: readonly ExpectedMatch[] = [
     rosterIndex: 27,
     rosterName: 'JTEKT',
     expected: { entityId: 'R1a1FJd0ecYumgFfxx0HGw', label: 'JTEKT CORPORATION' },
+    twins: ['jAytS5--KS3lm3I2whrWtQ'],
     confidence: 'low',
     reason:
       'No Candidate is at the roster’s Nagoya address (450-8515). Two records carry the legal name JTEKT CORPORATION and neither has an LEI: this one at Kariya 448-8652, and jAytS5--KS3lm3I2whrWtQ at a truncated city with postcode 4480032 — the same Kariya postcode without its hyphen. They are almost certainly the same company; which record should be the Profile is not settled by anything read here.',
@@ -334,6 +345,7 @@ export const EXPECTED_MATCHES: readonly ExpectedMatch[] = [
     rosterIndex: 28,
     rosterName: 'Flex-N-Gate',
     expected: { entityId: '07zRxTFDUaxAHjHeDTCSWg', label: 'FLEX N GATE COVINGTON' },
+    twins: ['BAX_tQm9fXltkk3ZkhTAVA'],
     confidence: 'medium',
     reason:
       'The one Candidate whose LEI GLEIF corroborates against the roster is 07zRxTFDUaxAHjHeDTCSWg — LEI 549300REAUV9ZD1VE488, which GLEIF names FLEX-N-GATE LLC in US-IL at URBANA, the roster’s own town — but Sayari labels that record FLEX N GATE COVINGTON, a plant. This record carries the parent’s legal name and sits at Troy MI. The label and the LEI point at different records, and neither is at 1306 East University Avenue. Confirmed on the LEI: GLEIF is the second witness and it names FLEX-N-GATE LLC at Urbana under that LEI, so the record carrying it is the registered entity whatever Sayari labelled it from a trade record; the settled Troy record is the group name at a plant address.',
