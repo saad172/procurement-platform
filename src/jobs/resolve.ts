@@ -122,6 +122,14 @@ export type ResolveDeps = {
     /** Which rungs the Round actually climbed — measured, never assumed. */
     rungsUsed: string[];
     /**
+     * Set when a per-Job ceiling fired inside this Round.
+     *
+     * Reported rather than thrown, because a ceiling firing one turn after a
+     * submission is the likely case: what stops is more spending, and the
+     * ladder below decides whether the Round's answer is still usable.
+     */
+    terminatedReason?: string | undefined;
+    /**
      * Every entity id the Round looked at, including its picks.
      *
      * The rung tools hand candidates straight to the model, so without this the
@@ -138,6 +146,16 @@ export type ResolveOutcome = {
   settledBy: 'rules' | 'agents';
   rounds: number;
   reason: string;
+  /**
+   * Set when a per-Job ceiling stopped the ladder before it had finished.
+   *
+   * **The Match is still settled** — a parked row is the outcome the ladder is
+   * proudest of, and leaving one unsettled because the ceiling fired would
+   * stall the Supplier rather than park it. What this carries is the sentence
+   * the Job row says instead of *done*: `terminated`, amber, re-runnable
+   * (SPEC §18.4).
+   */
+  terminatedReason?: string | undefined;
 };
 
 /**
@@ -260,6 +278,10 @@ type NonConvergenceState = {
   rungsUsed: string[];
   lastRound: Awaited<ReturnType<NonNullable<ResolveDeps['runRound']>>> | undefined;
   foundByRung: Map<string, string>;
+  /** How many Rounds actually ran, which a ceiling can cut short. */
+  roundsRun: number;
+  /** The ceiling that stopped the ladder early, if one did. */
+  terminatedReason: string | undefined;
 };
 
 /**
@@ -308,19 +330,18 @@ async function settleWithoutAgent(
   };
 }
 
-async function runRoundLadder(
-  deps: ResolveDeps,
-  runRound: NonNullable<ResolveDeps['runRound']>,
-  args: { supplierId: string; roster: RosterRow; jobId?: string | undefined },
-  candidates: CandidateFacts[],
-): Promise<{ outcome: ResolveOutcome } | { outcome: null; state: NonConvergenceState }> {
-  const { db, upstream } = deps;
-  const seen = [...candidates];
-  let rungsUsed = ['R1'];
-  let objection: string | undefined;
-  /** The last Round's picks and verdicts, for the non-convergence settlement. */
-  let lastRound: Awaited<ReturnType<NonNullable<ResolveDeps['runRound']>>> | undefined;
-
+/**
+ * The mutable state one ladder carries across its Rounds.
+ *
+ * A named object rather than five `let`s, because the Round loop hands the same
+ * five things to the helpers below and to the settlement after it — and because
+ * it is what a resume checkpoint has to be able to restate.
+ */
+type LadderState = {
+  seen: CandidateFacts[];
+  rungsUsed: string[];
+  objection: string | undefined;
+  lastRound: Awaited<ReturnType<NonNullable<ResolveDeps['runRound']>>> | undefined;
   /**
    * Which rung each Candidate came from.
    *
@@ -330,33 +351,112 @@ async function runRoundLadder(
    * it took to find each option*, and an answer of "R1" for all of them makes
    * the ladder look free.
    */
-  const foundByRung = new Map<string, string>(candidates.map((c) => [c.entityId, 'R1']));
+  foundByRung: Map<string, string>;
+};
+
+/**
+ * Folds a Round's discoveries into what the Job knows.
+ *
+ * Fetching here rather than inside the Round keeps every upstream call on the
+ * Job's own `usage_event` trail, and it is what makes the picked entity exist
+ * locally before `settleMatch` tries to reference it.
+ *
+ * A fetch that fails is skipped rather than fatal: an id the agents saw but we
+ * cannot re-fetch is a candidate we cannot describe, not a reason to throw away
+ * a Round that otherwise succeeded. It simply never becomes a pick, because a
+ * pick with no local row cannot be settled.
+ */
+async function absorbCandidates(
+  deps: Pick<ResolveDeps, 'db' | 'upstream'>,
+  state: LadderState,
+  entityIds: readonly string[],
+  rung: string,
+): Promise<void> {
+  for (const entityId of entityIds) {
+    if (state.seen.some((candidate) => candidate.entityId === entityId)) continue;
+    try {
+      const fetched = await deps.upstream.sayari.getEntity({ id: entityId });
+      await upsertEntity(deps.db, fetched.data, fetched.upstreamResponseId);
+      state.seen.push(toCandidateFacts(fetched.data));
+      state.foundByRung.set(entityId, rung);
+    } catch (error) {
+      console.error(`[resolve] could not absorb candidate ${entityId}:`, error);
+    }
+  }
+}
+
+/**
+ * Both agents named the same entity id, so the Match settles on it.
+ *
+ * **Agreement is our code comparing two entity ids** — neither agent is asked
+ * whether it agrees, and neither is told what the other said.
+ */
+async function settleAgreement(
+  db: Database,
+  args: { supplierId: string; jobId?: string | undefined },
+  round: NonNullable<LadderState['lastRound']>,
+  state: LadderState,
+  roundN: number,
+): Promise<ResolveOutcome> {
+  const picked = state.seen.find((c) => c.entityId === round.resolverPick);
+  await settleMatch(db, {
+    supplierId: args.supplierId,
+    status: 'accepted',
+    entityId: round.resolverPick,
+    settledBy: 'agents',
+    jobId: args.jobId,
+    rungsUsed: state.rungsUsed,
+    note: `Both agents independently named ${picked?.label ?? round.resolverPick} at round ${roundN}.`,
+    candidates: state.seen.map((c) => ({
+      entityId: c.entityId,
+      foundByRung: state.foundByRung.get(c.entityId) ?? 'R1',
+      verdicts: [
+        { reportedBy: 'resolver', results: round.resolverVerdicts },
+        { reportedBy: 'evaluator', results: round.evaluatorVerdicts },
+      ],
+    })),
+  });
 
   /**
-   * Folds a Round's discoveries into what the Job knows.
-   *
-   * Fetching here rather than inside the Round keeps every upstream call on the
-   * Job's own `usage_event` trail, and it is what makes the picked entity exist
-   * locally before `settleMatch` tries to reference it.
-   *
-   * A fetch that fails is skipped rather than fatal: an id the agents saw but
-   * we cannot re-fetch is a candidate we cannot describe, not a reason to throw
-   * away a Round that otherwise succeeded. It simply never becomes a pick,
-   * because a pick with no local row cannot be settled.
+   * A Round that only just fitted still settled the Match, so the Job is `done`
+   * and not `terminated`: the ceiling stopped further spending, and there was
+   * none left to do. Marking it terminated would offer a re-run of work that
+   * has already produced its answer.
    */
-  const absorb = async (entityIds: readonly string[], rung: string): Promise<void> => {
-    for (const entityId of entityIds) {
-      if (seen.some((candidate) => candidate.entityId === entityId)) continue;
-      try {
-        const fetched = await upstream.sayari.getEntity({ id: entityId });
-        await upsertEntity(db, fetched.data, fetched.upstreamResponseId);
-        seen.push(toCandidateFacts(fetched.data));
-        foundByRung.set(entityId, rung);
-      } catch (error) {
-        console.error(`[resolve] could not absorb candidate ${entityId}:`, error);
-      }
-    }
+  return {
+    status: 'accepted',
+    entityId: round.resolverPick,
+    settledBy: 'agents',
+    rounds: roundN,
+    reason: `Both agents independently named the same company at round ${roundN}.`,
   };
+}
+
+async function runRoundLadder(
+  deps: ResolveDeps,
+  runRound: NonNullable<ResolveDeps['runRound']>,
+  args: { supplierId: string; roster: RosterRow; jobId?: string | undefined },
+  candidates: CandidateFacts[],
+): Promise<{ outcome: ResolveOutcome } | { outcome: null; state: NonConvergenceState }> {
+  const state: LadderState = {
+    seen: [...candidates],
+    rungsUsed: ['R1'],
+    objection: undefined,
+    lastRound: undefined,
+    foundByRung: new Map(candidates.map((c) => [c.entityId, 'R1'])),
+  };
+
+  const parked = (roundsRun: number, terminatedReason: string | undefined) => ({
+    outcome: null as null,
+    state: {
+      seen: state.seen,
+      rungsUsed: state.rungsUsed,
+      lastRound: state.lastRound,
+      foundByRung: state.foundByRung,
+      roundsRun,
+      terminatedReason,
+    },
+  });
 
   for (let roundN = 1; roundN <= MAX_ROUNDS; roundN += 1) {
     // The seed is derived from the attempt and the Round, so a replay
@@ -364,55 +464,35 @@ async function runRoundLadder(
     const seed = seedFor(`${args.supplierId}`, roundN);
     const round = await runRound({
       roster: args.roster,
-      candidates: seen,
+      candidates: state.seen,
       roundN,
-      objection,
-      shuffledForEvaluator: shuffleCandidates(seen, seed),
+      objection: state.objection,
+      shuffledForEvaluator: shuffleCandidates(state.seen, seed),
     });
 
     // Everything the Round found, before anything is decided about it — so the
     // agreement check below is comparing ids the Job can actually store.
-    lastRound = round;
+    state.lastRound = round;
 
     // The highest rung this Round climbed is where anything new came from.
-    await absorb(round.entityIdsSeen, round.rungsUsed.at(-1) ?? 'R1');
-    rungsUsed = [...new Set([...rungsUsed, ...round.rungsUsed])];
+    await absorbCandidates(deps, state, round.entityIdsSeen, round.rungsUsed.at(-1) ?? 'R1');
+    state.rungsUsed = [...new Set([...state.rungsUsed, ...round.rungsUsed])];
 
-    // AGREEMENT IS OUR CODE COMPARING TWO ENTITY IDS. Neither agent is asked
-    // whether it agrees, and neither is told what the other said.
     if (round.resolverPick && round.resolverPick === round.evaluatorPick) {
-      const picked = seen.find((c) => c.entityId === round.resolverPick);
-      await settleMatch(db, {
-        supplierId: args.supplierId,
-        status: 'accepted',
-        entityId: round.resolverPick,
-        settledBy: 'agents',
-        jobId: args.jobId,
-        rungsUsed,
-        note: `Both agents independently named ${picked?.label ?? round.resolverPick} at round ${roundN}.`,
-        candidates: seen.map((c) => ({
-          entityId: c.entityId,
-          foundByRung: foundByRung.get(c.entityId) ?? 'R1',
-          verdicts: [
-            { reportedBy: 'resolver', results: round.resolverVerdicts },
-            { reportedBy: 'evaluator', results: round.evaluatorVerdicts },
-          ],
-        })),
-      });
-      return {
-        outcome: {
-          status: 'accepted',
-          entityId: round.resolverPick,
-          settledBy: 'agents',
-          rounds: roundN,
-          reason: `Both agents independently named the same company at round ${roundN}.`,
-        },
-      };
+      return { outcome: await settleAgreement(deps.db, args, round, state, roundN) };
     }
-    objection = round.objection;
+    state.objection = round.objection;
+
+    /**
+     * The ceiling fired and this Round did not settle. Every later `runLoop()`
+     * call would breach the same ceiling on its first turn — the counters are
+     * per Job — so the ladder stops here and the row is parked below rather
+     * than left unsettled.
+     */
+    if (round.terminatedReason) return parked(roundN, round.terminatedReason);
   }
 
-  return { outcome: null, state: { seen, rungsUsed, lastRound, foundByRung } };
+  return parked(MAX_ROUNDS, undefined);
 }
 
 /** ── Non-convergence: parked, and the two reasons are different ───────────── */
@@ -421,8 +501,13 @@ async function settleNonConvergence(
   args: { supplierId: string; roster: RosterRow; jobId?: string | undefined },
   state: NonConvergenceState,
 ): Promise<ResolveOutcome> {
-  const { seen, rungsUsed, lastRound, foundByRung } = state;
+  const { seen, rungsUsed, lastRound, foundByRung, roundsRun, terminatedReason } = state;
   const status = sawCandidateInCountry(args.roster, seen) ? 'needs_review' : 'not_found';
+  // What stopped it is part of what a person reading the parked row needs: "it
+  // ran out of rounds" and "it ran out of ceiling" are different asks.
+  const stopped = terminatedReason
+    ? `The agents were stopped at a ceiling after ${roundsRun} round(s) — ${terminatedReason} — without converging.`
+    : `The agents did not converge in ${MAX_ROUNDS} rounds.`;
   await settleMatch(db, {
     supplierId: args.supplierId,
     status,
@@ -432,8 +517,8 @@ async function settleNonConvergence(
     rungsUsed,
     note:
       status === 'needs_review'
-        ? `The agents did not converge in ${MAX_ROUNDS} rounds. Candidates in the roster's country were seen, so a person can choose among them.`
-        : `The agents did not converge in ${MAX_ROUNDS} rounds, and no candidate in the roster's country was ever seen.`,
+        ? `${stopped} Candidates in the roster's country were seen, so a person can choose among them.`
+        : `${stopped} No candidate in the roster's country was ever seen.`,
     /**
      * `seen`, not the pre-pass list.
      *
@@ -481,8 +566,11 @@ async function settleNonConvergence(
     status,
     entityId: null,
     settledBy: 'agents',
-    rounds: MAX_ROUNDS,
-    reason: `No agreement in ${MAX_ROUNDS} rounds.`,
+    rounds: roundsRun,
+    reason: terminatedReason
+      ? `No agreement, and a ceiling stopped the ladder after ${roundsRun} round(s).`
+      : `No agreement in ${MAX_ROUNDS} rounds.`,
+    ...(terminatedReason ? { terminatedReason } : {}),
   };
 }
 

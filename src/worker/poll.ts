@@ -3,6 +3,7 @@ import type * as t from '@/db/schema';
 import { checkRunBudget, dequeueJob, finishJob, settleRunState } from '@/jobs/runs';
 import { describeError } from '@/lib/describe-error';
 import { UnpublishableDraftError } from '@/jobs/rounds';
+import { JobCeilingError, RunPausedError } from '@/jobs/stops';
 import { UpstreamCapExceededError } from '@/upstream/errors';
 
 /**
@@ -98,7 +99,21 @@ async function runOneJob(
      * *something broke*, next to a Run whose whole claim is that it does not
      * publish sentences it cannot support. It is amber, and it says why.
      */
-    if (error instanceof UpstreamCapExceededError) {
+    if (error instanceof RunPausedError) {
+      /**
+       * **The only stop that returns to `running`** (SPEC §18.2).
+       *
+       * A budget pause is a spending decision a person may revise, so nothing
+       * is red and nothing is amber: the Job waits, its Round checkpoint stands,
+       * and `resumeRun` puts it back in the queue to continue from there.
+       */
+      await finishJob(db, job.id, { state: 'paused_on_budget' });
+    } else if (error instanceof JobCeilingError) {
+      // A per-Job ceiling: `terminated` names a number you set. Re-runnable,
+      // never resumable — a runaway loop is not something a human should be
+      // able to wave through.
+      await finishJob(db, job.id, { state: 'terminated', reason: error.reason });
+    } else if (error instanceof UpstreamCapExceededError) {
       // A ceiling somebody set, so `terminated` and re-runnable — same rule as
       // the model loop's own caps, now applied to the deterministic Jobs that
       // never pass through it.

@@ -123,6 +123,19 @@ describe('resolve/not-found replays', () => {
     expect(outcome.rounds).toBeGreaterThan(0);
     expect(outcome.settledBy).toBe('agents');
 
+    /**
+     * **This recorded Job spends 90 tool calls against a 60-call ceiling**, so
+     * with the ceiling counting the whole Job rather than each `runLoop()` call
+     * it stops part-way through Round 3 — which is the ceiling doing its job on
+     * a Job that had already searched twice as hard as the sizing rule allows
+     * (SPEC §18.3).
+     *
+     * The row is still parked, because a Supplier left mid-air is worse than
+     * one waiting for a person; what the ceiling changes is the Job's own
+     * state, which is `terminated` and offers a re-run.
+     */
+    expect(outcome.terminatedReason).toMatch(/60-tool-call ceiling/);
+
     // And the rungs it climbed are on the row, so "what did it take to decide
     // there is nothing here" is answerable.
     expect(attempt?.rungsUsed as string[]).toContain('R1');

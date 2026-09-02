@@ -147,7 +147,7 @@ export async function runLoop(params: RunLoopParams, ctx: ModelContext): Promise
       // loop — so a Job killed mid-Round still says what it had spent.
       if (ctx.jobId) await recordJobCounters(ctx.db, ctx.jobId, { toolCalls, tokens });
 
-      const decision = await checkCapsAndBudget(params, controller, turn, {
+      const decision = await checkCapsAndBudget(params, ctx, controller, turn, {
         turns,
         toolCalls,
         tokens,
@@ -257,6 +257,7 @@ async function recordTurn(
  */
 async function checkCapsAndBudget(
   params: RunLoopParams,
+  ctx: ModelContext,
   controller: AbortController,
   turn: BetaMessage,
   counts: {
@@ -358,8 +359,13 @@ async function checkCapsAndBudget(
   // It PAUSES rather than terminating, because it is a spending decision a
   // person may revise. `paused_on_budget` is the only state that returns to
   // `running`.
-  if (params.budgetCheck && turn.stop_reason !== 'tool_use') {
-    const budget = await params.budgetCheck();
+  //
+  // The check comes from the CONTEXT for a Job and from the params only where a
+  // caller states one for a single loop; before both existed, nothing anywhere
+  // supplied one and this branch was dead.
+  const budgetCheck = params.budgetCheck ?? ctx.budgetCheck;
+  if (budgetCheck && turn.stop_reason !== 'tool_use') {
+    const budget = await budgetCheck();
     if (!budget.withinBudget) {
       controller.abort();
       return { status: 'paused_on_budget', spentUsd: budget.spentUsd, turns, toolCalls, tokens };

@@ -22,6 +22,7 @@ import {
   type EvaluationResult,
   type ProposalResult,
 } from './rounds';
+import { raiseIfStopped } from './stops';
 import type { ModelContext } from '@/model/types';
 
 /**
@@ -460,14 +461,19 @@ async function runAssessPropose(
   );
 
   if (result.status !== 'done') {
-    // The LOOP failed — transport, refusal, a cap. Distinct from our zod
-    // refinements rejecting a well-formed request's answer.
+    /**
+     * A ceiling or a budget pause leaves the loop here, and neither is a
+     * failure of the draft: `raiseIfStopped` takes them out of the retry
+     * budget entirely, because three more attempts against the same ceiling
+     * spend the ceiling three more times.
+     */
+    raiseIfStopped(result);
+    // The LOOP failed — transport, refusal, a truncated turn. Distinct from our
+    // zod refinements rejecting a well-formed request's answer.
     return {
       kind: 'loop_failure',
       message:
-        `the loop ended as ${result.status}` +
-        ('error' in result ? `: ${result.error}` : '') +
-        ('reason' in result ? `: ${result.reason}` : ''),
+        `the loop ended as ${result.status}` + ('error' in result ? `: ${result.error}` : ''),
     };
   }
   // Read the proposal out of the message rather than out of the tool's
@@ -565,6 +571,11 @@ async function runAssessEvaluate(
     },
     ctx.deps.modelCtx,
   );
+
+  // The evaluator's stops are the Job's stops too — and this one reads a
+  // non-`done` outcome as prose, so a terminated evaluator would otherwise have
+  // been scored as a rubric with no failures, which is a pass.
+  raiseIfStopped(result);
 
   const text = textOf(result);
   const objections = parseObjections(text);

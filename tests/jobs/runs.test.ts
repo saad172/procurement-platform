@@ -19,6 +19,7 @@ import {
   RUN_BUDGET_USD_PER_SUPPLIER,
 } from '@/config/constants';
 import { runProposerEvaluatorLoop } from '@/jobs/rounds';
+import { JobCeilingError, RunPausedError } from '@/jobs/stops';
 import {
   START_TEST_DB_HINT,
   closeTestDb,
@@ -309,6 +310,77 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
       const jobs = await db.select().from(t.job).where(eq(t.job.runId, runId));
       expect(jobs[0]!.state).toBe('failed');
       expect(jobs[0]!.error).toMatch(/upstream exploded/);
+    });
+
+    /**
+     * The two stops that are not failures (SPEC §18.4).
+     *
+     * Both reach the `job` row through a named error rather than a return
+     * value, because a stop that has to be re-declared at each of a dozen model
+     * call sites is one a call site will forget — and every one of them did:
+     * no handler ever produced `terminated`, and `paused_on_budget` was
+     * unreachable.
+     */
+    it('terminates a Job whose loop hit a ceiling, and does not fail its run', async () => {
+      const runId = await openRun(db, { programId, trigger: 'full', supplierCount: 1 });
+      await enqueueJob(db, { runId, kind: 'assess', subjectType: 'program', subjectId: programId });
+
+      let idled = 0;
+      await runWorker(db, {
+        concurrency: 1,
+        pollIntervalMs: 1,
+        handlers: {
+          assess: () => {
+            throw new JobCeilingError('stopped at its 40-tool-call ceiling');
+          },
+        },
+        shouldStop: () => idled > 0,
+        onIdle: () => {
+          idled += 1;
+        },
+      });
+
+      const jobs = await db.select().from(t.job).where(eq(t.job.runId, runId));
+      expect(jobs[0]!.state).toBe('terminated');
+      expect(jobs[0]!.terminatedReason).toMatch(/40-tool-call ceiling/);
+      expect(jobs[0]!.error).toBeNull();
+
+      const run = await db.query.run.findFirst({ where: eq(t.run.id, runId) });
+      expect(run!.state, 'a ceiling is not a failure of the run').toBe('done');
+    });
+
+    it('pauses a Job that crossed the run budget, and resume returns it to running', async () => {
+      const runId = await openRun(db, { programId, trigger: 'full', supplierCount: 1 });
+      await enqueueJob(db, { runId, kind: 'assess', subjectType: 'program', subjectId: programId });
+
+      let idled = 0;
+      await runWorker(db, {
+        concurrency: 1,
+        pollIntervalMs: 1,
+        handlers: {
+          assess: () => {
+            throw new RunPausedError(9.12);
+          },
+        },
+        shouldStop: () => idled > 0,
+        onIdle: () => {
+          idled += 1;
+        },
+      });
+
+      const paused = await db.select().from(t.job).where(eq(t.job.runId, runId));
+      expect(paused[0]!.state).toBe('paused_on_budget');
+      // Nothing broke and nothing was capped, so neither column carries a
+      // sentence: the Job is waiting on a person, not on us.
+      expect(paused[0]!.error).toBeNull();
+      expect(paused[0]!.terminatedReason).toBeNull();
+      expect((await db.query.run.findFirst({ where: eq(t.run.id, runId) }))!.state).toBe(
+        'paused_on_budget',
+      );
+
+      await resumeRun(db, runId);
+      const resumed = await db.select().from(t.job).where(eq(t.job.runId, runId));
+      expect(resumed[0]!.state).toBe('queued');
     });
 
     it('fails a Job with no registered handler rather than silently dropping it', async () => {

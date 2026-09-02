@@ -10,7 +10,7 @@ import { storeRelationships } from '@/jobs/enrich';
 import { parseRelationships } from '@/domain/parse-relationships';
 import { upsertEntity } from '@/jobs/resolve';
 import { runResolveJob } from '@/jobs/resolve-job';
-import { enqueueJob } from '@/jobs/runs';
+import { checkRunBudget, enqueueJob } from '@/jobs/runs';
 import { assessSupplier } from '@/jobs/assess';
 import { recommendCategory } from '@/jobs/recommend';
 import { runWorker, type JobHandler, type WorkerOptions } from './poll';
@@ -156,6 +156,16 @@ function buildModelContext(env: Env, database: Database, job: { id: string; runI
     runId: job.runId,
     jobId: job.id,
     credentials: { apiKey: env.ANTHROPIC_API_KEY },
+    /**
+     * **The run budget, checked at every Round boundary** (SPEC §18.2, §18.3).
+     *
+     * Built here, once, for every loop the Job runs — the alternative was each
+     * of a dozen `runLoop()` call sites remembering to pass one, and none of
+     * them did: `RunLoopParams.budgetCheck` was supplied by nothing, so the
+     * pre-dequeue check was the only bound and a Job already running could
+     * spend past the budget without ever noticing.
+     */
+    budgetCheck: () => checkRunBudget(database, job.runId),
   };
 }
 
@@ -344,6 +354,18 @@ async function resolveJobHandler(job: JobRow, database: Database, env: Env): Pro
    * Run for the one outcome the ladder is proudest of.
    */
   console.log(`  resolve ${job.subjectId}: ${outcome.status} (settled by ${outcome.settledBy})`);
+
+  /**
+   * A ceiling stopped the ladder, and the Match was parked anyway.
+   *
+   * `terminated` names a number somebody set, so the row is amber and offers a
+   * re-run; the Supplier is not left mid-air while it waits for one. This is
+   * the one Job whose ceiling does not travel as a throw, because its parking
+   * step has to run either way.
+   */
+  if (outcome.terminatedReason) {
+    return { state: 'terminated', reason: outcome.terminatedReason };
+  }
   return { state: 'done' };
 }
 

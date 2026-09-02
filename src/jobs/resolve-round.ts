@@ -12,6 +12,7 @@ import {
   type RosterRow,
 } from '@/domain/match/discriminators';
 import type { ResolveDeps } from './resolve';
+import { raiseIfStopped } from './stops';
 
 /**
  * One Match Round: a resolver, then a **blind** evaluator (SPEC §6).
@@ -146,20 +147,38 @@ export function makeRunRound(deps: ResolveRoundDeps): NonNullable<ResolveDeps['r
      * columns have to mean the same thing for the comparison to be readable.
      */
     return {
-      resolverPick: resolver?.entityId ?? null,
-      evaluatorPick: evaluator?.entityId ?? null,
-      resolverVerdicts: verdictsFor(roster, candidates, resolver?.entityId ?? null),
-      evaluatorVerdicts: verdictsFor(roster, candidates, evaluator?.entityId ?? null),
+      resolverPick: resolver.submission?.entityId ?? null,
+      evaluatorPick: evaluator.submission?.entityId ?? null,
+      resolverVerdicts: verdictsFor(roster, candidates, resolver.submission?.entityId ?? null),
+      evaluatorVerdicts: verdictsFor(roster, candidates, evaluator.submission?.entityId ?? null),
       // Carried into the next Round's prompt, so a disagreement is argued rather
       // than merely repeated.
-      objection: disagreementObjection(resolver, evaluator),
+      objection: disagreementObjection(resolver.submission, evaluator.submission),
       rungsUsed: rungsIn(calls, roundN),
-      entityIdsSeen: entityIdsIn(calls, resolver, evaluator),
+      entityIdsSeen: entityIdsIn(calls, resolver.submission, evaluator.submission),
+      /**
+       * The ceiling, if one fired — **reported rather than raised**.
+       *
+       * A ceiling firing one turn after a submission is the likely case, not an
+       * edge one, so the submission above is still read (finding 45). What
+       * stops is more spending, and the ladder decides what to do with a Round
+       * that only just fitted: settle on it if the two agents agreed, park the
+       * row otherwise, and end the Job `terminated` either way.
+       */
+      ...(resolver.terminatedReason || evaluator.terminatedReason
+        ? { terminatedReason: resolver.terminatedReason ?? evaluator.terminatedReason }
+        : {}),
     };
   };
 }
 
-/** Runs one agent and reads its submission out of the message, not the tool. */
+/**
+ * Runs one agent and reads its submission out of the message, not the tool.
+ *
+ * Returns the ceiling alongside the submission rather than throwing on it, for
+ * the reason `makeRunRound` states: a terminated loop may already hold the
+ * answer the Round was for.
+ */
 async function runAgent(args: {
   deps: ResolveRoundDeps;
   observe: (call: CapturedCall) => void;
@@ -168,7 +187,7 @@ async function runAgent(args: {
   submitToolName: string;
   roundN: number;
   message: string;
-}): Promise<Submission | null> {
+}): Promise<{ submission: Submission | null; terminatedReason?: string | undefined }> {
   const registry = getRegistry();
   const result = await runLoop(
     {
@@ -194,20 +213,28 @@ async function runAgent(args: {
    * It is logged, because a Round that only just fitted is worth knowing about
    * even when it worked.
    */
+  if (result.status !== 'done' && result.status !== 'terminated') {
+    // A budget pause is raised here rather than reported: it carries no tool
+    // uses to salvage, and resuming re-runs this Round from its checkpoint.
+    raiseIfStopped(result);
+    return { submission: null };
+  }
   if (result.status === 'terminated') {
     console.warn(`[resolve] round ${args.roundN} ${args.submitToolName}: ${result.reason}`);
-  } else if (result.status !== 'done') {
-    return null;
   }
 
   // The proposal is read from the MESSAGE, not from the tool's `run()`. A
   // terminal tool's handler is not guaranteed to have fired, and the agents
   // propose while our code settles.
-  return (
+  const submission =
     (result.toolUses.find((use) => use.name === args.submitToolName)?.input as
       | Submission
-      | undefined) ?? null
-  );
+      | undefined) ?? null;
+
+  return {
+    submission,
+    ...(result.status === 'terminated' ? { terminatedReason: result.reason } : {}),
+  };
 }
 
 /**

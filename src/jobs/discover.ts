@@ -10,6 +10,7 @@ import type { ModelContext } from '@/model/types';
 import type { Upstream } from '@/upstream';
 import { attributeTexts, type SayariEntity } from '@/upstream/projections/sayari';
 import { upsertEntity } from './resolve';
+import { raiseIfStopped } from './stops';
 
 /**
  * Discover (SPEC §11) — the search for companies on no imported list.
@@ -285,6 +286,10 @@ async function classifyAndRecordLeads(
       },
       deps.modelCtx,
     );
+
+    // A ceiling reached part-way through 25 classifications stops the Job
+    // rather than quietly filing the rest as `unclear`, which is a verdict.
+    raiseIfStopped(result);
 
     const submitted =
       result.status === 'done'

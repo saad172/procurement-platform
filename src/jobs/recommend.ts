@@ -18,6 +18,7 @@ import { buildEvidence, buildFrozenInputs, parseObjections } from './assess';
 import { publishVersion } from './publish';
 import { UnpublishableDraftError, type EvaluationResult, type ProposalResult } from './rounds';
 import { runProposerEvaluatorLoop } from './rounds';
+import { raiseIfStopped } from './stops';
 
 /**
  * The recommend Job (SPEC §10).
@@ -189,14 +190,15 @@ async function runRecommendPropose(
   );
 
   if (result.status !== 'done') {
-    // The LOOP failed — transport, refusal, a cap. Distinct from our zod
-    // refinements rejecting a well-formed request's answer.
+    // A ceiling or a budget pause is not the draft's fault, and retrying it
+    // three times only spends the ceiling three more times.
+    raiseIfStopped(result);
+    // The LOOP failed — transport, refusal, a truncated turn. Distinct from our
+    // zod refinements rejecting a well-formed request's answer.
     return {
       kind: 'loop_failure',
       message:
-        `the loop ended as ${result.status}` +
-        ('error' in result ? `: ${result.error}` : '') +
-        ('reason' in result ? `: ${result.reason}` : ''),
+        `the loop ended as ${result.status}` + ('error' in result ? `: ${result.error}` : ''),
     };
   }
 
@@ -286,6 +288,10 @@ async function runRecommendEvaluate(
     },
     ctx.deps.modelCtx,
   );
+
+  // A terminated evaluator produces no rubric, and no rubric parses as no
+  // objections — which is a pass. It is a stop, and it is raised as one.
+  raiseIfStopped(result);
 
   const text = textOf(result);
   const objections = parseObjections(text);

@@ -27,6 +27,20 @@ export type ModelContext = {
   /** Null only for chat, which spends inside a Run but outside any Job. */
   jobId?: string | undefined;
   credentials: ModelCredentials;
+  /**
+   * The Run's budget, checked at the Round boundary (SPEC §18.2).
+   *
+   * It rides on the **context** rather than on the params because a Job makes
+   * up to twelve `runLoop()` calls from four files, and a budget that has to be
+   * remembered at each call site is one a new call site will forget. The
+   * context is built once per Job, by the worker, beside the `jobId` the spend
+   * is attributed to — so supplying one and not the other is not a mistake
+   * anybody can make.
+   *
+   * Absent for chat, which has no Round boundary to check at: **the confirm
+   * gate is the bound there, and it is the stronger one.**
+   */
+  budgetCheck?: BudgetCheck | undefined;
 };
 
 /**
@@ -59,7 +73,11 @@ export type RunLoopParams = {
   tools: (BetaRunnableTool<never> | BetaToolUnion)[];
   messages: BetaMessageParam[];
   caps: LoopCaps;
-  /** Absent for chat, which has no Round boundaries to check at. */
+  /**
+   * Overrides `ModelContext.budgetCheck` for one call. The context is where a
+   * Job's budget actually comes from; this exists so a test can state a budget
+   * for a single loop without building a whole Job around it.
+   */
   budgetCheck?: BudgetCheck | undefined;
   /** The Round this call belongs to, for the Trace and the resume checkpoint. */
   roundN?: number | undefined;
