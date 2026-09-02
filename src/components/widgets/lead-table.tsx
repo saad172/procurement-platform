@@ -109,9 +109,7 @@ function ClassificationBadge({ l }: { l: Lead }) {
       </span>
     );
   }
-  return (
-    <span className={`badge ${label.manufacturer ? 'good' : 'mute'}`}>{label.label}</span>
-  );
+  return <span className={`badge ${label.manufacturer ? 'good' : 'mute'}`}>{label.label}</span>;
 }
 
 /**
