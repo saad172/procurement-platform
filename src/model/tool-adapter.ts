@@ -1,8 +1,15 @@
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import type { BetaRunnableTool } from '@anthropic-ai/sdk/lib/tools/BetaRunnableTool';
+import type { BetaToolResultContentBlockParam } from '@anthropic-ai/sdk/resources/beta';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import type { ToolContext, ToolDefinition } from '@/tools';
+import {
+  TOOL_OBJECTION_KINDS,
+  UpstreamCacheMissError,
+  UpstreamCapExceededError,
+  UpstreamError,
+} from '@/upstream/errors';
 
 /**
  * The adapter from our registry to the Tool Runner (SPEC §15.1).
@@ -57,37 +64,114 @@ export function toRunnableTool(
       try {
         result = await tool.handler(input, ctx);
       } catch (error) {
+        /**
+         * ── An upstream failure is told to the model as a sentence ──────────
+         *
+         * `src/tools/catalog/lookups.ts` has no `try` of its own, so a 429, a
+         * timeout, a 5xx or a keyless cache miss travelled to the model as the
+         * SDK's `Error: <message>` string — unstructured, unattributed, and
+         * with the loop spending on regardless. `isObjection` and
+         * `OBJECTIONABLE_KINDS` existed for exactly this and had no caller
+         * anywhere under `src/tools`.
+         *
+         * The upstream ceiling is the exception, and it is recorded as one:
+         * that is **the Job's own cap**, not a failure of the tool, so it stops
+         * the loop rather than inviting the model to work around it.
+         */
+        const objection = upstreamObjection(error);
+        if (error instanceof UpstreamCapExceededError && ctx.jobId) {
+          rememberFatal(ctx.jobId, error);
+        }
         await recordOutcome(
           ctx,
           context?.toolUse?.id,
           {
             ok: false,
             objections: [
-              `the handler threw: ${error instanceof Error ? error.message : String(error)}`,
+              objection ??
+                `the handler threw: ${error instanceof Error ? error.message : String(error)}`,
             ],
           },
           Date.now() - startedAt,
         );
-        throw error;
+        if (!objection) throw error;
+        return visibleObjections([objection]);
       }
       await recordOutcome(ctx, context?.toolUse?.id, result, Date.now() - startedAt);
 
       // A handler returning objections renders as a VISIBLE BLOCK listing them
       // verbatim, and the model is told — so it adjusts rather than retrying
       // blind. Never an apology in place of what happened.
-      if (!result.ok) {
-        return [
-          {
-            type: 'text',
-            text: `This did not work. The reasons, verbatim:\n${result.objections.map((o) => `- ${o}`).join('\n')}`,
-          },
-        ];
-      }
+      if (!result.ok) return visibleObjections(result.objections);
       return JSON.stringify(modelPayload(result.data));
     },
   }) as BetaRunnableTool<never>;
 
   return { ...runnable, parse: recordingParse(runnable, ctx) };
+}
+
+/**
+ * The repo's one shape for telling a model that something did not work.
+ *
+ * A **visible block** listing the reasons verbatim — never an apology in place
+ * of what happened, and never a summary, because the model adjusts from the
+ * reason and not from the tone.
+ */
+export function visibleObjections(
+  objections: readonly string[],
+): BetaToolResultContentBlockParam[] {
+  return [
+    {
+      type: 'text',
+      text: `This did not work. The reasons, verbatim:\n${objections.map((o) => `- ${o}`).join('\n')}`,
+    },
+  ];
+}
+
+/**
+ * One sentence naming **source, endpoint and kind**, or nothing when the
+ * failure is not one a model could act on.
+ *
+ * A cache miss is included: in a keyless replay it means *the request changed
+ * since the fixture was recorded*, which the loud error still says in full on
+ * the row and in the log — and the alternative was the SDK's own `Error:`
+ * string, which said the same thing to the model with less structure.
+ */
+export function upstreamObjection(error: unknown): string | undefined {
+  if (error instanceof UpstreamCacheMissError) {
+    return `${error.message.split('\n')[0]} This wrapper has no credentials, so it cannot fall through to a live call.`;
+  }
+  if (error instanceof UpstreamCapExceededError) return undefined;
+  if (!(error instanceof UpstreamError) || !TOOL_OBJECTION_KINDS.has(error.kind)) return undefined;
+  return `${error.source} ${error.endpoint} did not answer: ${error.kind} — ${error.message}. This is the source, not your query; try a different tool or say what you could not check.`;
+}
+
+/**
+ * The Job's upstream ceiling, remembered until the chokepoint reads it.
+ *
+ * **A throw inside a tool cannot stop the loop**: the runner catches it into an
+ * `is_error` tool result and asks the model what to do next, which is precisely
+ * the wrong question for a ceiling — the answer is *stop*. Nothing else in the
+ * SDK reaches from a tool back to the loop that is running it.
+ *
+ * So the ceiling is filed under the `jobId` and `runLoop()` takes it on its next
+ * turn, the same trick the wire hash uses with the message id and for the same
+ * reason: no state has to be threaded through the Tool Runner, and it stays
+ * correct when four Jobs run at once. The honest cost is **one more model
+ * request** — the turn that reads the error result — after which the loop
+ * aborts and no further tool call is made, which is what the upstream ceiling
+ * is protecting.
+ */
+const fatalByJob = new Map<string, Error>();
+
+function rememberFatal(jobId: string, error: Error): void {
+  fatalByJob.set(jobId, error);
+}
+
+export function takeFatalToolError(jobId: string): Error | undefined {
+  const error = fatalByJob.get(jobId);
+  fatalByJob.delete(jobId);
+  return error;
 }
 
 /**
