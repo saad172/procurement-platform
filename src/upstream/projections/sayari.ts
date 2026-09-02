@@ -252,6 +252,24 @@ const traversalPathSchemaInner = z
   })
   .loose();
 
+/**
+ * The traversal envelope — **the coverage half of a traversal, and it is not
+ * decoration** (SPEC §8.2, §8.5).
+ *
+ * `explored_count` is the size of the graph subset the API searched, and
+ * `partial_results` is the API saying whether it finished searching it. Those
+ * two are what let the app write *"50 of 5 047 explored"* rather than *"50
+ * members"*, which is the difference between a coverage claim and a row count
+ * — and an absent member proves nothing under either.
+ *
+ * `next`, `offset` and `limit` are the cursor. `next` is a **boolean** on the
+ * live API rather than a cursor string (BUILD-NOTES finding 6), so a caller
+ * pages by advancing `offset` itself; the union keeps a string form readable
+ * if the API ever grows one. `min_depth` and `max_depth` come back echoed, so a
+ * stored body says how deep the walk it recorded actually went rather than
+ * leaving that to the request params alone — the Corporate family read sends
+ * no depth at all and the server answers at its own default of 4.
+ */
 const traversalSchemaInner = z
   .object({
     data: z.array(traversalPathSchemaInner).nullish(),
@@ -259,6 +277,16 @@ const traversalSchemaInner = z
     next: z.union([z.boolean(), z.string()]).nullish(),
     offset: z.number().nullish(),
     limit: z.number().nullish(),
+    min_depth: z.number().nullish(),
+    max_depth: z.number().nullish(),
+    /** How many nodes the API visited — the *m* in "n of m explored". */
+    explored_count: z.number().nullish(),
+    /**
+     * True when the API itself stopped short of searching the whole subgraph,
+     * in which case `explored_count` bounds nothing and the reachable set is
+     * unknown rather than large.
+     */
+    partial_results: z.boolean().nullish(),
   })
   .loose();
 
@@ -385,6 +413,7 @@ export const tradeSearchSchema = eitherCasing(tradeSearchSchemaInner);
 export type SayariEntity = z.infer<typeof entitySchemaInner>;
 export type SayariResolutionCandidate = z.infer<typeof resolutionCandidateSchemaInner>;
 export type SayariTraversalPath = z.infer<typeof traversalPathSchemaInner>;
+export type SayariTraversal = z.infer<typeof traversalSchemaInner>;
 
 /** One entry of one attribute block, as the projection produces it. */
 export type SayariAttributeValue = NonNullable<

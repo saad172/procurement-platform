@@ -12,12 +12,17 @@ import { parseRiskObject } from '@/domain/scoring/risk-factors';
  * refuses to say rather than what it says.
  */
 
-const member = (id: string, risk: Record<string, unknown> = {}): FamilyMemberRisk => ({
+const member = (
+  id: string,
+  risk: Record<string, unknown> = {},
+  hopDepth = 1,
+): FamilyMemberRisk => ({
   entityId: id,
   label: id.toUpperCase(),
   country: 'ROU',
   factors: parseRiskObject(risk),
-  fromDeepTraversal: false,
+  hopDepth,
+  fromDeepTraversal: hopDepth > 1,
 });
 
 describe('the three badge states, and why the first two are not one state', () => {
@@ -77,6 +82,47 @@ describe('the three badge states, and why the first two are not one state', () =
       { explored: 17, reachable: 2275 },
     );
     expect(describeFamilyExposure(exposure)).toMatch(/17 of 2,275 explored/);
+  });
+
+  /**
+   * The three coverage clauses, and the third is what the Deep Traversal added.
+   * A walk that stopped at its own cap holds a known count of an **unknown**
+   * total — which reads identically to a complete small family unless it is
+   * said out loud, and a Deep Traversal is *defined* as a capped walk.
+   */
+  it('says "explored to the cap" when the walk stopped short and the total is unknown', () => {
+    const exposure = computeFamilyExposure(
+      [member('a', { forced_labor_x_direct: { level: 'high' } })],
+      { explored: 200, reachable: null, partial: true },
+    );
+    expect(describeFamilyExposure(exposure)).toMatch(/200 explored to the cap/);
+  });
+
+  it('says only "n explored" when the walk reached the end of the graph', () => {
+    const exposure = computeFamilyExposure(
+      [member('a', { forced_labor_x_direct: { level: 'high' } })],
+      { explored: 4, reachable: null, partial: false },
+    );
+    const said = describeFamilyExposure(exposure);
+    expect(said).toMatch(/4 explored/);
+    expect(said).not.toMatch(/to the cap/);
+  });
+
+  it('names the hop that reached each member, so hop 3 is visibly not hop 1', () => {
+    const exposure = computeFamilyExposure(
+      [
+        member('near', { forced_labor_x_direct: { level: 'high' } }, 1),
+        member('far', { forced_labor_x_direct: { level: 'high' } }, 3),
+      ],
+      { explored: 2, reachable: null },
+    );
+    if (exposure.state !== 'exposure_found') throw new Error('expected exposure');
+    // A Deep Traversal member is a Family member LIKE ANY OTHER (CONTEXT), so
+    // it carries no badge of its own — what distinguishes it is the hop.
+    expect(exposure.members.map((m) => [m.entityId, m.hopDepth, m.fromDeepTraversal])).toEqual([
+      ['near', 1, false],
+      ['far', 3, true],
+    ]);
   });
 
   it('excludes country-derived factors, as the Compliance criterion does', () => {

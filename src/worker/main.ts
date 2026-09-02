@@ -10,6 +10,7 @@ import { storeRelationships } from '@/jobs/enrich';
 import { parseRelationships } from '@/domain/parse-relationships';
 import { upsertEntity } from '@/jobs/resolve';
 import { runResolveJob } from '@/jobs/resolve-job';
+import { runDeepTraversal } from '@/jobs/traverse';
 import { checkRunBudget, enqueueJob } from '@/jobs/runs';
 import { assessSupplier } from '@/jobs/assess';
 import { recommendCategory } from '@/jobs/recommend';
@@ -126,6 +127,7 @@ function buildJobHandlers(env: Env): Record<RunnableJobKind, JobHandler> {
     resolve: (job, database) => resolveJobHandler(job, database, env),
     assess: (job, database) => assessJobHandler(job, database, env),
     recommend: (job, database) => recommendJobHandler(job, database, env),
+    traverse: (job, database) => traverseJobHandler(job, database, env),
   };
 }
 
@@ -257,6 +259,57 @@ async function fetchEntityJobHandler(
   const written = await storeRelationships(database, edges, job.id);
 
   console.log(`  fetch_entity ${fetched.data.label ?? job.subjectId}: ${written} edge(s)`);
+  return { state: 'done' };
+}
+
+/**
+ * The **Deep Traversal**: a person or the chat asked for one company's
+ * ownership graph to be expanded past the automatic read (SPEC §8.5).
+ *
+ * Deterministic, like `enrich` and `fetch_entity`: no model turn, so this
+ * Job's Trace is its `usage_event` rows and its `trace_fidelity` stays
+ * `replayable` — a Job with no turns is recordable, and what its fixture
+ * carries is the upstream bodies it read.
+ *
+ * The subject is an **entity**, not a Supplier: `enqueue_deep_traversal`
+ * writes the entity id it was asked about, because a Deep Traversal is
+ * about a company in the graph and a Twin or an owner is not on anybody's
+ * roster.
+ *
+ * **Only the call budget terminates it.** Filling the node cap is what a
+ * Deep Traversal *is* — CONTEXT: *within a hop and node cap* — so a walk
+ * that stops there is `done` with its truncation recorded, and the amber
+ * row is reserved for the ceiling that actually cost the answer
+ * something (SPEC §18.4).
+ */
+async function traverseJobHandler(job: JobRow, database: Database, env: Env): Promise<JobOutcome> {
+  const upstream = createUpstream({
+    db: database,
+    runId: job.runId,
+    jobId: job.id,
+    credentials: buildUpstreamCredentials(env),
+    toolCallCap: job.toolCallCap,
+  });
+
+  const walk = await runDeepTraversal(
+    { db: database, upstream, jobId: job.id },
+    { entityId: job.subjectId },
+  );
+
+  console.log(
+    `  traverse ${job.subjectId}: ${walk.explored} member(s) to hop ${walk.deepestHop}` +
+      ` in ${walk.pagesRead} call(s) — ${walk.stoppedBy}` +
+      `${walk.reachable == null ? '' : ` of ${walk.reachable} explored`}`,
+  );
+
+  if (walk.stoppedBy === 'call_budget') {
+    return {
+      state: 'terminated',
+      reason:
+        `Stopped at its ${job.toolCallCap}-upstream-call ceiling after ${walk.pagesRead} page(s), ` +
+        `holding ${walk.explored} family member(s). Re-running continues from a warm cache.`,
+    };
+  }
   return { state: 'done' };
 }
 

@@ -4,6 +4,8 @@ import * as t from '@/db/schema';
 import {
   DEEP_TRAVERSAL_MAX_HOPS,
   DEEP_TRAVERSAL_MAX_NODES,
+  DEEP_TRAVERSAL_MAX_PAGES,
+  DEEP_TRAVERSAL_PAGE_SIZE,
   DISCOVER_CLASSIFY_TOP_N,
   DOSSIER_BUDGET_USD,
 } from '@/config/constants';
@@ -218,12 +220,36 @@ const enqueueDeepTraversal = defineTool({
   effect: 'write',
   spends: ['sayari'],
   latency: 'fast',
+  /**
+   * **The estimate is arithmetic over the caps, not a guess.**
+   *
+   * It used to read *"one traversal call, plus a fetch for any node not already
+   * stored"*, and both halves were wrong about what the Job does. There is no
+   * per-node fetch at all — a traversal path terminal arrives as a full entity
+   * with its `risk` block inline (SPEC §8.1), which is the measurement that made
+   * the Corporate family cost one call rather than 25. And it is not one call:
+   * the walk follows the cursor, 50 nodes to a page, in two directions.
+   *
+   * So the ceiling is `2 × ceil(maxNodes / pageSize)` — four pages down through
+   * `traversal.ownership` and four up through `traversal.ubo` — and the floor is
+   * two, one page each way, which is what a company with a small family and no
+   * recorded owners costs. The two directions share the node cap, so the maximum
+   * is a ceiling that a real walk rarely reaches rather than a forecast.
+   *
+   * Local rows only, and in fact no rows at all: the numbers are constants, so
+   * this estimator cannot be the thing that spends before consent.
+   */
   confirm: async (): Promise<Estimate> => ({
-    what: `Expand this company’s ownership graph to ${DEEP_TRAVERSAL_MAX_HOPS} hops, up to ${DEEP_TRAVERSAL_MAX_NODES} nodes.`,
-    spends: { sayariCalls: { min: 1, max: 5 } },
-    basis: 'One traversal call, plus a fetch for any node not already stored.',
+    what: `Expand this company’s ownership graph to ${DEEP_TRAVERSAL_MAX_HOPS} hops, up to ${DEEP_TRAVERSAL_MAX_NODES} nodes, downward and upward.`,
+    spends: { sayariCalls: { min: 2, max: DEEP_TRAVERSAL_MAX_PAGES * 2 } },
+    basis:
+      `Up to ${DEEP_TRAVERSAL_MAX_PAGES} downward pages and ${DEEP_TRAVERSAL_MAX_PAGES} upward pages ` +
+      `of ${DEEP_TRAVERSAL_PAGE_SIZE} nodes each — the API's maximum page — stopping at the ` +
+      `${DEEP_TRAVERSAL_MAX_NODES}-node cap the two directions share. Every node arrives as a full ` +
+      'entity with its risk block, so no node costs a second call.',
     caveats: [
       'A deep traversal changes no score: ownership exposure is computed from current one-hop edges. What it can do is light the "new evidence" mark on a version that cites something it touches.',
+      'It is capped, so it is never a complete family: what comes back is "n of m explored", and a company it does not reach is not a company it ruled out.',
     ],
   }),
   handler: async (input, ctx) => {

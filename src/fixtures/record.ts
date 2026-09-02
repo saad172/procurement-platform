@@ -69,21 +69,27 @@ async function loadRecordableJob(db: Database, jobId: string) {
 /**
  * A Job with **no turns** is recordable, and that is not a loophole.
  *
- * `enrich` runs no model at all — the fan-out is our code calling five
- * upstreams — so it has no turns by design, and refusing it would be refusing
+ * A deterministic Job has no turns by design, and refusing it would be refusing
  * a Job for behaving exactly as specified. What such a fixture carries is its
  * **upstream bodies**, which is precisely what a later Job's replay needs:
  * `assess` reads enrichments, and enrichments come from those bodies.
  *
- * `resolve` joins it for the same reason (finding 107, `rules-r0`): the
- * auto-accept gate is **plain code, zero tokens** (SPEC §6.3), and a Supplier
- * it settles alone produces no Round and so no turn — refusing that fixture
- * would be refusing the gate for working.
+ * Three kinds run **no model at all**: `enrich`'s fan-out, `fetch_entity`'s
+ * single call and the Deep Traversal's paged walk are all our code calling
+ * upstreams. CONTEXT draws the line for the last one — a Deep Traversal
+ * *"expands the ownership graph and involves no agent"*.
+ *
+ * `resolve` joins them for a different reason (finding 107, `rules-r0`): it
+ * *is* a model-driven kind, and the auto-accept gate in front of it is **plain
+ * code, zero tokens** (SPEC §6.3), so a Supplier the gate settles alone
+ * produces no Round and so no turn — refusing that fixture would be refusing
+ * the gate for working. Which is why the set is named for what it holds rather
+ * than for why: these are the kinds a turn count of zero does not condemn.
  *
  * The distinction that matters is *no turns* versus *turns we cannot replay*.
  * The second is still refused, below.
  */
-const NO_TURN_JOB_KINDS = new Set(['enrich', 'resolve']);
+const NO_TURN_JOB_KINDS = new Set(['enrich', 'fetch_entity', 'traverse', 'resolve']);
 
 async function loadTurnRows(
   db: Database,

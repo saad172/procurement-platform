@@ -3,6 +3,7 @@ import { getPooledDb } from '@/db/client';
 import { loadJobPage } from '@/db/queries/job-page';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { LiveRefresh } from '@/components/live-refresh';
+import { jobKindLabel, jobKindSentence } from '@/domain/job-kinds';
 
 /**
  * The Trace (SPEC §3.7, §19.1) — the bottom of the Runs branch.
@@ -42,10 +43,18 @@ export default async function TracePage({
           { label: program.name, href: `/program/${programId}` },
           { label: 'Runs', href: `/program/${programId}/runs` },
           { label: 'Run', href: `/program/${programId}/runs/${runId}` },
-          { label: `${job.kind} trace` },
+          { label: `${jobKindLabel(job.kind)} trace` },
         ]}
       />
-      <h1>{job.kind} trace</h1>
+      <h1>{jobKindLabel(job.kind)} trace</h1>
+      {/*
+        The sentence, not the enum. A deterministic Job's Trace is empty by
+        design — it runs no model — and without a line saying so an empty page
+        reads as a Job that died before its first turn.
+      */}
+      <p className="note" style={{ marginTop: '-0.4rem' }}>
+        {jobKindSentence(job.kind)}
+      </p>
       <p className="sub">
         {turns.length} turn{turns.length === 1 ? '' : 's'} ·{' '}
         <span className="badge">{job.traceFidelity}</span>

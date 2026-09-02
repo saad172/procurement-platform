@@ -38,8 +38,32 @@ export type FamilyMemberRisk = {
   label: string;
   country: string | null;
   factors: RiskFactor[];
+  /**
+   * Ownership hops from the root, `possibly_same_as` steps not counted.
+   *
+   * A Deep Traversal reaches members at depth 2 and 3 that the automatic read
+   * stopped short of, and CONTEXT says such a member is *a Family member like
+   * any other* — so the depth is carried on the same type rather than on a
+   * parallel one, and the panel renders it in the same table.
+   */
+  hopDepth: number;
   /** True when a Deep Traversal found it rather than the automatic read. */
   fromDeepTraversal: boolean;
+};
+
+/**
+ * How much of a family one read covered.
+ *
+ * `explored` is how many members are held; `reachable` is how many the API says
+ * exist. `partial` is the third fact and it is not derivable from the other
+ * two: a walk that stopped at its own cap holds a known count of an **unknown**
+ * total, which reads identically to a complete small family unless it is said.
+ */
+export type FamilyCoverage = {
+  explored: number;
+  reachable: number | null;
+  /** True when the walk stopped at a cap rather than at the end of the graph. */
+  partial?: boolean | undefined;
 };
 
 /**
@@ -51,32 +75,48 @@ export type FamilyMemberRisk = {
  * sampled families returned zero members, including several that certainly have
  * subsidiaries, so the two are not rare edge cases — they are most of the roster.
  */
+type Covered = { explored: number; reachable: number | null; partial: boolean };
+
+/** One member the badge names, with the hop that reached it. */
+export type FamilyExposureMember = {
+  entityId: string;
+  label: string;
+  level: RiskLevel;
+  factors: string[];
+  /** Rendered beside the name, so hop 3 is visibly not hop 1. */
+  hopDepth: number;
+  fromDeepTraversal: boolean;
+};
+
 export type FamilyExposure =
-  | { state: 'not_covered'; explored: number; reachable: number | null }
-  | { state: 'no_exposure_found'; explored: number; reachable: number | null }
-  | {
+  | ({ state: 'not_covered' } & Covered)
+  | ({ state: 'no_exposure_found' } & Covered)
+  | ({
       state: 'exposure_found';
       worstLevel: RiskLevel;
       membersWithExposure: number;
-      explored: number;
-      reachable: number | null;
       /** Named so a compliance sentence can cite the member's OWN entity. */
-      members: { entityId: string; label: string; level: RiskLevel; factors: string[] }[];
-    };
+      members: FamilyExposureMember[];
+    } & Covered);
 
 export function computeFamilyExposure(
   members: readonly FamilyMemberRisk[],
-  coverage: { explored: number; reachable: number | null },
+  coverage: FamilyCoverage,
 ): FamilyExposure {
   // The coverage precondition, applied unamended (SPEC §8.2): no family badge
   // unless at least one member came back. An empty ownership graph is not a
   // clean family — it is an unexplored one.
+  const covered: Covered = {
+    explored: coverage.explored,
+    reachable: coverage.reachable,
+    partial: coverage.partial ?? false,
+  };
+
   if (members.length === 0) {
-    return { state: 'not_covered', explored: coverage.explored, reachable: coverage.reachable };
+    return { state: 'not_covered', ...covered };
   }
 
-  const withExposure: { entityId: string; label: string; level: RiskLevel; factors: string[] }[] =
-    [];
+  const withExposure: FamilyExposureMember[] = [];
   for (const member of members) {
     const scored = dedupePsaAgainstBase(member.factors.filter((f) => !isCountryDerived(f)));
     let worst: RiskLevel | undefined;
@@ -93,15 +133,13 @@ export function computeFamilyExposure(
         label: member.label,
         level: worst,
         factors: names,
+        hopDepth: member.hopDepth,
+        fromDeepTraversal: member.fromDeepTraversal,
       });
   }
 
   if (withExposure.length === 0) {
-    return {
-      state: 'no_exposure_found',
-      explored: coverage.explored,
-      reachable: coverage.reachable,
-    };
+    return { state: 'no_exposure_found', ...covered };
   }
 
   const worstLevel = withExposure.reduce<RiskLevel>(
@@ -113,9 +151,8 @@ export function computeFamilyExposure(
     state: 'exposure_found',
     worstLevel,
     membersWithExposure: withExposure.length,
-    explored: coverage.explored,
-    reachable: coverage.reachable,
     members: withExposure,
+    ...covered,
   };
 }
 
@@ -126,13 +163,34 @@ const rank = (level: RiskLevel) => (level === 'high' ? 3 : level === 'elevated' 
  * *"17 of 2 275 explored"* where the read was truncated.
  *
  * The phrasing is the honest one: an absent family member proves nothing,
- * because the read is capped at 50 nodes.
+ * because the read is capped.
+ *
+ * ## The coverage clause, stated as a rule
+ *
+ * Three cases, and the third is what a Deep Traversal added:
+ *
+ * 1. **The reachable set is known and larger than what we hold** — the API
+ *    finished searching (`partial_results: false`) and reported how many nodes
+ *    it visited. *"200 of 5 047 explored"*, which is SPEC §8.2's own phrasing.
+ * 2. **The walk stopped at a cap and the reachable set is unknown** — the API
+ *    itself returned partial results, so the number it reports bounds nothing.
+ *    *"200 explored to the cap"*: the count is a floor, and saying only *"200
+ *    explored"* would let a walk that ran out of budget read as a family of
+ *    exactly 200.
+ * 3. **Neither** — the walk ran to the end of the graph. *"17 explored"*, and
+ *    for once that is the whole family.
+ *
+ * Case 2 exists because a Deep Traversal is *defined* by its caps (CONTEXT:
+ * *within a hop and node cap*), so hitting one is its ordinary outcome rather
+ * than an error — and an ordinary outcome still has to be said out loud.
  */
 export function describeFamilyExposure(exposure: FamilyExposure): string {
   const coverage =
     exposure.reachable != null && exposure.reachable > exposure.explored
       ? `${exposure.explored} of ${exposure.reachable.toLocaleString('en-US')} explored`
-      : `${exposure.explored} explored`;
+      : exposure.partial
+        ? `${exposure.explored} explored to the cap`
+        : `${exposure.explored} explored`;
 
   switch (exposure.state) {
     case 'not_covered':

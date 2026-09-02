@@ -19,16 +19,22 @@ describe('deriveFamilyCoverageAndExposure', () => {
     const { coverage } = deriveFamilyCoverageAndExposure([
       {
         member: { id: 'a', label: 'A', country: 'DEU', risk: null },
+        hopDepth: 1,
+        truncated: true,
+        discoveredByJob: null,
         exploredCount: 14,
         reachableCount: 50,
       },
       {
         member: { id: 'a', label: 'A', country: 'DEU', risk: null },
+        hopDepth: 1,
+        truncated: true,
+        discoveredByJob: null,
         exploredCount: 14,
         reachableCount: 50,
       },
     ]);
-    expect(coverage).toEqual({ explored: 14, reachable: 50 });
+    expect(coverage).toEqual({ explored: 14, reachable: 50, partial: true });
   });
 
   it('is not_covered when the ownership graph returned nobody', () => {
@@ -45,6 +51,9 @@ describe('deriveFamilyCoverageAndExposure', () => {
           country: 'ROU',
           risk: { exports_bis_high_priority_items_direct: { level: 'high' } },
         },
+        hopDepth: 1,
+        truncated: false,
+        discoveredByJob: null,
         exploredCount: 1,
         reachableCount: 1,
       },

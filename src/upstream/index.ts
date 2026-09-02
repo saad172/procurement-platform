@@ -33,6 +33,8 @@ export function createUpstream(ctx: UpstreamContext) {
       searchEntity: run(endpoints.sayariSearchEntity),
       /** The Corporate family: one call, `limit: 50`, truncation recorded. */
       ownership: run(endpoints.sayariTraversalOwnership),
+      /** The upward walk, reached only by a Deep Traversal (SPEC §8.5). */
+      ubo: run(endpoints.sayariTraversalUbo),
       traversal: run(endpoints.sayariTraversal),
       /** Slow (7–15 s) and barred from chat. Input is the resolved legal name. */
       negativeNews: run(endpoints.sayariNegativeNews),
@@ -85,6 +87,8 @@ export { classify } from './classify';
 export { UpstreamCacheMissError, UpstreamError, OBJECTIONABLE_KINDS } from './errors';
 export type { UpstreamErrorKind } from './errors';
 export { canonicalJson, hashBody, hashParams } from './hash';
+export { paginateTraversal } from './paginate';
+export type { PaginateBounds, TraversalStop, TraversalWalk } from './paginate';
 export { ENDPOINTS } from './endpoints';
 export type {
   EndpointDef,

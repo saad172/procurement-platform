@@ -50,9 +50,59 @@ export const FAMILY_TRAVERSAL_LIMIT = 50;
  */
 export const PREPASS_CANDIDATES = 5;
 
-/** A person-triggered expansion beyond the automatic one hop (SPEC §8.5). */
-export const DEEP_TRAVERSAL_MAX_HOPS = 3;
+/**
+ * A person-triggered expansion of the ownership graph (SPEC §8.5).
+ *
+ * **The rule: a Deep Traversal must never be shallower than the automatic
+ * read.** It exists to extend the Corporate family, and a cap that stops short
+ * of what the family read already returns would make the on-demand expansion
+ * *lose* members a page view gets for free — an expansion that contracts.
+ *
+ * The automatic read sends no depth at all, so it is answered at the server's
+ * own default of `max_depth: 4` (measured on the recorded Yazaki body:
+ * `maxDepth: 4`, `limit: 50`, `next: true`, `explored_count: 5047`). The cap
+ * therefore **tracks that default** at 4 rather than sitting at a number of our
+ * own choosing. It was 3, which is where the rule came from: at 3 the deep walk
+ * was shallower per path than the read it extends.
+ *
+ * So depth is not what makes a Deep Traversal deep, and the vocabulary that
+ * says it is — *"beyond one hop of ownership"* — is describing something the
+ * family read never was. The family is *"subsidiaries, their subsidiaries, and
+ * branches"*, which is already multi-hop; what it stops at is its **first page
+ * of fifty**. What a Deep Traversal buys is the three things below it: the
+ * cursor, the node cap, and the upward direction.
+ *
+ * If Sayari's default moves, this number is wrong again, and the fix is to
+ * follow it rather than to argue with it.
+ */
+export const DEEP_TRAVERSAL_MAX_HOPS = 4;
 export const DEEP_TRAVERSAL_MAX_NODES = 200;
+
+/**
+ * The API's maximum page, and therefore what one upstream call buys.
+ *
+ * `Ownership.limit` and `Ubo.limit` are documented *"Defaults to 10. Max of
+ * 50"*, so 50 is not a number this app chose — asking for more is answered with
+ * 50 anyway. It sits beside the caps because it is what converts the node cap
+ * into a **call** count: the walk pages by 50 in each direction, so the honest
+ * estimate the confirm gate shows is derived from these three numbers rather
+ * than guessed.
+ */
+export const DEEP_TRAVERSAL_PAGE_SIZE = 50;
+
+/**
+ * Pages per direction, and therefore the call ceiling the estimate quotes.
+ *
+ * Downward (`traversal.ownership`) and upward (`traversal.ubo`) share the node
+ * cap, so this is a worst case for one direction rather than a per-direction
+ * allowance: a walk that fills all 200 nodes going down makes no upward call at
+ * all. Four each way is eight, comfortably under `JOB_CAPS.traverse.toolCalls`
+ * — which is the shape §18.3 asks for, a ceiling that does not fire on a
+ * healthy run.
+ */
+export const DEEP_TRAVERSAL_MAX_PAGES = Math.ceil(
+  DEEP_TRAVERSAL_MAX_NODES / DEEP_TRAVERSAL_PAGE_SIZE,
+);
 
 /**
  * Per-Job ceilings. A cap that fires on a healthy run is a bug, so these are
@@ -85,19 +135,20 @@ export type JobKind = keyof typeof JOB_CAPS;
  * The Job kinds a worker can actually run (SPEC §2.2).
  *
  * `JOB_CAPS` names eight kinds because it sizes a ceiling for each; the worker
- * registers a handler for six. The two that are not here — `traverse` and
- * `dossier` — have `enqueue_*` tools that chat can propose, so an accepted
- * proposal produced a Job that dequeued and failed with *"no handler registered
- * for job kind"*: a red row in a Run, from a button a person deliberately
- * pressed, for work the app never had.
+ * registers a handler for seven. The one that is not here — `dossier` — has an
+ * `enqueue_*` tool that chat can propose, so an accepted proposal produced a
+ * Job that dequeued and failed with *"no handler registered for job kind"*: a
+ * red row in a Run, from a button a person deliberately pressed, for work the
+ * app never had.
  *
  * One list, read by two places that had no idea they were describing the same
  * set: `buildJobHandlers` types its dispatch table against it, so a kind added
  * here without a handler is a compile error, and `finalizeRegistry()` checks
  * every `enqueue_*` tool's declared kind against it at boot.
  *
- * `traverse` is expected to join this list when the Deep Traversal handler
- * lands; `dossier` is flag-gated and deliberately outside it.
+ * **`traverse` has joined it**, which is what the Deep Traversal handler
+ * landing means in this file. `dossier` is flag-gated and deliberately outside
+ * it, so the boot warning is now about one tool rather than two.
  */
 export const RUNNABLE_JOB_KINDS = [
   'enrich',
@@ -106,6 +157,7 @@ export const RUNNABLE_JOB_KINDS = [
   'resolve',
   'assess',
   'recommend',
+  'traverse',
 ] as const satisfies readonly JobKind[];
 
 export type RunnableJobKind = (typeof RUNNABLE_JOB_KINDS)[number];
