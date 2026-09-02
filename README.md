@@ -139,9 +139,10 @@ that lost its `where` clause still returns 200, renders empty, and passes a
 status check. Each route carries **markers read out of the database** — the
 Program's name, the Supplier's roster name, a real Risk factor's name, a real
 Family member's label — strings that can only be on the page if it loaded the
-row it is about. There is one per `<h2>` section, 34 across the thirteen
-routes, because a page is now one component per section and a section handed
-an empty prop renders nothing and still returns 200. A page whose subject does
+row it is about. There is one per `<h2>` section — 35 across the thirteen
+routes, the entity route carrying one more above its first `<h2>` for the
+Supplier its heading now names — because a page is one component per section
+and a section handed an empty prop renders nothing and still returns 200. A page whose subject does
 not exist yet is skipped by name (*"no Recommendation has been published"*)
 rather than failed, because a check that cries wolf on a fresh database is a
 check people learn to ignore.
@@ -174,7 +175,7 @@ src/
   jobs/         one handler per Job kind: resolve, enrich, traverse, assess, recommend, discover
   worker/       the long-lived poller
   fixtures/     record a real Job's rows; replay them without a key
-  lib/          canonical JSON, server-sent events, the URL view state
+  lib/          canonical JSON, server-sent events, the URL view state, the cause-walking error description
 scripts/        the checks that spend credits, the fixture recorders, smoke:pages
 tests/          unit tests, and the replay fixtures exported from real runs
 ```
@@ -257,6 +258,6 @@ Sequenced so each step is verifiable before the next depends on it
 
 All sixteen are done. What each step actually cost, and every place the spec's
 assumptions turned out to be wrong, is in
-[`docs/BUILD-NOTES.md`](docs/BUILD-NOTES.md) — 104 numbered findings, each one a
+[`docs/BUILD-NOTES.md`](docs/BUILD-NOTES.md) — 105 numbered findings, each one a
 measurement rather than an opinion. **The write-up should quote that file, not
 the spec, for any number.**
