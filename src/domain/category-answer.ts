@@ -17,6 +17,7 @@
  */
 
 import type { AnswerTone } from './supplier-answer';
+import { markWord, type RecommendationMark } from './recommendation-mark';
 
 export type CategoryAnswer = {
   tone: AnswerTone;
@@ -39,7 +40,12 @@ export type CategoryAnswerInput = {
   excluded: { reason: 'no_match' | 'no_category' }[];
   /** The published recommendation for this category, when there is one. */
   recommendation:
-    | { versionN: number; evaluatorOutcome: 'passed' | 'published_with_objections' }
+    | {
+        versionN: number;
+        evaluatorOutcome: 'passed' | 'published_with_objections';
+        /** What a person decided about it, if anybody has decided anything. */
+        humanMark: RecommendationMark | null;
+      }
     | undefined;
   recommendationHref: string;
   compareHref: string | null;
@@ -155,6 +161,16 @@ function recommendationAnswer(input: CategoryAnswerInput): CategoryAnswer | null
     };
   }
 
+  /**
+   * **A person's mark outranks the reviewer's outcome**, because it is the
+   * later act and the one a buyer is accountable for. A page that led with
+   * *"a second read agreed with it"* over a rejection would be reporting the
+   * agent's opinion of a document a human has already turned down.
+   */
+  if (input.recommendation.humanMark) {
+    return markedAnswer(input, input.recommendation.humanMark);
+  }
+
   if (input.recommendation.evaluatorOutcome === 'published_with_objections') {
     return {
       tone: 'you',
@@ -173,6 +189,53 @@ function recommendationAnswer(input: CategoryAnswerInput): CategoryAnswer | null
     because:
       'It names who to award to and who to hold as a second source, argued against the unfiltered shortlist, with every sentence cited to what it rests on.',
     actions: [{ label: 'Read the recommendation', href: input.recommendationHref }],
+  };
+}
+
+/**
+ * What a person's mark says about a Category, in CONTEXT's own words.
+ *
+ * The three read differently on purpose. *Accepted* is the only one that closes
+ * the question, so it is the only one that reads `ok`; *rejected* and *needs
+ * work* both leave a Category with a ranking and no decision, which is
+ * something waiting on a person. None of them touches the argument itself — the
+ * conditions and open questions are still the version's to state.
+ */
+function markedAnswer(input: CategoryAnswerInput, mark: RecommendationMark): CategoryAnswer {
+  const read = { label: 'Read the recommendation', href: input.recommendationHref };
+
+  if (mark === 'accepted') {
+    return {
+      tone: 'ok',
+      said: `A person accepted the recommendation for ${input.categoryName}.`,
+      because:
+        'It names who to award to and who to hold as a second source, and somebody signed off on ' +
+        'it. A re-run would write a new version and would not clear that acceptance, so this stays ' +
+        'the answer until a person marks another version instead.',
+      actions: [{ ...read, primary: true }],
+    };
+  }
+
+  if (mark === 'rejected') {
+    return {
+      tone: 'you',
+      said: `A person rejected the recommendation for ${input.categoryName}.`,
+      because:
+        'The version stands exactly as published — a mark edits no sentence and removes no pick — ' +
+        'but nobody is acting on it, so this category has a ranking and no decision behind it. ' +
+        'Re-running writes a new version to argue the case differently.',
+      actions: [{ ...read, primary: true }],
+    };
+  }
+
+  return {
+    tone: 'you',
+    said: `A person marked the recommendation for ${input.categoryName} ${markWord(mark)}.`,
+    because:
+      'Saying it needs work writes no new version; a re-run does, and that is a separate click ' +
+      'that spends. Until somebody makes it, the request is the newest thing anybody has said ' +
+      'about this category.',
+    actions: [{ ...read, primary: true }],
   };
 }
 

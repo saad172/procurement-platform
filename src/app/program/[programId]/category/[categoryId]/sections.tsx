@@ -7,6 +7,7 @@ import {
   SHORTLIST_EMPTY_LINE,
   hsLineBadge,
 } from '@/domain/category-answer';
+import { markTone, markWord } from '@/domain/recommendation-mark';
 import { confidenceTone } from '@/domain/score';
 import { CategoryActions } from './category-actions';
 
@@ -242,8 +243,15 @@ export function ArguedCase({
           <span className={`badge ${version.evaluatorOutcome === 'passed' ? 'good' : 'warn'}`}>
             {version.evaluatorOutcome.replace(/_/g, ' ')}
           </span>{' '}
+          {/*
+            The mark's words come from `domain/recommendation-mark.ts`, which
+            the Recommendation page's header reads too — the two say the same
+            thing about the same version, and a sentence written twice drifts.
+          */}
           {version.humanMark ? (
-            <span className="badge">marked {version.humanMark.replace(/_/g, ' ')} by a person</span>
+            <span className={`badge ${markTone(version.humanMark)}`}>
+              marked {markWord(version.humanMark)} by a person
+            </span>
           ) : null}
         </p>
       </div>

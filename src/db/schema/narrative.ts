@@ -136,10 +136,35 @@ export const recommendationVersion = pgTable(
      * with a strip naming any newer one (SPEC §12.5).
      */
     humanMark: recommendationMark('human_mark'),
+    /**
+     * When a person marked it. Null exactly when `human_mark` is null, because
+     * the two are one act recorded in two columns — a mark with no moment is a
+     * mark nobody can date, and the header says when as well as what.
+     *
+     * A Job never writes either: `publishVersion` writes `human_mark: null` on
+     * every version it creates, so an agent cannot accept its own argument.
+     */
     humanMarkedAt: timestamp('human_marked_at', { withTimezone: true }),
     ...versionColumns,
   },
-  (t) => [uniqueIndex('recommendation_version_n_key').on(t.recommendationId, t.n)],
+  (t) => [
+    uniqueIndex('recommendation_version_n_key').on(t.recommendationId, t.n),
+    /**
+     * **At most one accepted version per Recommendation**, as a partial unique
+     * index rather than as a rule in the action that writes marks.
+     *
+     * *Acceptance never moves* (SPEC §12.5) is the load-bearing sentence on
+     * this table: the page shows the most recent accepted version, so two
+     * accepted siblings would make "the accepted one" ambiguous and the page's
+     * answer depend on row order. The writer clears the sibling in the same
+     * transaction; this index is what makes the state unrepresentable if it
+     * ever forgets, the same way the citation CHECK guards the sentence
+     * insert rather than trusting the validator that runs before it.
+     */
+    uniqueIndex('recommendation_version_one_accepted_key')
+      .on(t.recommendationId)
+      .where(sql`${t.humanMark} = 'accepted'`),
+  ],
 );
 
 /**
