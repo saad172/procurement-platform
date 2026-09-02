@@ -13,17 +13,24 @@ import { buildAssessableSupplier, openJob } from '../support/pipeline';
 
 /**
  * `assess/published-with-objections` (SPEC §19.2) — a whole Assessment,
- * replayed end to end, ending in a disagreement neither side resolved.
+ * replayed end to end.
  *
- * ## The dissent here is real, and it was right
+ * ## The name is a lie about the current recording, and it is kept anyway
  *
- * An earlier recording under this name was renamed away, because the
- * disagreement it captured was the evaluator objecting to our own broken number
- * check (finding 69). This one is different: the evaluator argued that the
- * cited rows *"carry only a key and a value"* and do not support the
- * sub-structure the draft attributes to them. It said so across three Rounds
- * and no draft could answer it — because it held one read tool where the
- * proposer held four (finding 76).
+ * Re-recorded on 2026-09-02, this fixture **converges**: the evaluator objected
+ * once, on `number_fidelity`, to the draft's own *"this is round 1 of 3"* —
+ * a figure the model counted rather than was given — the proposer dropped it,
+ * and Round 2 passed. Two Rounds, `passed`, verdict
+ * `recommend_with_conditions`.
+ *
+ * Earlier recordings under this name published carrying an objection the
+ * evaluator would not withdraw: that the cited rows *"carry only a key and a
+ * value"* and do not support the sub-structure the draft attributed to them,
+ * held across three Rounds because the evaluator has one read tool where the
+ * proposer has four (finding 76). Finding 99 records that the outcome flips
+ * between recordings of the same prompt and that **both are legal**; re-rolling
+ * until the name came true is exactly what finding 79 forbids, and renaming per
+ * recording would make the fixture's history unreadable.
  *
  * ## The outcome is asserted as a set, not a value
  *

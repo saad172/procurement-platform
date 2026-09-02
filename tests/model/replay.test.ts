@@ -27,6 +27,14 @@ import { JOB_CAPS } from '@/config/constants';
  *
  * The fixture is `pnpm smoke:model`'s own Job, exported by
  * `pnpm fixtures:record`. Nothing in it was written by hand.
+ *
+ * Its **manifest pin** was moved on 2026-09-02 without re-running it: the
+ * assess evaluator's system prompt changed, so `buildManifest()`'s assess hash
+ * moved and `fixture-staleness.test.ts` went red, while both turns still replay
+ * byte-for-byte. Only `manifest.loopHashes.assess` was rewritten, to the value
+ * `buildManifest({ assess: 'smoke' })` returns today. `fixtures:rehash` cannot
+ * do it — that script remaps *turn* wire hashes from dumped bodies, and no turn
+ * here needed remapping.
  */
 
 const FIXTURE = join(process.cwd(), 'tests', 'fixtures', 'model', 'two-turn-tool-loop.json');
