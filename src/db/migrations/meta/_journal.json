@@ -78,6 +78,13 @@
       "when": 1788378832515,
       "tag": "0010_lame_doctor_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788379471668,
+      "tag": "0011_volatile_titanium_man",
+      "breakpoints": true
     }
   ]
 }
