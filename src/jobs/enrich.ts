@@ -5,9 +5,15 @@ import { derivedId } from '@/db/derived-id';
 import { ownersOf, parseRelationships, type ParsedEdge } from '@/domain/parse-relationships';
 import { FAMILY_TRAVERSAL_LIMIT } from '@/config/constants';
 import { COUNTRY_INDICATORS } from '@/domain/scoring/anchors';
-import { unionRiskFactors, type FamilyMemberRisk } from '@/domain/family';
+import type { FamilyMemberRisk } from '@/domain/family';
 import { nearestPlant, type PlantPoint } from '@/domain/geo';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
+import {
+  summarisePath,
+  terminalEntityOf,
+  writeFamilyMembers,
+  type FamilyMemberWrite,
+} from './family-members';
 import { upsertEntity } from './resolve';
 import type { Upstream, UpstreamResult } from '@/upstream';
 import type { SayariEntity } from '@/upstream/projections/sayari';
@@ -38,8 +44,16 @@ export type EnrichContext = {
   jobId?: string | undefined;
 };
 
-/** Records one dated call as an `enrichment` row — the Citation target. */
-async function recordEnrichment(
+/**
+ * Records one dated call as an `enrichment` row — the Citation target.
+ *
+ * Exported because the Deep Traversal writes Enrichments too, and CONTEXT is
+ * explicit that what makes an Enrichment is *the dated call*, not where the
+ * answer came from — so a walk of the ownership graph is one for exactly the
+ * same reason the automatic family read is. Two functions deriving an
+ * `enrichment.id` would be two answers to *which row does a Citation point at*.
+ */
+export async function recordEnrichment(
   ctx: EnrichContext,
   args: {
     source: (typeof t.enrichmentSource.enumValues)[number];
@@ -371,107 +385,45 @@ export async function enrichFamily(
   });
 
   const paths = result.data.data ?? [];
-  const byId = new Map<string, { entity: SayariEntity; path: unknown; depth: number }>();
+  const byId = new Map<string, FamilyMemberWrite>();
 
   for (const path of paths) {
-    // The `target` is the family member, and it arrives complete. Falling back
-    // to the last path element covers the shape where it does not.
-    const terminal = path.target ?? path.path?.[path.path.length - 1]?.entity;
-    if (!terminal || typeof terminal !== 'object' || !('id' in terminal)) continue;
-    const entity = terminal as SayariEntity;
-    if (entity.id === args.entityId) continue;
-    if (!byId.has(entity.id)) {
-      byId.set(entity.id, {
-        entity,
-        // The SHAPE of the path, not the entities along it. Each hop's entity
-        // is already upserted into `entity` and would be stored twice — and
-        // measured, one raw path was 605 KB, because a traversal payload
-        // carries a complete entity at every hop. What the UI renders is the
-        // route: which relationship types it ran through, and which
-        // `possibly_same_as` hops it took to get there.
-        path: summarisePath(path.path),
-        depth: path.path?.length ?? 1,
-      });
-    }
-  }
-
-  const truncated = paths.length >= FAMILY_TRAVERSAL_LIMIT;
-  const members: FamilyMemberRisk[] = [];
-
-  for (const [entityId, { entity, path, depth }] of byId) {
-    await upsertEntity(ctx.db, entity);
-    await ctx.db
-      .insert(t.familyMember)
-      .values({
-        enrichmentId,
-        rootEntityId: args.entityId,
-        memberEntityId: entityId,
-        path: (path ?? null) as never,
-        hopDepth: depth,
-        discoveredByJob: null,
-        truncated,
-        exploredCount: byId.size,
-        reachableCount: null,
-      })
-      /**
-       * **On the pair, not on `id`.** This used to be a bare
-       * `onConflictDoNothing()`, which conflicts on the primary key — a fresh
-       * uuid, so it never fired, and a second enrichment inserted the family
-       * again. Bosch and Magna each ended up with 100 rows for 50 members.
-       *
-       * And it updates rather than does nothing, because a re-read is newer
-       * evidence about the same pair: the path it came through and how much of
-       * the graph was covered can both have changed. `firstSeenAt` is left
-       * alone — the *new evidence* chip is computed from it.
-       */
-      .onConflictDoUpdate({
-        target: [t.familyMember.rootEntityId, t.familyMember.memberEntityId],
-        set: {
-          enrichmentId,
-          path: (path ?? null) as never,
-          hopDepth: depth,
-          truncated,
-          exploredCount: byId.size,
-        },
-      });
-
-    members.push({
-      entityId,
-      label: entity.label,
-      country: entity.countries?.[0] ?? null,
-      // Union with per-factor provenance: the traversal payload and getEntity
-      // disagree, and taking either as authoritative drops real factors.
-      factors: unionRiskFactors([{ source: 'traversal', risk: entity.risk }]).map((u) => u.factor),
-      fromDeepTraversal: false,
+    const entity = terminalEntityOf(path, args.entityId);
+    if (!entity || byId.has(entity.id)) continue;
+    byId.set(entity.id, {
+      entity,
+      // The SHAPE of the path, not the entities along it. Each hop's entity
+      // is already upserted into `entity` and would be stored twice — and
+      // measured, one raw path was 605 KB, because a traversal payload
+      // carries a complete entity at every hop. What the UI renders is the
+      // route: which relationship types it ran through, and which
+      // `possibly_same_as` hops it took to get there.
+      path: summarisePath(path.path),
+      hopDepth: path.path?.length ?? 1,
     });
   }
 
-  return { enrichmentId, members, truncated };
-}
+  const truncated = paths.length >= FAMILY_TRAVERSAL_LIMIT;
 
-/**
- * Reduces a traversal path to its route: one entry per hop, carrying the
- * relationship field and the entity id it reached.
- *
- * The entities themselves are upserted into `entity` by the caller, so storing
- * them again here would duplicate megabytes per Supplier — and a read tool
- * returning them wholesale is what fired the assess Job's 450,000-token ceiling.
- */
-function summarisePath(path: unknown): { field: string | null; entityId: string | null }[] {
-  if (!Array.isArray(path)) return [];
-  return path.map((hop) => {
-    const step = (hop ?? {}) as { field?: unknown; entity?: unknown };
-    const entity = step.entity;
-    return {
-      field: typeof step.field === 'string' ? step.field : null,
-      entityId:
-        typeof entity === 'string'
-          ? entity
-          : entity && typeof entity === 'object' && 'id' in entity
-            ? String((entity as { id: unknown }).id)
-            : null,
-    };
+  /**
+   * **The row write is shared with the Deep Traversal** (`family-members.ts`).
+   *
+   * SPEC §8.5: a Deep Traversal that reaches a subsidiary writes into this same
+   * table, distinguished by `discovered_by_job` — so both reads had exactly one
+   * thing to say about a member, and only one of them should say it. What stays
+   * here is what is particular to the automatic read: one call at `limit: 50`,
+   * `truncated` from that limit, and `reachableCount` null because this
+   * endpoint's envelope is not consulted for a reachable set.
+   */
+  const members = await writeFamilyMembers(ctx.db, {
+    rootEntityId: args.entityId,
+    enrichmentId,
+    members: [...byId.values()],
+    coverage: { truncated, exploredCount: byId.size, reachableCount: null },
+    discoveredByJob: null,
   });
+
+  return { enrichmentId, members, truncated };
 }
 
 // ── Owner edges ──────────────────────────────────────────────────────────────

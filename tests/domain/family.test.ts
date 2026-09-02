@@ -12,12 +12,17 @@ import { parseRiskObject } from '@/domain/scoring/risk-factors';
  * refuses to say rather than what it says.
  */
 
-const member = (id: string, risk: Record<string, unknown> = {}): FamilyMemberRisk => ({
+const member = (
+  id: string,
+  risk: Record<string, unknown> = {},
+  hopDepth = 1,
+): FamilyMemberRisk => ({
   entityId: id,
   label: id.toUpperCase(),
   country: 'ROU',
   factors: parseRiskObject(risk),
-  fromDeepTraversal: false,
+  hopDepth,
+  fromDeepTraversal: hopDepth > 1,
 });
 
 describe('the three badge states, and why the first two are not one state', () => {

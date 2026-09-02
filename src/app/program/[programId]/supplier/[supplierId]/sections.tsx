@@ -520,6 +520,15 @@ export function CorporateFamily({ data, programId }: { data: Data; programId: st
                         {member.label}
                       </Link>
                     </td>
+                    {/*
+                      The hop, on every member and not only on the deep ones. A
+                      Deep Traversal that reaches a subsidiary records it as a
+                      Family member LIKE ANY OTHER (CONTEXT), so it gets no
+                      badge of its own — what distinguishes it is that it sits
+                      two or three hops out, and that is a fact about the
+                      company rather than about which read found it.
+                    */}
+                    <td className="note">hop {member.hopDepth}</td>
                     <td>
                       <span className="badge warn">{member.level}</span>
                     </td>
@@ -533,7 +542,9 @@ export function CorporateFamily({ data, programId }: { data: Data; programId: st
           <p className="note" style={{ margin: 0 }}>
             {exposure.state === 'not_covered'
               ? 'The ownership graph returned nobody. That is not the same as a clean family — six of twelve sampled families returned zero members, including several that certainly have subsidiaries.'
-              : 'Members came back carrying nothing. The read is capped at 50 nodes, so an absent member proves nothing.'}
+              : exposure.partial
+                ? 'Members came back carrying nothing, and the walk stopped at its cap rather than at the end of the graph. An absent member proves nothing.'
+                : 'Members came back carrying nothing, and the walk reached the end of the graph.'}
           </p>
         )}
       </div>

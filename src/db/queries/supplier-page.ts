@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { DEFAULT_WEIGHTS } from '@/domain/score';
@@ -78,12 +78,25 @@ async function readSupplierRows(db: Database, programId: string, supplierId: str
         .select({
           member: t.entity,
           hopDepth: t.familyMember.hopDepth,
+          truncated: t.familyMember.truncated,
           exploredCount: t.familyMember.exploredCount,
           reachableCount: t.familyMember.reachableCount,
+          // A Deep Traversal writes into this same table and is distinguished
+          // by this column alone (SPEC §8.5), so the page reads it rather than
+          // assuming every member came from the automatic read.
+          discoveredByJob: t.familyMember.discoveredByJob,
         })
         .from(t.familyMember)
         .innerJoin(t.entity, eq(t.entity.id, t.familyMember.memberEntityId))
         .where(eq(t.familyMember.rootEntityId, match.entityId))
+        /**
+         * By hop depth first, because that is the order a person reads a family
+         * in: the immediate subsidiaries, then what sits behind them. The
+         * member id breaks the tie, since it is the only field guaranteed
+         * unique — and a page whose rows can reorder between two reads of the
+         * same data is a page whose screenshot cannot be trusted.
+         */
+        .orderBy(asc(t.familyMember.hopDepth), asc(t.familyMember.memberEntityId))
     : [];
 
   // Ages are computed in the query, not during render: reading a clock while

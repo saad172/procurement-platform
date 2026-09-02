@@ -87,13 +87,15 @@ async function main(): Promise<void> {
         db.query.entity.findFirst({ where: eq(t.entity.id, m.memberEntityId) }),
       ),
     );
+    const byId = new Map(members.map((m) => [m.memberEntityId, m]));
     const exposure = computeFamilyExposure(
       memberEntities.filter(Boolean).map((e) => ({
         entityId: e!.id,
         label: e!.label,
         country: e!.country,
         factors: unionRiskFactors([{ source: 'getEntity', risk: e!.risk }]).map((u) => u.factor),
-        fromDeepTraversal: false,
+        hopDepth: byId.get(e!.id)?.hopDepth ?? 1,
+        fromDeepTraversal: byId.get(e!.id)?.discoveredByJob != null,
       })),
       { explored: members.length, reachable: null },
     );

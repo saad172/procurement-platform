@@ -1,0 +1,1 @@
+ALTER TYPE "public"."enrichment_source" ADD VALUE 'sayari_deep_traversal' BEFORE 'world_bank';

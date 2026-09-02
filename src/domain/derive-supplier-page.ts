@@ -1,4 +1,9 @@
-import { computeFamilyExposure, unionRiskFactors, type FamilyExposure } from './family';
+import {
+  computeFamilyExposure,
+  unionRiskFactors,
+  type FamilyCoverage,
+  type FamilyExposure,
+} from './family';
 import { rankSentence, type ShortlistEntry } from '@/db/queries/shortlist';
 
 /**
@@ -12,8 +17,12 @@ import { rankSentence, type ShortlistEntry } from '@/db/queries/shortlist';
 
 type FamilyRow = {
   member: { id: string; label: string; country: string | null; risk: unknown };
+  hopDepth: number;
+  truncated: boolean;
   exploredCount: number | null;
   reachableCount: number | null;
+  /** Null when the automatic family read found it; a Job id for a Deep Traversal. */
+  discoveredByJob: string | null;
 };
 
 /**
@@ -28,13 +37,10 @@ type FamilyRow = {
  * the badge read *"28 of 100 explored"* against a truth of 14 of 50).
  */
 export function deriveFamilyCoverageAndExposure(familyRows: readonly FamilyRow[]): {
-  coverage: { explored: number; reachable: number | null };
+  coverage: FamilyCoverage;
   exposure: FamilyExposure;
 } {
-  const coverage = {
-    explored: familyRows[0]?.exploredCount ?? familyRows.length,
-    reachable: familyRows[0]?.reachableCount ?? null,
-  };
+  const coverage = widestCoverage(familyRows);
 
   const exposure = computeFamilyExposure(
     familyRows.map((row) => ({
@@ -44,12 +50,44 @@ export function deriveFamilyCoverageAndExposure(familyRows: readonly FamilyRow[]
       factors: unionRiskFactors([{ source: 'getEntity', risk: row.member.risk }]).map(
         (u) => u.factor,
       ),
-      fromDeepTraversal: false,
+      hopDepth: row.hopDepth,
+      // Read off the row rather than assumed: a Deep Traversal writes into this
+      // same table and is distinguished by `discovered_by_job` (SPEC §8.5).
+      fromDeepTraversal: row.discoveredByJob != null,
     })),
     coverage,
   );
 
   return { coverage, exposure };
+}
+
+/**
+ * The coverage of the **widest** read this family holds, not of whichever row
+ * came back first.
+ *
+ * Every member row carries the coverage of the read that wrote it, so once a
+ * Deep Traversal has run there are two answers in the table: the automatic
+ * read's fifty and the deep walk's two hundred. `familyRows[0]` picked between
+ * them by whatever order Postgres returned — which is the same total-order
+ * mistake that has read as fixture drift three times in this build (findings
+ * 61, 81, 100), except that here it would silently understate a family the app
+ * had already paid to explore.
+ *
+ * The widest read is the right one: a walk that explored more explored a
+ * superset, and `truncated` travels with it so a bigger number cannot arrive
+ * without the caveat that earned it.
+ */
+function widestCoverage(familyRows: readonly FamilyRow[]): FamilyCoverage {
+  const widest = familyRows.reduce<FamilyRow | undefined>(
+    (best, row) =>
+      best == null || (row.exploredCount ?? 0) > (best.exploredCount ?? 0) ? row : best,
+    undefined,
+  );
+  return {
+    explored: widest?.exploredCount ?? familyRows.length,
+    reachable: widest?.reachableCount ?? null,
+    partial: widest?.truncated ?? false,
+  };
 }
 
 /** Risk factors on the company itself, as against on its family — the entity's own `risk` block, unioned with nothing else. */

@@ -130,9 +130,34 @@ export const usageOutcome = pgEnum('usage_outcome', ['ok', 'error']);
  * which is why Sayari's own `negativeNews` counts, and so does the Corporate
  * family, drawn from the entity graph itself (CONTEXT.md, *Enrichment*).
  */
+/**
+ * Where an Enrichment came from — **one value per dated call**, not per API.
+ *
+ * `sayari_deep_traversal` is separate from `sayari_ownership_family`, and the
+ * separation is load-bearing rather than tidy. Three reasons, each on its own
+ * sufficient:
+ *
+ * 1. **It is not the same read.** The family source is documented on
+ *    `family_member` as *downward-only and psa-routed*, one call at `limit: 50`
+ *    — and half a Deep Traversal is `traversal.ubo`, which walks **upward**.
+ *    Labelling an upward walk with a source whose own definition says downward
+ *    would put a false label on a citable row.
+ * 2. **A person asked for it.** CONTEXT: a Deep Traversal is *"a Job a person or
+ *    the chat triggers on demand"*, distinct from the family, which is
+ *    *"fetched for every accepted Profile without anyone asking"*. The
+ *    Enrichments panel answers *what did we fetch, and when*; collapsing the two
+ *    would make a spend somebody consented to indistinguishable from one the
+ *    pipeline made on its own.
+ * 3. **The id is derived from the source.** `recordEnrichment` derives
+ *    `enrichment.id` from `source:subjectKind:subjectKey` plus a counted
+ *    generation, so a shared source would make a Deep Traversal of a Profile
+ *    simply the *next generation* of its Corporate family — a re-read of
+ *    something it is not a re-read of.
+ */
 export const enrichmentSource = pgEnum('enrichment_source', [
   'sayari_negative_news',
   'sayari_ownership_family',
+  'sayari_deep_traversal',
   'world_bank',
   'gleif',
   'usitc',
