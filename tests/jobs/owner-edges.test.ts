@@ -114,3 +114,57 @@ describe('enrich reads ownership from the matched entity, not from any cached bo
     ).toEqual([]);
   });
 });
+
+/**
+ * **Country threading** (finding 107): whatever country the World Bank fetch
+ * used is exactly the country `country_resilience` and `tariff_exposure`
+ * score, on the same Supplier this file already builds through the real
+ * pipeline.
+ *
+ * Yazaki's roster and Profile both read `JPN`, so this is the **non-diverging**
+ * case — `deriveSiteCountry`'s `tests/jobs/site-country.test.ts` covers the
+ * `pass`/`fail`/`unavailable`/no-verdict branches directly against the
+ * database; `tests/domain/score.test.ts` covers the divergent rendering. What
+ * this level adds is the one thing neither of those touches: that the real
+ * `enrichSupplier` fan-out fetches and the real Criteria score **the same**
+ * country, end to end.
+ */
+describe('enrich fetches and scores one country, end to end (finding 107)', () => {
+  it("country_resilience and the world_bank fetch agree on Yazaki's site country", async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const db = await getTestDb();
+
+    await resetDerived(db);
+    const { supplierId } = await buildAssessableSupplier(db, ROSTER_NAME);
+
+    const countryValue = await db.query.criterionValue.findFirst({
+      where: and(
+        eq(t.criterionValue.supplierId, supplierId),
+        eq(t.criterionValue.criterionKey, 'country_resilience'),
+        eq(t.criterionValue.isCurrent, true),
+      ),
+    });
+    expect(countryValue, 'country_resilience should have written a current value').toBeTruthy();
+    const rawInputs = countryValue!.rawInputs as { country?: string | null };
+    expect(rawInputs.country).toBeTruthy();
+
+    const fetched = await db
+      .select({ country: t.countryIndicator.country })
+      .from(t.countryIndicator)
+      .where(eq(t.countryIndicator.country, rawInputs.country!));
+    expect(
+      fetched.length,
+      `country_resilience scored ${rawInputs.country}, but no world_bank row was fetched for it`,
+    ).toBeGreaterThan(0);
+
+    const tariffValue = await db.query.criterionValue.findFirst({
+      where: and(
+        eq(t.criterionValue.supplierId, supplierId),
+        eq(t.criterionValue.criterionKey, 'tariff_exposure'),
+        eq(t.criterionValue.isCurrent, true),
+      ),
+    });
+    const tariffRaw = tariffValue!.rawInputs as { originCountry?: string | null };
+    expect(tariffRaw.originCountry).toBe(rawInputs.country);
+  });
+});

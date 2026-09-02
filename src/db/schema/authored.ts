@@ -145,7 +145,11 @@ export const supplier = pgTable(
     rosterIndex: integer('roster_index'),
     rosterName: text('roster_name'),
     rosterAddress: text('roster_address'),
-    /** ISO3 as the roster gives it. The *scored* country is the Profile's (SPEC §9.4). */
+    /**
+     * ISO3 as the roster gives it. The *scored* country is the settled site's
+     * (SPEC §9.4, finding 107): this one, normalised, when the settled
+     * candidate's `country` Discriminator passed — the Profile's own otherwise.
+     */
     rosterCountry: text('roster_country'),
     createdAt: now(),
   },

@@ -3,6 +3,7 @@ import {
   compareAddress,
   containsWholeWord,
   normaliseAddress,
+  normaliseCountryToIso3,
   sameCountry,
 } from '@/domain/match/address-ladder';
 
@@ -107,5 +108,28 @@ describe('country comparison', () => {
     expect(sameCountry('DEU', 'Germany')).toBe(true);
     expect(sameCountry('USA', 'United States')).toBe(true);
     expect(sameCountry('KOR', 'Republic of Korea')).toBe(true);
+  });
+});
+
+/**
+ * `normaliseCountryToIso3` — the single normaliser `sameCountry()` above and
+ * the site-country derivation (`src/jobs/enrich-supplier.ts`, finding 107)
+ * both reuse.
+ */
+describe('normaliseCountryToIso3', () => {
+  it('returns an already-ISO3 value uppercased', () => {
+    expect(normaliseCountryToIso3('DEU')).toBe('DEU');
+    expect(normaliseCountryToIso3('jpn')).toBe('JPN');
+  });
+
+  it('resolves a known prose alias to ISO3', () => {
+    expect(normaliseCountryToIso3('Germany')).toBe('DEU');
+    expect(normaliseCountryToIso3('Japan')).toBe('JPN');
+    expect(normaliseCountryToIso3('South Korea')).toBe('KOR');
+  });
+
+  it('returns null for a spelling it cannot place, rather than guessing', () => {
+    expect(normaliseCountryToIso3('Sweden')).toBeNull();
+    expect(normaliseCountryToIso3('Ruritania')).toBeNull();
   });
 });

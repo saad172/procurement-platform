@@ -57,8 +57,16 @@ export type SupplierScoringInput = {
     | {
         entityId: string;
         legalName: string;
-        /** **The Profile's country is what is scored**, never the roster's. */
+        /**
+         * **What is scored is the settled site's country** (finding 107): the
+         * roster country, normalised to ISO3, when the settled candidate's
+         * `country` Discriminator verdict is `pass`; otherwise the Profile's own.
+         */
         country?: string | undefined;
+        /** Sayari's own country on the Profile, kept alongside `country` so a reader sees both when they differ. */
+        profileCountry?: string | undefined;
+        /** Which of the two `country` is: `'site'` (the roster's) or `'profile'` (Sayari's). */
+        countrySource?: 'site' | 'profile' | undefined;
         lat?: number | undefined;
         lon?: number | undefined;
         coordinatePrecision?: string | undefined;

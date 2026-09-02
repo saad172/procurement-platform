@@ -279,11 +279,21 @@ const COUNTRY_ALIASES: Record<string, string> = {
   'republic of korea': 'KOR',
 };
 
+/**
+ * ISO3 where the value already is one, or is a known alias; `null` where it
+ * cannot be told apart from an arbitrary string.
+ *
+ * The single normaliser both `sameCountry()` (below) and the site-country
+ * derivation (`src/jobs/enrich-supplier.ts`, finding 107) reuse, so a roster
+ * spelling either both agree is ISO3 or neither does.
+ */
+export function normaliseCountryToIso3(value: string): string | null {
+  const trimmed = value.trim();
+  if (/^[A-Za-z]{3}$/.test(trimmed)) return trimmed.toUpperCase();
+  return COUNTRY_ALIASES[normaliseAddress(trimmed)] ?? null;
+}
+
 export function sameCountry(a: string, b: string): boolean {
-  const canon = (value: string) => {
-    const trimmed = value.trim();
-    if (/^[A-Za-z]{3}$/.test(trimmed)) return trimmed.toUpperCase();
-    return COUNTRY_ALIASES[normaliseAddress(trimmed)] ?? trimmed.toUpperCase();
-  };
+  const canon = (value: string) => normaliseCountryToIso3(value) ?? value.trim().toUpperCase();
   return canon(a) === canon(b);
 }

@@ -438,3 +438,49 @@ describe('data confidence is a badge, not a Criterion', () => {
     expect(scoreSupplier(strong).score).toBeCloseTo(scoreSupplier(adequate).score!, 9);
   });
 });
+
+/**
+ * **Country resilience and tariff origin score `profile.country`** — which is
+ * the settled site's country by the time `assembleScoringInput`
+ * (`src/jobs/enrich-supplier.ts`) builds it, never re-derived here (finding
+ * 107). What this level tests is the rendering: `rawInputs` carries
+ * `profileCountry` and `countrySource` **only where they diverge** from the
+ * country actually scored — Sumitomo Electric's shape, kept both apart rather
+ * than silently agreeing with itself, without repeating the same country twice
+ * on every Supplier whose Profile and site simply agree (as most do).
+ */
+describe('country resilience and tariff exposure score the settled site (finding 107)', () => {
+  const sumitomoLike = (countrySource: 'site' | 'profile') =>
+    completeInput({
+      profile: {
+        ...completeInput().profile!,
+        country: 'JPN',
+        profileCountry: 'SWE',
+        countrySource,
+      },
+    });
+
+  it('carries both countries in rawInputs when the site and the Profile disagree', () => {
+    const r = scoreSupplier(sumitomoLike('site'));
+    const country = r.criteria.find((c) => c.key === 'country_resilience')!;
+    const tariff = r.criteria.find((c) => c.key === 'tariff_exposure')!;
+    expect(country.outcome.rawInputs.country).toBe('JPN');
+    expect(country.outcome.rawInputs.profileCountry).toBe('SWE');
+    expect(country.outcome.rawInputs.countrySource).toBe('site');
+    expect(tariff.outcome.rawInputs.originCountry).toBe('JPN');
+    expect(tariff.outcome.rawInputs.profileCountry).toBe('SWE');
+    expect(tariff.outcome.rawInputs.countrySource).toBe('site');
+  });
+
+  it('omits both fields when the site and the Profile already agree', () => {
+    // `completeInput()`'s Profile carries no `profileCountry` at all — the
+    // ordinary shape for a Supplier this finding never touches.
+    const r = scoreSupplier(completeInput());
+    const country = r.criteria.find((c) => c.key === 'country_resilience')!;
+    const tariff = r.criteria.find((c) => c.key === 'tariff_exposure')!;
+    expect(country.outcome.rawInputs.profileCountry).toBeUndefined();
+    expect(country.outcome.rawInputs.countrySource).toBeUndefined();
+    expect(tariff.outcome.rawInputs.profileCountry).toBeUndefined();
+    expect(tariff.outcome.rawInputs.countrySource).toBeUndefined();
+  });
+});
