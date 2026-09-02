@@ -299,9 +299,16 @@ export async function finishJob(
  * It does **not** settle the Run — the caller does, because a retry of one Job
  * and a retry of every stopped Job in a Run are one act each, and both end with
  * the same single settle.
+ *
+ * **It discards the Round checkpoints**, which is the whole difference between
+ * this and `resumeRun`: *a Job at its ceiling is re-runnable, never resumable*
+ * (SPEC §18.2). A retry is a person saying *do it again*, and continuing from
+ * the Round that ran into a runaway loop would be the opposite of what they
+ * asked for. A pause is the other case, and `resumeRun` leaves them standing.
  */
 export async function requeueJobs(db: Database, jobIds: readonly string[]): Promise<void> {
   if (jobIds.length === 0) return;
+  await db.delete(t.jobRound).where(inArray(t.jobRound.jobId, [...jobIds]));
   await db
     .update(t.job)
     .set({

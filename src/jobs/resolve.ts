@@ -138,6 +138,39 @@ export type ResolveDeps = {
      */
     entityIdsSeen: string[];
   }>;
+  /**
+   * Where a paused Match ladder picks back up (SPEC §5.3, §18.2). Absent
+   * outside a Job, and absent on a first attempt in the sense that it loads
+   * nothing.
+   */
+  checkpoint?: MatchLadderCheckpoint | undefined;
+};
+
+/**
+ * What a resumed Match ladder has to be able to restate.
+ *
+ * Candidate *ids* rather than the Candidates themselves: a `CandidateFacts` is
+ * a projection of a Sayari entity, and re-projecting it from the entity body —
+ * which `upstream_response` already holds, so the re-fetch is a cache hit and
+ * spends no credit — keeps the checkpoint from becoming a second, staler copy
+ * of a payload we store once. The rung each was found by rides with it, because
+ * the Needs Review view answers *what did it take to find this?* from it.
+ *
+ * `lastRound` is deliberately **not** carried. It exists to attribute the last
+ * Round's verdicts to the agent that produced them, and a resumed ladder has no
+ * last Round of its own until it runs one — so the Candidates it parks fall
+ * back to our own Discriminator run, reported as `rules`, which is true.
+ */
+export type MatchLadder = {
+  rungsUsed: string[];
+  objection: string | null;
+  /** `[entityId, rung]`, in the order the ladder saw them. */
+  foundByRung: [string, string][];
+};
+
+export type MatchLadderCheckpoint = {
+  load: () => Promise<{ roundN: number; ladder: MatchLadder } | undefined>;
+  save: (roundN: number, ladder: MatchLadder) => Promise<void>;
 };
 
 export type ResolveOutcome = {
@@ -446,6 +479,22 @@ async function runRoundLadder(
     foundByRung: new Map(candidates.map((c) => [c.entityId, 'R1'])),
   };
 
+  /**
+   * **Resume continues; it does not restart.** The Rounds a paused ladder
+   * already ran are exactly the spend somebody agreed to, and re-running them
+   * would also re-ask a question the agents have already answered.
+   */
+  const resumed = await deps.checkpoint?.load();
+  if (resumed) {
+    state.rungsUsed = resumed.ladder.rungsUsed;
+    state.objection = resumed.ladder.objection ?? undefined;
+    for (const [entityId, rung] of resumed.ladder.foundByRung) {
+      // In the recorded order, so the resumed prompt lists the Candidates in
+      // the order the paused one did — and the seeded shuffle reproduces.
+      await absorbCandidates(deps, state, [entityId], rung);
+    }
+  }
+
   const parked = (roundsRun: number, terminatedReason: string | undefined) => ({
     outcome: null as null,
     state: {
@@ -458,7 +507,7 @@ async function runRoundLadder(
     },
   });
 
-  for (let roundN = 1; roundN <= MAX_ROUNDS; roundN += 1) {
+  for (let roundN = (resumed?.roundN ?? 0) + 1; roundN <= MAX_ROUNDS; roundN += 1) {
     // The seed is derived from the attempt and the Round, so a replay
     // reconstructs the same prompt rather than a differently-ordered one.
     const seed = seedFor(`${args.supplierId}`, roundN);
@@ -490,6 +539,15 @@ async function runRoundLadder(
      * than left unsettled.
      */
     if (round.terminatedReason) return parked(roundN, round.terminatedReason);
+
+    // ── The Round boundary ────────────────────────────────────────────────
+    // The Round is over and settled nothing, so this is where the next one —
+    // or the next attempt — starts from.
+    await deps.checkpoint?.save(roundN, {
+      rungsUsed: state.rungsUsed,
+      objection: state.objection ?? null,
+      foundByRung: [...state.foundByRung.entries()],
+    });
   }
 
   return parked(MAX_ROUNDS, undefined);

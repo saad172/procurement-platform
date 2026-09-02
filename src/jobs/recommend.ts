@@ -16,6 +16,7 @@ import { getRegistry, type ToolContext, type ToolDefinition } from '@/tools';
 import type { ModelContext } from '@/model/types';
 import { buildEvidence, buildFrozenInputs, parseObjections } from './assess';
 import { publishVersion } from './publish';
+import { roundCheckpoint } from './round-checkpoint';
 import { UnpublishableDraftError, type EvaluationResult, type ProposalResult } from './rounds';
 import { runProposerEvaluatorLoop } from './rounds';
 import { raiseIfStopped } from './stops';
@@ -58,6 +59,9 @@ export async function recommendCategory(
     propose: (roundArgs) => runRecommendPropose(ctx, roundArgs),
     validate: (draft) => validateRecommendDraft(ctx, draft),
     evaluate: (roundArgs) => runRecommendEvaluate(ctx, roundArgs),
+    // Eight Categories at up to three Rounds each is where a restart costs
+    // most, so a paused recommend continues from the Round it reached.
+    ...(deps.jobId ? { checkpoint: roundCheckpoint<RecommendDraft>(db, deps.jobId) } : {}),
   });
 
   /**

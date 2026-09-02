@@ -3,7 +3,14 @@ import * as t from '@/db/schema';
 import type { Database } from '@/db/client';
 import type { Upstream } from '@/upstream';
 import { PREPASS_CANDIDATES } from '@/config/constants';
-import { prepassCandidateIds, resolveSupplier, type ResolveOutcome } from './resolve';
+import { loadRoundCheckpoint, saveRoundCheckpoint } from './checkpoint';
+import {
+  prepassCandidateIds,
+  resolveSupplier,
+  type MatchLadder,
+  type MatchLadderCheckpoint,
+  type ResolveOutcome,
+} from './resolve';
 import { makeRunRound, type ResolveRoundDeps } from './resolve-round';
 
 /**
@@ -62,6 +69,13 @@ export async function runResolveJob(
        * the rows rules could not settle.
        */
       ...(deps.round ? { runRound: makeRunRound(deps.round) } : {}),
+      /**
+       * The Round boundary is the resume point, and it is assembled here rather
+       * than inside the ladder for the same reason `runRound` is: the ladder
+       * stays runnable with no Job and no database, which is what the
+       * deterministic Discriminator tests depend on.
+       */
+      ...(deps.jobId ? { checkpoint: matchLadderCheckpoint(deps.db, deps.jobId) } : {}),
     },
     {
       supplierId: supplier.id,
@@ -77,4 +91,23 @@ export async function runResolveJob(
       jobId: deps.jobId,
     },
   );
+}
+
+/**
+ * The Match ladder's checkpoint, bound to one Job.
+ *
+ * The stored shape is the ladder's own (`MatchLadder`): the rungs it has
+ * climbed, the objection the next Round has to answer, and every Candidate it
+ * has seen with the rung that found it. Re-projecting the Candidates from their
+ * cached entity bodies is what keeps this from being a second copy of a payload
+ * the database already holds once.
+ */
+function matchLadderCheckpoint(db: Database, jobId: string): MatchLadderCheckpoint {
+  return {
+    load: async () => {
+      const stored = await loadRoundCheckpoint<MatchLadder>(db, jobId);
+      return stored ? { roundN: stored.n, ladder: stored.checkpoint } : undefined;
+    },
+    save: (roundN, ladder) => saveRoundCheckpoint(db, jobId, roundN, ladder),
+  };
 }

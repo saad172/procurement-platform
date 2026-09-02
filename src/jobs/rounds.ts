@@ -116,14 +116,35 @@ export type LoopDeps<TDraft> = {
    */
   evaluate: (args: { roundN: number; draft: TDraft }) => Promise<EvaluationResult>;
   maxRounds?: number | undefined;
+  /**
+   * Where a paused Job picks the ladder back up (SPEC §5.3, §18.2).
+   *
+   * Absent outside a Job — the deterministic tests run the ladder with no
+   * database at all — and a Job on its first attempt simply loads nothing.
+   */
+  checkpoint?: LoopCheckpoint<TDraft> | undefined;
 };
 
-type RoundState<TDraft> = {
+/**
+ * Everything a Round after the first reads back.
+ *
+ * It is the checkpoint's payload as well as the loop's working state, and
+ * deliberately the same object: a resume that restored *some* of what a Round
+ * had accumulated would produce a Round arguing with objections it could no
+ * longer see.
+ */
+export type RoundState<TDraft> = {
   rounds: RoundRecord[];
   carriedObjections: string[];
   lastDraft: TDraft | undefined;
   /** Empty unless the most recent draft failed the code checks. */
   lastCodeObjections: Objection[];
+};
+
+export type LoopCheckpoint<TDraft> = {
+  /** The last Round that finished, and the state it finished in. */
+  load: () => Promise<{ roundN: number; state: RoundState<TDraft> } | undefined>;
+  save: (roundN: number, state: RoundState<TDraft>) => Promise<void>;
 };
 
 export async function runProposerEvaluatorLoop<TDraft>(
@@ -137,9 +158,26 @@ export async function runProposerEvaluatorLoop<TDraft>(
     lastCodeObjections: [],
   };
 
-  for (let roundN = 1; roundN <= maxRounds; roundN += 1) {
+  /**
+   * **Resume continues; it does not restart.**
+   *
+   * A budget pause is the only stop that returns to `running`, and the Rounds
+   * already paid for are exactly the spend the person agreed to. Restarting
+   * would charge for them twice and produce a different argument besides —
+   * the objections a resumed Round answers are the ones the paused Round drew.
+   */
+  const resumed = await deps.checkpoint?.load();
+  if (resumed) Object.assign(state, resumed.state);
+
+  for (let roundN = (resumed?.roundN ?? 0) + 1; roundN <= maxRounds; roundN += 1) {
     const round = await runOneRound(deps, roundN, state);
     if (round.outcome) return round.outcome;
+
+    // ── The Round boundary ──────────────────────────────────────────────────
+    // Reached only when the Round produced no outcome, which is what makes it
+    // a boundary: the next Round starts from here, whether it starts now or
+    // after somebody presses Resume.
+    await deps.checkpoint?.save(roundN, state);
   }
 
   return settleAfterMaxRounds(state, maxRounds);

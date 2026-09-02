@@ -16,6 +16,7 @@ import { toRunnableTools } from '@/model/tool-adapter';
 import * as assessPrompts from '@/model/prompts/assess';
 import { getRegistry, type ToolContext, type ToolDefinition } from '@/tools';
 import { citationKey, publishVersion, resolveCitations } from './publish';
+import { roundCheckpoint } from './round-checkpoint';
 import {
   UnpublishableDraftError,
   runProposerEvaluatorLoop,
@@ -338,6 +339,9 @@ export async function assessSupplier(
     propose: (roundArgs) => runAssessPropose(ctx, roundArgs),
     validate: (draft) => validateAssessDraft(ctx, draft),
     evaluate: (roundArgs) => runAssessEvaluate(ctx, roundArgs),
+    // A Job resumes at its last Round boundary; a run of this function outside
+    // one (the deterministic tests) has nowhere to checkpoint to and needs none.
+    ...(deps.jobId ? { checkpoint: roundCheckpoint<AssessDraft>(db, deps.jobId) } : {}),
   });
 
   /**
