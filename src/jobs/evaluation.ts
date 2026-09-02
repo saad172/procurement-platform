@@ -25,9 +25,7 @@ import { readSubmission } from './submission';
 /** One free retry, then the turn is recorded as unreviewed. */
 const FREE_RETRIES = 1;
 
-type VerdictRead =
-  | { ok: true; verdict: EvaluationPayload }
-  | { ok: false; problem: string };
+type VerdictRead = { ok: true; verdict: EvaluationPayload } | { ok: false; problem: string };
 
 /**
  * Runs the evaluator turn, once, and reads its verdict — retrying **free** if
@@ -99,12 +97,32 @@ export function readVerdict(result: RunLoopOutcome): VerdictRead {
  * evaluator saying it could not check something is not the evaluator saying the
  * draft is wrong, and charging a Round for it would spend the budget on our own
  * blind spots.
+ *
+ * **But a review has to have reviewed something.** A verdict of six
+ * `unavailable`s carries no failure and confirms nothing either, and reading it
+ * as a pass would publish `passed` on a draft the second agent could not check
+ * a single claim of — which is finding 76's blindness with a tool schema in
+ * front of it. So the rule has two halves: no item failed, **and** at least one
+ * item passed. The all-unavailable case becomes an objection of its own, in the
+ * evaluator's own words, and survives to dissent if nothing later settles it.
  */
 export function resultFrom(verdict: EvaluationPayload): EvaluationResult {
   const objections = verdict.items
     .filter((item) => item.verdict === 'fail')
     .map((item) => `${item.item} — ${item.reasoning}`);
   const text = renderVerdict(verdict);
+
+  if (objections.length === 0 && !verdict.items.some((item) => item.verdict === 'pass')) {
+    return {
+      kind: 'objections',
+      objections: [
+        'The evaluator could not verify any rubric item — every one came back unavailable, ' +
+          `so nothing in this draft has been checked. It said: ${verdict.summary}`,
+      ],
+      rubric: verdict,
+      text,
+    };
+  }
 
   return objections.length === 0
     ? { kind: 'pass', rubric: verdict, text }

@@ -49,6 +49,33 @@ describe('a fail is an objection; a pass and an unavailable are not', () => {
     );
   });
 
+  it('refuses to call six unavailables a pass — nothing was verified', () => {
+    /**
+     * A review has to have reviewed something. No item failed, and no item
+     * passed either: reading that as a pass would publish `passed` on a draft
+     * whose second agent could not check a single claim — finding 76's
+     * blindness, with a tool schema in front of it.
+     */
+    const blind = resultFrom(
+      verdict(Object.fromEntries(RUBRIC_ITEMS.map((item) => [item, 'unavailable']))),
+    );
+    expect(blind.kind).toBe('objections');
+    expect(blind.kind === 'objections' && blind.objections[0]).toMatch(
+      /could not verify any rubric item/,
+    );
+    // The evaluator's own words ride along, so the dissent line says what it said.
+    expect(blind.kind === 'objections' && blind.objections[0]).toContain('the draft holds up');
+    // One `pass` beside them is a review: the item it checked, it checked.
+    expect(
+      resultFrom(
+        verdict({
+          ...Object.fromEntries(RUBRIC_ITEMS.map((item) => [item, 'unavailable'])),
+          support: 'pass',
+        }),
+      ).kind,
+    ).toBe('pass');
+  });
+
   it('carries the failed items’ reasoning lines forward, and only those', () => {
     const result = resultFrom(verdict({ strength: 'fail', caveats: 'fail' }));
     expect(result.kind).toBe('objections');
@@ -86,7 +113,7 @@ describe('reading the submitted verdict', () => {
     five.items = five.items.slice(0, 5);
     const read = readVerdict(done([{ name: 'submit_evaluation', input: five }]));
     expect(read.ok).toBe(false);
-    expect(read.ok === false && read.problem).toMatch(/did not parse|names no/);
+    expect(read.ok === false && read.problem).toMatch(/payload our schema rejects/);
   });
 
   it('refuses a verdict that repeats one item and skips another', () => {
@@ -102,7 +129,7 @@ describe('reading the submitted verdict', () => {
   it('names the tools that were called when none of them was the submit', () => {
     const read = readVerdict(done([{ name: 'get_assessment_brief', input: {} }]));
     expect(read.ok).toBe(false);
-    expect(read.ok === false && read.problem).toMatch(/no submit_evaluation was called/);
+    expect(read.ok === false && read.problem).toMatch(/ended without calling submit_evaluation/);
     expect(read.ok === false && read.problem).toMatch(/get_assessment_brief/);
   });
 
