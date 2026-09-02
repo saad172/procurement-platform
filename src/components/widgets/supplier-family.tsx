@@ -1,25 +1,26 @@
+import { isCountryDerived } from '@/domain/scoring/risk-factors';
 import { RawPayload } from './raw';
-import { arr, bool, isObj, num, str } from './parts-card';
+import { arr, bool, isObj, num, str } from './narrow';
 
 /**
- * `supplier_family` — mirrors `CorporateFamily`'s *not covered* vs *n explored*
- * framing (`src/app/program/[programId]/supplier/[supplierId]/sections.tsx`,
- * CONTEXT.md's *Corporate family*). **No link**: this payload carries no
- * `programId` and no `supplierId` for the entity or supplier pages to hang off.
+ * `supplier_family` — the Supplier page's `CorporateFamily` section
+ * (`src/app/program/[programId]/supplier/[supplierId]/sections.tsx`), the
+ * *not covered* vs *n explored* framing CONTEXT.md's **Corporate family**
+ * entry defines (SPEC §8). **No link**: this payload carries no `programId`
+ * and no `supplierId` for the entity or supplier pages to hang off — only the
+ * root `entityId`, which names the Profile but cannot address the page it
+ * came from.
  *
- * The page's own exposure badge excludes country-derived factors by a
- * `metadata.country` marker (`domain/scoring/risk-factors.ts`
- * `isCountryDerived`), and `get_supplier_family`'s projection drops that marker
- * before freezing. Rather than claim the page's exact *exposure found / no
- * exposure found* verdict on data that cannot reproduce it, this filters the
- * three named country-derived factors by name (`cpi_score`, `basel_aml`,
- * `eu_high_risk_third`, per `db/schema/entities.ts`) as a labelled
- * approximation, and shows every other factor a member carries.
+ * `get_supplier_family`'s projection (`src/tools/catalog/reads.ts`) now
+ * carries each factor's `country` marker alongside its name and level, so
+ * this widget excludes country-derived factors the same way the page and
+ * `score.ts` do — through `isCountryDerived()`, one predicate, rather than
+ * re-testing the three factor names it used to hold as its own copy.
  */
-const COUNTRY_DERIVED_NAMES = new Set(['cpi_score', 'basel_aml', 'eu_high_risk_third']);
-
 export function SupplierFamilyWidget({ payload }: { payload: unknown }) {
   const f = parse(payload);
+  // Falls back rather than throws: a widget frozen onto a message outlives
+  // the shape `parse()` expects (finding 103).
   if (!f) return <RawPayload payload={payload} />;
   if (f.members.length === 0) {
     return (
@@ -34,9 +35,21 @@ export function SupplierFamilyWidget({ payload }: { payload: unknown }) {
   return (
     <div>
       <span className="badge">
-        {f.explored} explored{f.truncated ? ' · capped, more may exist' : ''}
+        {/*
+          Never invented from `members.length`: that count is rows PRESENT,
+          not rows the traversal reported covering, and the two differ
+          whenever a Profile was enriched twice (`get_supplier_family`'s own
+          comment). A payload frozen before `explored` existed says so rather
+          than silently answering a different question.
+        */}
+        {f.explored != null ? `${f.explored} explored` : 'explored count not frozen'}
+        {f.truncated ? ' · capped, more may exist' : ''}
       </span>
-      <table style={{ marginTop: '0.5rem' }}>
+      <p className="note" style={{ margin: '0.4rem 0' }}>
+        Country-derived factors — CPI, Basel AML, EU high-risk-third — are excluded here, the same
+        exclusion Compliance risk applies on the page (finding 103).
+      </p>
+      <table style={{ marginTop: '0.3rem' }}>
         <tbody>
           {f.members.map((m) => (
             <MemberRow key={m.entityId} member={m} />
@@ -47,8 +60,18 @@ export function SupplierFamilyWidget({ payload }: { payload: unknown }) {
   );
 }
 
+/** One member: label, sanctioned badge, country, hop depth, and up to three of its own (non-country-derived) risk factors. */
 function MemberRow({ member }: { member: Parsed['members'][number] }) {
-  const own = member.riskFactors.filter((r) => !COUNTRY_DERIVED_NAMES.has(r.name) && r.level);
+  const own = member.riskFactors.filter(
+    (r) =>
+      !isCountryDerived({
+        name: r.name,
+        level: undefined,
+        country: r.country,
+        traversalPath: null,
+        value: null,
+      }) && r.level,
+  );
   return (
     <tr>
       <td>
@@ -95,16 +118,22 @@ function parse(payload: unknown) {
         sanctioned: bool(m.sanctioned),
         riskFactors: arr(m.riskFactors)
           .map((r) =>
-            isObj(r) && str(r.name) ? { name: str(r.name)!, level: str(r.level) } : null,
+            isObj(r) && str(r.name)
+              ? {
+                  name: str(r.name)!,
+                  level: str(r.level),
+                  country: 'country' in r ? r.country : null,
+                }
+              : null,
           )
-          .filter((r): r is { name: string; level: string | null } => r !== null),
+          .filter((r): r is { name: string; level: string | null; country: unknown } => r !== null),
       };
     })
     .filter((m): m is NonNullable<typeof m> => m !== null);
 
   return {
     entityId: str(payload.entityId)!,
-    explored: num(payload.explored) ?? members.length,
+    explored: num(payload.explored),
     truncated: bool(payload.truncated),
     members,
   };

@@ -178,3 +178,51 @@ function recommendationAnswer(input: CategoryAnswerInput): CategoryAnswer | null
 
 /** One decimal, because that is what the Shortlist displays and ties share. */
 const format = (n: number) => n.toFixed(1);
+
+/**
+ * ── The Shortlist and Excluded block's wording ──
+ *
+ * The words below this line are a second, smaller thing this file holds: not
+ * `categoryAnswer()`'s two-sentence verdict, but the fixed strings the
+ * Shortlist table itself uses — its empty state, its Excluded block's
+ * heading and per-reason text, and the HS-line badge. The Category page's
+ * `Shortlist`/`Excluded` sections and the `shortlist_table`/`category_summary`
+ * chat widgets draw the same rows through two different renderers, and a
+ * sentence written twice is a sentence that drifts: this is what stops
+ * "no settled match, no estimated criterion" turning into two different
+ * sentences the day one side is edited and the other is not.
+ */
+
+/** The Shortlist's empty state — the page's table and the widget's alike. */
+export const SHORTLIST_EMPTY_LINE = 'Nothing is ranked here yet.';
+
+/** The Excluded block's heading, page and widget alike (CONTEXT.md's Shortlist entry: excluded is never a low Score). */
+export const EXCLUDED_HEADING = 'In this program, but not rankable yet';
+
+/**
+ * One record per exclusion reason (SPEC §13.3's two DISTINCT reasons),
+ * carrying both the page's full paragraph and the widget's one-line caption
+ * — so a reason describes itself once, not twice at two lengths.
+ */
+export const EXCLUDED_REASONS = {
+  no_match: {
+    heading: 'No settled match — we could not say which company this is',
+    note: 'These carry no score and show no estimated criterion. Opening one shows the resolver’s candidates and rounds, not a breakdown.',
+    caption: '— no settled match, no estimated criterion',
+  },
+  no_category: {
+    heading: 'Not mapped to any category in this program',
+    note: 'These walk the whole lifecycle and simply reach no shortlist. It is the honest shape of a real roster.',
+    caption: '— not mapped to this category',
+  },
+} as const;
+
+/**
+ * The Tariff table's per-HS-line badge. `isDefault` is the one line a
+ * Category's Score is computed from; every other HS line the buyer might
+ * also import under is shown, never hidden, but is not what `tariffExposure`
+ * reads.
+ */
+export function hsLineBadge(isDefault: boolean): 'scored' | 'candidate' {
+  return isDefault ? 'scored' : 'candidate';
+}

@@ -1,17 +1,23 @@
 import { RawPayload } from './raw';
-import { isoDate, isObj, str } from './parts-card';
+import { isoDate, isObj, str } from './narrow';
 
 /**
- * `record_card` — mirrors the Record page's one field table plus its `Fields`
- * section (`src/app/program/[programId]/record/[...recordId]/{page,sections}.tsx`),
- * the bottom of a Citation hop.
+ * `record_card` — the Record page's own answer strip
+ * (`src/app/program/[programId]/record/[...recordId]/page.tsx`, the `<h1>`/
+ * `<table>` above its one section) plus `Fields`' collapsed JSON
+ * (`sections.tsx`) — **level five, the bottom of a Citation hop** and of the
+ * spine `Program → Category → Supplier → Sayari entity → record` (SPEC
+ * §13.1).
  *
  * `get_record`'s payload is the raw `record` row (SPEC §3.2). **No link**: a
- * record id is a path (`source/{record}/timestamp`) and the page needs a
- * `programId` ahead of it — neither is on this row, so nothing is guessed.
+ * record id is a three-part path — `source/{record}/timestamp` — and the
+ * page's `[...recordId]` catch-all also needs a `programId` ahead of it;
+ * neither travels with this row, so nothing is guessed at a wrong Program.
  */
 export function RecordCardWidget({ payload }: { payload: unknown }) {
   const r = parse(payload);
+  // Falls back rather than throws: a widget frozen onto a message outlives
+  // the shape `parse()` expects (finding 103).
   if (!r) return <RawPayload payload={payload} />;
   return (
     <div>
@@ -34,6 +40,11 @@ export function RecordCardWidget({ payload }: { payload: unknown }) {
             <td>{isoDate(r.publishedAt)}</td>
           </tr>
           <tr>
+            {/*
+              Never re-stamped on refresh, on the page this mirrors: the
+              *new evidence* staleness chip is computed from firstSeenAt,
+              and re-stamping it here would be a second clock disagreeing.
+            */}
             <td>First seen here</td>
             <td>{isoDate(r.firstSeenAt)}</td>
           </tr>
@@ -51,6 +62,7 @@ export function RecordCardWidget({ payload }: { payload: unknown }) {
   );
 }
 
+/** Every field optional-checked by hand: this payload is the raw `record` row, not a declared schema. */
 function parse(payload: unknown) {
   if (!isObj(payload)) return null;
   const id = str(payload.id);
@@ -62,6 +74,10 @@ function parse(payload: unknown) {
     collectedAt: payload.collectedAt,
     publishedAt: payload.publishedAt,
     firstSeenAt: payload.firstSeenAt,
+    // `'fields' in payload` rather than `payload.fields != null`, because a
+    // source record with genuinely no fields and one whose key was dropped
+    // before freezing render the same otherwise — the details block is
+    // about whether there is anything to expand, not what is inside it.
     fields: 'fields' in payload ? payload.fields : null,
   };
 }

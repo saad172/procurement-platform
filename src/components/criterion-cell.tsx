@@ -1,4 +1,4 @@
-import type { ScoredCriterion } from '@/domain/score';
+import { criterionBand, type ScoredCriterion } from '@/domain/score';
 
 /**
  * **The app may never render a Criterion number alone** (SPEC §9.1).
@@ -26,7 +26,7 @@ export function CriterionCell({ criterion }: { criterion: ScoredCriterion }) {
   return (
     <div>
       <span className="criterion-value">{outcome.value.toFixed(1)}</span>{' '}
-      <span className="badge mute">{band(outcome.value)}</span>
+      <span className="badge mute">{criterionBand(outcome.value)}</span>
       <div className="criterion-raw">{describeRawInputs(outcome.rawInputs)}</div>
       <div className="criterion-raw" style={{ opacity: 0.75 }}>
         {outcome.anchorLine}
@@ -34,13 +34,6 @@ export function CriterionCell({ criterion }: { criterion: ScoredCriterion }) {
       {outcome.clamped ? <span className="badge warn">clamped to the anchor</span> : null}
     </div>
   );
-}
-
-function band(value: number): string {
-  if (value >= 80) return 'low risk';
-  if (value >= 60) return 'moderate';
-  if (value >= 40) return 'elevated';
-  return 'high';
 }
 
 /** The raw input in the words a reader can check against the source. */

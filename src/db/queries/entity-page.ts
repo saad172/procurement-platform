@@ -43,7 +43,9 @@ export async function loadEntityPage(db: Database, args: { programId: string; en
   // Grouped here, not in the Relationships section — a section receives
   // already-derived props; it does not derive.
   const edgeGroups = deriveEdgeGroups(edges, entityId);
-  const knownAs = deriveKnownAs(await readKnownAsRows(db, programId, entityId));
+  const { cases: knownAs, breadcrumbSupplier } = deriveKnownAs(
+    await readKnownAsRows(db, programId, entityId),
+  );
 
   return {
     entity,
@@ -54,6 +56,7 @@ export async function loadEntityPage(db: Database, args: { programId: string; en
     sources,
     factors,
     knownAs,
+    breadcrumbSupplier,
   };
 }
 
@@ -85,8 +88,10 @@ async function readKnownAsRows(db: Database, programId: string, entityId: string
   const familyMemberships = await db
     .select({ hopDepth: t.familyMember.hopDepth, supplier: supplierColumns })
     .from(t.familyMember)
-    // Rooted at the Supplier's Profile (or a Twin standing in for it), never
-    // at the family member directly — the root is what carries the Match.
+    // Rooted at the Supplier's Profile, never at the family member directly
+    // — the root is what carries the Match. A Twin is never this join: a
+    // Twin carries no Match of its own by definition (CONTEXT.md), so this
+    // inner join on `match.entity_id` provably never reaches one.
     .innerJoin(t.match, eq(t.match.entityId, t.familyMember.rootEntityId))
     .innerJoin(t.supplier, eq(t.supplier.id, t.match.supplierId))
     .where(and(eq(t.familyMember.memberEntityId, entityId), eq(t.supplier.programId, programId)));

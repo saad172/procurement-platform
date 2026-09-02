@@ -1,6 +1,13 @@
 import Link from 'next/link';
 import { WeightRail } from '@/components/weight-rail';
 import type { loadCategoryPage } from '@/db/queries/category-page';
+import {
+  EXCLUDED_HEADING,
+  EXCLUDED_REASONS,
+  SHORTLIST_EMPTY_LINE,
+  hsLineBadge,
+} from '@/domain/category-answer';
+import { confidenceTone } from '@/domain/score';
 import { CategoryActions } from './category-actions';
 
 /**
@@ -108,7 +115,7 @@ export function Shortlist({ data, programId }: { data: Data; programId: string }
             {shortlist.ranked.length === 0 ? (
               <tr>
                 <td colSpan={6} className="empty">
-                  Nothing is ranked here yet.
+                  {SHORTLIST_EMPTY_LINE}
                 </td>
               </tr>
             ) : (
@@ -146,11 +153,7 @@ function ShortlistRow({
         {row.coverage.computed} of {row.coverage.total} criteria
       </td>
       <td>
-        <span
-          className={`badge ${row.dataConfidence === 'strong' ? 'good' : row.dataConfidence === 'thin' ? 'warn' : 'mute'}`}
-        >
-          {row.dataConfidence}
-        </span>
+        <span className={`badge ${confidenceTone(row.dataConfidence)}`}>{row.dataConfidence}</span>
       </td>
       <td>
         {row.disqualifying ? (
@@ -169,29 +172,24 @@ export function Excluded({ data, programId }: { data: Data; programId: string })
   if (shortlist.excluded.length === 0) return null;
   return (
     <>
-      <h2>In this program, but not rankable yet</h2>
+      <h2>{EXCLUDED_HEADING}</h2>
       <div className="card">
         {/*
           Two DISTINCT reasons, rendered differently. A Supplier we could not
           identify and one that bids on nothing here are different problems,
           and clicking the first opens the resolver's candidates rather than
-          a score breakdown it does not have.
+          a score breakdown it does not have. Both reasons' wording lives in
+          `domain/category-answer.ts` EXCLUDED_REASONS, so the widget's
+          one-line caption for the same reason cannot drift from this
+          paragraph's.
         */}
         {(['no_match', 'no_category'] as const).map((reason) => {
           const rows = shortlist.excluded.filter((e) => e.reason === reason);
           if (rows.length === 0) return null;
           return (
             <div key={reason} style={{ marginBottom: '1rem' }}>
-              <h3 style={{ marginTop: 0 }}>
-                {reason === 'no_match'
-                  ? 'No settled match — we could not say which company this is'
-                  : 'Not mapped to any category in this program'}
-              </h3>
-              <p className="note">
-                {reason === 'no_match'
-                  ? 'These carry no score and show no estimated criterion. Opening one shows the resolver’s candidates and rounds, not a breakdown.'
-                  : 'These walk the whole lifecycle and simply reach no shortlist. It is the honest shape of a real roster.'}
-              </p>
+              <h3 style={{ marginTop: 0 }}>{EXCLUDED_REASONS[reason].heading}</h3>
+              <p className="note">{EXCLUDED_REASONS[reason].note}</p>
               <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.1rem' }}>
                 {rows.map(({ row }) => (
                   <li key={row.supplierId}>
@@ -297,11 +295,9 @@ export function TheWorking({
                   <td>{line.label}</td>
                   <td className="num">{Number(line.rate)}%</td>
                   <td>
-                    {line.isDefault ? (
-                      <span className="badge">scored</span>
-                    ) : (
-                      <span className="badge mute">candidate</span>
-                    )}
+                    <span className={`badge ${line.isDefault ? '' : 'mute'}`}>
+                      {hsLineBadge(line.isDefault)}
+                    </span>
                   </td>
                 </tr>
               ))}

@@ -108,7 +108,7 @@ describe('describeModelError', () => {
     );
   });
 
-  it('falls back to describeError for an SDK error this table does not name', () => {
+  it('reads the status and body for an APIError this table names no dedicated branch for', () => {
     const error = new NotFoundError(
       404,
       body('not_found_error', 'model not found'),
@@ -116,10 +116,16 @@ describe('describeModelError', () => {
       HEADERS,
       'not_found_error',
     );
-    // No dedicated branch for `not_found_error`: describeModelError defers to
-    // the cause-walking `describeError`, which — with no `.cause` to walk —
-    // reports the SDK's own top-level `.message` (see `APIError.makeMessage`).
-    expect(describeModelError(error)).toBe(error.message);
+    // Still an APIError, so it is still caught before describeError — the
+    // catch-all this file added once NotFoundError's old expectation (a fall
+    // to describeError's wire-body message) turned out to be the same bug
+    // the named branches above exist to fix, one status code later.
+    expect(describeModelError(error)).toBe('the model returned 404: model not found');
+  });
+
+  it('says "no detail" for an APIError whose body carries no nested error.message', () => {
+    const error = new APIError(500, { type: 'error' }, undefined, HEADERS, 'api_error');
+    expect(describeModelError(error)).toBe('the model returned 500: no detail');
   });
 
   it('falls back to the plain message for a non-SDK error', () => {

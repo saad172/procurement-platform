@@ -102,6 +102,20 @@ export type KnownAsCase =
   | { kind: 'family'; supplier: KnownAsSupplier; hopDepth: number }
   | { kind: 'candidate'; supplier: KnownAsSupplier; parked: boolean };
 
+export type KnownAs = {
+  cases: KnownAsCase[];
+  /**
+   * The Supplier the entity page's breadcrumb names, if any. Exactly one
+   * Profile case names it; zero names none, and more than one also names
+   * none, because `match.entity_id` carries no unique constraint (finding
+   * 104) and a breadcrumb has room for one parent, not two. Computed here
+   * rather than by `Heading` (`sections.tsx`) so the "exactly one" rule is
+   * unit-tested apart from Postgres, the same reason `edgeGroups` is derived
+   * in `db/queries/entity-page.ts` rather than in a section.
+   */
+  breadcrumbSupplier: KnownAsSupplier | null;
+};
+
 /**
  * De-duplicated against itself, not merely concatenated. Two rules, and only
  * two: a Candidate a Match went on to accept is read as the Profile it became
@@ -109,11 +123,24 @@ export type KnownAsCase =
  * answer — while a Family member reached from two different Suppliers'
  * Profiles is a fact about two Corporate families and stays listed for both.
  */
-export function deriveKnownAs(rows: KnownAsRows): KnownAsCase[] {
+export function deriveKnownAs(rows: KnownAsRows): KnownAs {
   const { profileMatches, familyMemberships, candidacies } = rows;
 
-  const profileSupplierIds = new Set(profileMatches.map((row) => row.supplier.id));
-  const profileCases: KnownAsCase[] = profileMatches.map((row) => ({
+  /**
+   * **Filtered on `status`, not assumed from the join alone.**
+   *
+   * `readKnownAsRows` (`db/queries/entity-page.ts`) selects every `match` row
+   * whose `entity_id` equals this entity, with no `status` condition — it
+   * relies on `settleMatch()` never writing `entity_id` for a `needs_review`
+   * or `not_found` outcome (SPEC §15.4). That is true today, but nothing
+   * short of a `NOT NULL ... CHECK` ties the two columns together at the
+   * schema, so a Candidate row could reach here through a future settlement
+   * path this function never saw written. Filtering explicitly is what
+   * makes "only an accepted Match has a Profile" hold regardless.
+   */
+  const acceptedProfileMatches = profileMatches.filter((row) => row.status === 'accepted');
+  const profileSupplierIds = new Set(acceptedProfileMatches.map((row) => row.supplier.id));
+  const profileCases: KnownAsCase[] = acceptedProfileMatches.map((row) => ({
     kind: 'profile',
     supplier: row.supplier,
   }));
@@ -138,5 +165,10 @@ export function deriveKnownAs(rows: KnownAsRows): KnownAsCase[] {
     });
   }
 
-  return [...profileCases, ...familyCases, ...candidateCases];
+  const cases = [...profileCases, ...familyCases, ...candidateCases];
+  return {
+    cases,
+    breadcrumbSupplier:
+      acceptedProfileMatches.length === 1 ? acceptedProfileMatches[0]!.supplier : null,
+  };
 }

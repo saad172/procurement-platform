@@ -3,6 +3,7 @@
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { readServerSentEvents } from '@/lib/server-sent-events';
+import type { Widget } from '@/tools/define';
 import { RenderWidget } from '@/components/widgets';
 
 /**
@@ -29,7 +30,8 @@ import { RenderWidget } from '@/components/widgets';
  * which of the dock's two shapes (closed button, open panel) is on screen.
  */
 
-type Widget = { toolName: string; widget: { type: string; payload: unknown } };
+/** One tool call's frozen result, as the dock draws it — the `Widget` itself is `@/tools/define`'s, the one type `widget()` produces. */
+type WidgetCall = { toolName: string; widget: Widget };
 type Proposal = {
   toolName: string;
   input: unknown;
@@ -45,7 +47,7 @@ type Proposal = {
 type Turn = {
   role: 'user' | 'assistant';
   text: string;
-  widgets?: Widget[];
+  widgets?: WidgetCall[];
   proposals?: Proposal[];
 };
 
@@ -115,7 +117,7 @@ function useChatThread(programId: string) {
           const data = JSON.parse(event.data) as {
             threadId: string;
             text: string;
-            widgets: Widget[];
+            widgets: WidgetCall[];
             proposals: Proposal[];
           };
           setThreadId(data.threadId);
@@ -174,7 +176,7 @@ function ChatDisclosure() {
 }
 
 /** Widgets are FROZEN from the tool's return value, not typed by the model — which is why `render_table` is not a tool. */
-function TurnWidgets({ widgets }: { widgets: Widget[] }) {
+function TurnWidgets({ widgets }: { widgets: WidgetCall[] }) {
   return (
     <>
       {widgets.map((widget, widgetIndex) => (

@@ -106,7 +106,7 @@ const knownAsSupplier = (overrides: Partial<KnownAsSupplier> = {}): KnownAsSuppl
 
 describe('deriveKnownAs', () => {
   it('reads a settled Match as the profile case', () => {
-    const cases = deriveKnownAs({
+    const { cases } = deriveKnownAs({
       profileMatches: [{ status: 'accepted', supplier: knownAsSupplier() }],
       familyMemberships: [],
       candidacies: [],
@@ -116,7 +116,7 @@ describe('deriveKnownAs', () => {
 
   it('reads a family_member row as the family case, carrying its hop depth', () => {
     const bosch = knownAsSupplier({ id: 'SUP2', rosterName: 'Bosch', rosterIndex: 4 });
-    const cases = deriveKnownAs({
+    const { cases } = deriveKnownAs({
       profileMatches: [],
       familyMemberships: [{ hopDepth: 2, supplier: bosch }],
       candidacies: [],
@@ -126,7 +126,7 @@ describe('deriveKnownAs', () => {
 
   it('reads an open Candidacy as the candidate case, parked when its Match is needs_review', () => {
     const nsk = knownAsSupplier({ id: 'SUP3', rosterName: 'NSK', rosterIndex: 9 });
-    const cases = deriveKnownAs({
+    const { cases } = deriveKnownAs({
       profileMatches: [],
       familyMemberships: [],
       candidacies: [{ status: 'needs_review', supplier: nsk }],
@@ -135,7 +135,7 @@ describe('deriveKnownAs', () => {
   });
 
   it('reads a settled Candidacy (status accepted) as not parked', () => {
-    const cases = deriveKnownAs({
+    const { cases } = deriveKnownAs({
       profileMatches: [],
       familyMemberships: [],
       candidacies: [{ status: 'accepted', supplier: knownAsSupplier() }],
@@ -143,15 +143,26 @@ describe('deriveKnownAs', () => {
     expect(cases[0]).toMatchObject({ parked: false });
   });
 
-  it('returns the empty list for an entity attached to no Supplier in this Program', () => {
-    expect(deriveKnownAs({ profileMatches: [], familyMemberships: [], candidacies: [] })).toEqual(
-      [],
-    );
+  it('returns the empty list for an entity known to no Supplier in this Program', () => {
+    const { cases } = deriveKnownAs({ profileMatches: [], familyMemberships: [], candidacies: [] });
+    expect(cases).toEqual([]);
+  });
+
+  it('excludes a profileMatches row whose Match is not accepted — only a settled Match has a Profile', () => {
+    // Guards deriveKnownAs's own filter (see its comment): readKnownAsRows
+    // selects on entity_id alone, and settleMatch is what is trusted to
+    // leave entity_id null on every non-accepted outcome, not this function.
+    const { cases } = deriveKnownAs({
+      profileMatches: [{ status: 'needs_review', supplier: knownAsSupplier() }],
+      familyMemberships: [],
+      candidacies: [],
+    });
+    expect(cases).toEqual([]);
   });
 
   it('drops a Candidate that the same Supplier’s Match went on to accept — it is only the Profile', () => {
     const supplier = knownAsSupplier();
-    const cases = deriveKnownAs({
+    const { cases } = deriveKnownAs({
       profileMatches: [{ status: 'accepted', supplier }],
       familyMemberships: [],
       candidacies: [{ status: 'accepted', supplier }],
@@ -162,7 +173,7 @@ describe('deriveKnownAs', () => {
 
   it('collapses repeat Candidacy rows for one Supplier (a later Round proposing it again)', () => {
     const supplier = knownAsSupplier();
-    const cases = deriveKnownAs({
+    const { cases } = deriveKnownAs({
       profileMatches: [],
       familyMemberships: [],
       candidacies: [
@@ -173,10 +184,10 @@ describe('deriveKnownAs', () => {
     expect(cases).toHaveLength(1);
   });
 
-  it('keeps a Family member listed once per root Profile when two Suppliers share it', () => {
+  it('lists a Family member for each Supplier whose Profile roots it, when two Suppliers share the member', () => {
     const bosch = knownAsSupplier({ id: 'SUP2', rosterName: 'Bosch' });
     const magna = knownAsSupplier({ id: 'SUP4', rosterName: 'Magna' });
-    const cases = deriveKnownAs({
+    const { cases } = deriveKnownAs({
       profileMatches: [],
       familyMemberships: [
         { hopDepth: 1, supplier: bosch },
@@ -192,7 +203,7 @@ describe('deriveKnownAs', () => {
     const deepFamily = knownAsSupplier({ id: 'SUP2', rosterName: 'Deep' });
     const shallowFamily = knownAsSupplier({ id: 'SUP3', rosterName: 'Shallow' });
     const candidate = knownAsSupplier({ id: 'SUP4', rosterName: 'NSK' });
-    const cases = deriveKnownAs({
+    const { cases } = deriveKnownAs({
       profileMatches: [{ status: 'accepted', supplier: profile }],
       familyMemberships: [
         { hopDepth: 3, supplier: deepFamily },
@@ -201,5 +212,32 @@ describe('deriveKnownAs', () => {
       candidacies: [{ status: 'needs_review', supplier: candidate }],
     });
     expect(cases.map((c) => c.supplier.rosterName)).toEqual(['Aptiv', 'Shallow', 'Deep', 'NSK']);
+  });
+
+  it('names breadcrumbSupplier only when exactly one Profile case exists — two Profiles name none', () => {
+    // match.entity_id carries no unique constraint (finding 104): a Sayari
+    // entity can be two Suppliers' Profile, and a breadcrumb has room for
+    // one parent, not two.
+    const aptiv = knownAsSupplier({ id: 'SUP1', rosterName: 'Aptiv' });
+    const oneProfile = deriveKnownAs({
+      profileMatches: [{ status: 'accepted', supplier: aptiv }],
+      familyMemberships: [],
+      candidacies: [],
+    });
+    expect(oneProfile.breadcrumbSupplier).toEqual(aptiv);
+
+    const bosch = knownAsSupplier({ id: 'SUP2', rosterName: 'Bosch' });
+    const twoProfiles = deriveKnownAs({
+      profileMatches: [
+        { status: 'accepted', supplier: aptiv },
+        { status: 'accepted', supplier: bosch },
+      ],
+      familyMemberships: [],
+      candidacies: [],
+    });
+    expect(twoProfiles.breadcrumbSupplier).toBeNull();
+
+    const noProfile = deriveKnownAs({ profileMatches: [], familyMemberships: [], candidacies: [] });
+    expect(noProfile.breadcrumbSupplier).toBeNull();
   });
 });

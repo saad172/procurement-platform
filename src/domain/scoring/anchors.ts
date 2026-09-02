@@ -23,6 +23,24 @@ export function clamp100(value: number): { value: number; clamped: boolean } {
   return { value, clamped: false };
 }
 
+// ── Value bands ───────────────────────────────────────────────────────────────
+
+/**
+ * The band a Criterion's badge shows beside its number (SPEC §9.1's "never a
+ * bare number") — fixed thresholds, an anchor like the ones below rather than
+ * a fit to this roster, so the badge cannot drift out from under the figure it
+ * sits beside. One definition: `criterion-cell.tsx`, the widgets'
+ * `criterion-format.ts` (then `parts-table.tsx`'s `criterionBand()`) and
+ * `criterion-compare.tsx` all called this same shape into being
+ * independently before it moved here.
+ */
+export function criterionBand(value: number): string {
+  if (value >= 80) return 'low risk';
+  if (value >= 60) return 'moderate';
+  if (value >= 40) return 'elevated';
+  return 'high';
+}
+
 // ── Tariff exposure ──────────────────────────────────────────────────────────
 
 /**

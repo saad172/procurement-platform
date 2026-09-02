@@ -1,14 +1,22 @@
 import Link from 'next/link';
 import { z } from 'zod/v4';
+import { leadRelation } from '@/domain/lead-answer';
 import { RawPayload } from './raw';
 
 /**
- * `lead_table` — mirrors `LeadsTable` (classification, shipments, relation)
- * without its promote/dismiss actions: chat proposes and never does.
+ * `lead_table` — the Category page's `LeadsTable`
+ * (`src/app/program/[programId]/category/[categoryId]/leads.tsx`), minus its
+ * `LeadActions` — chat proposes and never promotes or dismisses a Lead
+ * itself, the same discipline `settleMatch()` enforces for a Match (SPEC
+ * §2.4).
  *
- * `list_leads` selects bare `lead` rows with no join to `entity`, so there is
- * no company name and no country in this payload — only `entityId`, which is
- * what the link is built from and what stands in for the name.
+ * `list_leads` selects bare `lead` rows with no join to `entity` (finding
+ * 103): `LeadsTable`'s own rows carry both, so its column reads a company
+ * name and country and this one cannot — every row here is named by its
+ * Sayari `entityId` instead, which is what the link is built from too.
+ * `latestShipmentDate` stays a displayed column and never a filter, the same
+ * rule the page states for the same reason: it is absent on roughly half the
+ * roster, so filtering on it would silently drop the majority.
  */
 
 const leadSchema = z.object({
@@ -28,6 +36,8 @@ type Lead = z.infer<typeof leadSchema>;
 
 export function LeadTableWidget({ payload }: { payload: unknown }) {
   const parsed = payloadSchema.safeParse(payload);
+  // Falls back rather than throws: a widget frozen onto a message outlives
+  // the shape this schema names (finding 103).
   if (!parsed.success) return <RawPayload payload={payload} />;
   const rows = parsed.data;
   if (rows.length === 0) return <p className="empty">No leads yet.</p>;
@@ -50,6 +60,7 @@ export function LeadTableWidget({ payload }: { payload: unknown }) {
   );
 }
 
+/** One row: the entity link standing in for a name, then classification, volume, and how it relates to an existing Supplier. */
 function LeadRow({ l }: { l: Lead }) {
   return (
     <tr className={l.dismissed ? 'hidden-by-filter' : undefined}>
@@ -78,14 +89,21 @@ function LeadRow({ l }: { l: Lead }) {
         <div className="note">{l.latestShipmentDate ?? 'not recorded'}</div>
       </td>
       <td>
-        {l.relationVerified ? (
-          <span className="badge good">related by ownership · verified</span>
-        ) : l.relatedSupplierId ? (
-          <span className="badge warn">possibly related · unverified</span>
-        ) : (
-          <span className="note">—</span>
-        )}
+        <RelationBadge l={l} />
       </td>
     </tr>
   );
+}
+
+/**
+ * `leadRelation()` (`@/domain/lead-answer`) owns the wording, shared with
+ * `LeadsTable`'s `RelationBadge` — this widget used to drop "name match" from
+ * the unverified label, one word the page kept, before the two read one
+ * definition.
+ */
+function RelationBadge({ l }: { l: Lead }) {
+  const relation = leadRelation(l);
+  if (relation.kind === 'verified') return <span className="badge good">{relation.label}</span>;
+  if (relation.kind === 'unverified') return <span className="badge warn">{relation.label}</span>;
+  return <span className="note">—</span>;
 }

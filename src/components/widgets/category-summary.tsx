@@ -1,16 +1,20 @@
 import Link from 'next/link';
 import { z } from 'zod/v4';
+import { hsLineBadge } from '@/domain/category-answer';
 import { RawPayload } from './raw';
 
 /**
- * `category_summary` — mirrors the Category page heading: name, code, HS
- * lines and trade-action flags.
+ * `category_summary` — the Category page's heading plus its Tariff table
+ * (`src/app/program/[programId]/category/[categoryId]/sections.tsx`, the
+ * `<span className="term">What it costs to bring in<i>Tariff</i></span>`
+ * card), the level `Category → Supplier` sits below in the spine (SPEC
+ * §13.1).
  *
  * `get_category`'s query loads `flags` as bare `category_flag` rows, never
- * joined to `tariff_flag` for a label or a `whyNotARate`, and it names no
- * bidder at all despite its own description promising one — so this widget
- * draws the flag key it actually has and omits bidders rather than fetching
- * behind the payload's back.
+ * joined to `tariff_flag` for a label or a `whyNotARate` (finding 103), and
+ * it names no bidder at all despite its own description promising one — so
+ * this widget draws the flag key it actually has and omits a bidder count
+ * rather than fetching one behind the payload's back.
  */
 
 const hsLineSchema = z.object({
@@ -33,6 +37,8 @@ const payloadSchema = z.object({
 
 export function CategorySummaryWidget({ payload }: { payload: unknown }) {
   const parsed = payloadSchema.safeParse(payload);
+  // Falls back rather than throws: a widget frozen onto a message outlives
+  // the shape this schema names (finding 103).
   if (!parsed.success) return <RawPayload payload={payload} />;
   const c = parsed.data;
   return (
@@ -53,6 +59,15 @@ export function CategorySummaryWidget({ payload }: { payload: unknown }) {
   );
 }
 
+/**
+ * ── HS lines, the scored one marked apart from every candidate one ──
+ *
+ * `isDefault` names the one line `tariffExposure` reads; the rest are shown
+ * because a buyer might import the same part under a different code, not
+ * because they count. `hsLineBadge()` (`@/domain/category-answer`) is the
+ * page's own rule for the badge, so "scored" cannot come to mean something
+ * different here than it does on the page.
+ */
 function HsLineTable({ lines }: { lines: z.infer<typeof hsLineSchema>[] }) {
   if (lines.length === 0) return <p className="empty">No HS lines recorded.</p>;
   return (
@@ -72,11 +87,9 @@ function HsLineTable({ lines }: { lines: z.infer<typeof hsLineSchema>[] }) {
             <td>{l.label}</td>
             <td className="num">{Number(l.rate)}%</td>
             <td>
-              {l.isDefault ? (
-                <span className="badge">scored</span>
-              ) : (
-                <span className="badge mute">candidate</span>
-              )}
+              <span className={`badge ${l.isDefault ? '' : 'mute'}`}>
+                {hsLineBadge(l.isDefault)}
+              </span>
             </td>
           </tr>
         ))}
@@ -85,6 +98,7 @@ function HsLineTable({ lines }: { lines: z.infer<typeof hsLineSchema>[] }) {
   );
 }
 
+/** Trade-action flags, named by their bare key: `get_category` never joins `tariff_flag` for a label (finding 103), so the key is what there is. */
 function FlagBadges({ flags }: { flags: z.infer<typeof flagSchema>[] }) {
   if (flags.length === 0) return null;
   return (

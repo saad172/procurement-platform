@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
 import {
+  CRITERION_LABELS,
   DEFAULT_WEIGHTS,
   WEIGHTED_CRITERIA,
   WEIGHT_PRESETS,
@@ -24,15 +25,6 @@ import { RESET_TO_DEFAULT_LABEL, historyModeFor } from '@/lib/view-state';
  * recipient's default, and means chat needs no `set_weights` tool — "set
  * compliance to 40" *is* a navigation.
  */
-
-const LABELS: Record<string, string> = {
-  compliance_risk: 'Compliance risk',
-  ownership_exposure: 'Ownership exposure',
-  country_resilience: 'Country resilience',
-  tariff_exposure: 'Tariff exposure',
-  proximity: 'Proximity',
-  media_signal: 'Media signal',
-};
 
 type WeightRailProps = {
   programDefault: Required<WeightVector>;
@@ -92,7 +84,7 @@ export function WeightRail({ programDefault, live }: WeightRailProps) {
       <section className="card" aria-label="Weights">
         <h3 style={{ marginTop: 0 }}>Weights</h3>
         <p className="note" style={{ margin: 0 }}>
-          {WEIGHTED_CRITERIA.map((key) => `${LABELS[key]} ${weights[key]}`).join(' · ')}
+          {WEIGHTED_CRITERIA.map((key) => `${CRITERION_LABELS[key]} ${weights[key]}`).join(' · ')}
         </p>
         <p className="note" style={{ marginTop: '0.4rem', opacity: 0.75 }}>
           Read-only here — nothing on this page is scored, and a control that visibly changes
@@ -121,7 +113,7 @@ export function WeightRail({ programDefault, live }: WeightRailProps) {
       <div className="rail">
         {WEIGHTED_CRITERIA.map((key) => (
           <div className="rail-row" key={key}>
-            <label htmlFor={`w-${key}`}>{LABELS[key]}</label>
+            <label htmlFor={`w-${key}`}>{CRITERION_LABELS[key]}</label>
             <input
               id={`w-${key}`}
               type="range"

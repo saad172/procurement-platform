@@ -8,6 +8,7 @@ import {
   isTwinFactor,
   variantOf,
 } from '@/domain/scoring/risk-factors';
+import { PROMOTED_LEAD_LABEL } from '@/domain/supplier-answer';
 import { fetchOwnRecord } from './entity-actions';
 
 /**
@@ -24,25 +25,25 @@ type Data = NonNullable<Awaited<ReturnType<typeof loadEntityPage>>>;
  * somewhere you can stand.
  */
 export function Heading({ data, programId }: { data: Data; programId: string }) {
-  const { entity, program, knownAs } = data;
-  const profiles = knownAs.filter((c) => c.kind === 'profile');
+  const { entity, program, knownAs, breadcrumbSupplier } = data;
   // Not the Category: a Supplier bids on one or more of them, so there is no
   // single parent to name here — the same reason the Supplier page's own
-  // breadcrumb stops at the Program (SPEC §13.1).
-  const trail =
-    profiles.length === 1
-      ? [
-          { label: program?.name ?? 'Program', href: `/program/${programId}` },
-          {
-            label: profiles[0]!.supplier.rosterName ?? '(promoted lead)',
-            href: `/program/${programId}/supplier/${profiles[0]!.supplier.id}`,
-          },
-          { label: entity.label },
-        ]
-      : [
-          { label: program?.name ?? 'Program', href: `/program/${programId}` },
-          { label: entity.label },
-        ];
+  // breadcrumb stops at the Program (SPEC §13.1). `breadcrumbSupplier` is
+  // `deriveKnownAs()`'s call on "exactly one Profile case" — this component
+  // only reads it, so the rule stays unit-tested apart from Postgres.
+  const trail = breadcrumbSupplier
+    ? [
+        { label: program?.name ?? 'Program', href: `/program/${programId}` },
+        {
+          label: breadcrumbSupplier.rosterName ?? PROMOTED_LEAD_LABEL,
+          href: `/program/${programId}/supplier/${breadcrumbSupplier.id}`,
+        },
+        { label: entity.label },
+      ]
+    : [
+        { label: program?.name ?? 'Program', href: `/program/${programId}` },
+        { label: entity.label },
+      ];
   return (
     <>
       <Breadcrumb trail={trail} />
@@ -54,7 +55,7 @@ export function Heading({ data, programId }: { data: Data; programId: string }) 
       </p>
       <p className="sub">
         {knownAs.length === 0
-          ? 'not attached to any Supplier in this Program'
+          ? 'known to no Supplier in this Program'
           : knownAs.map((item, i) => (
               <span key={`${item.kind}-${item.supplier.id}`}>
                 {i > 0 ? ' · ' : ''}
@@ -72,7 +73,7 @@ export function Heading({ data, programId }: { data: Data; programId: string }) 
  * `settled by {match.settledBy}` (see `.term` in `globals.css`).
  */
 function KnownAsClause({ item, programId }: { item: KnownAsCase; programId: string }) {
-  const name = item.supplier.rosterName ?? '(promoted lead)';
+  const name = item.supplier.rosterName ?? PROMOTED_LEAD_LABEL;
   const parked = item.kind === 'candidate' && item.parked;
   // A parked Candidate has no settled home yet, so its link is the queue a
   // person works from rather than a Supplier page whose "who it is" answer
@@ -86,12 +87,17 @@ function KnownAsClause({ item, programId }: { item: KnownAsCase; programId: stri
     </Link>
   );
 
+  // Each surface sentence below says the relationship in words that are not
+  // just the canonical term again — `<i>Profile</i>` / `<i>Family member ·
+  // hop N</i>` / `<i>Candidate</i>` carry the glossary noun, capitalised as
+  // CONTEXT.md defines it, so a reader who wants the exact word for what
+  // they are looking at finds it underneath rather than reading it twice.
   if (item.kind === 'profile') {
     return (
       <span className="term">
-        the Profile of {supplierLink}
+        the company {supplierLink} resolved to
         {item.supplier.rosterIndex != null ? `, roster row ${item.supplier.rosterIndex}` : ''}
-        <i>profile</i>
+        <i>Profile</i>
       </span>
     );
   }
@@ -99,15 +105,16 @@ function KnownAsClause({ item, programId }: { item: KnownAsCase; programId: stri
     const hops = item.hopDepth === 1 ? 'hop' : 'hops';
     return (
       <span className="term">
-        a Family member of {supplierLink}&rsquo;s Profile, {item.hopDepth} {hops} down
-        <i>family member · hop {item.hopDepth}</i>
+        one of the group companies under {supplierLink}, {item.hopDepth} {hops} down
+        <i>Family member · hop {item.hopDepth}</i>
       </span>
     );
   }
   return (
     <span className="term">
-      a Candidate for {supplierLink}&rsquo;s Match{parked ? ' — still waiting on a person' : ''}
-      <i>candidate</i>
+      one of the companies considered for {supplierLink}
+      {parked ? ' — still waiting on a person' : ''}
+      <i>Candidate</i>
     </span>
   );
 }

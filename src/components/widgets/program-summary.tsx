@@ -3,12 +3,21 @@ import { z } from 'zod/v4';
 import { RawPayload } from './raw';
 
 /**
- * `program_summary` — mirrors the Program page's answer strip: the name, its
- * Plants, its Categories and the count that reaches no Category at all.
+ * `program_summary` — the Program page's heading (`page.tsx`'s `<h1>`/`<p
+ * className="sub">`) plus `CategoryLedger`'s Category rows
+ * (`src/app/program/[programId]/sections.tsx`, inside `TheWorking`), at the
+ * top of the spine `Program → Category → Supplier → Sayari entity → record`
+ * (SPEC §13.1).
  *
- * `get_program`'s payload has no bidder count per Category — that join lives
- * on the Program page's own loader, not this tool — so this widget names each
- * Category without one rather than inventing a figure the read never fetched.
+ * `get_program`'s query never joins `biddersByCategory` — that count is built
+ * on the page's own loader from a Supplier↔Category join this tool does not
+ * run (finding 103) — so `CategoryTable` below names each Category without a
+ * bidder figure rather than a zero that would read as "nobody bids on this".
+ *
+ * **The Plant line has no page equivalent.** `program.plants` feeds only the
+ * page's proximity map, never a text list — drawn here as plain text because
+ * chat has no map to draw instead, and a Plant's code, city and country are
+ * exactly what a person would ask the map to point at.
  */
 
 const plantSchema = z.object({
@@ -36,6 +45,8 @@ const payloadSchema = z.object({
 
 export function ProgramSummaryWidget({ payload }: { payload: unknown }) {
   const parsed = payloadSchema.safeParse(payload);
+  // Falls back rather than throws: a widget frozen onto a message outlives
+  // the shape this schema names (finding 103).
   if (!parsed.success) return <RawPayload payload={payload} />;
   const p = parsed.data;
   return (
@@ -55,6 +66,7 @@ export function ProgramSummaryWidget({ payload }: { payload: unknown }) {
   );
 }
 
+/** ── The Plants a Category's proximity is measured against, listed rather than mapped ── */
 function PlantLine({ plants }: { plants: z.infer<typeof plantSchema>[] }) {
   if (plants.length === 0) return <p className="note">No plants recorded.</p>;
   return (
@@ -64,6 +76,7 @@ function PlantLine({ plants }: { plants: z.infer<typeof plantSchema>[] }) {
   );
 }
 
+/** ── What you are buying, minus the Bidders column `get_program` cannot fill ── */
 function CategoryTable({
   programId,
   categories,
@@ -84,6 +97,12 @@ function CategoryTable({
         {categories.map((c) => (
           <tr key={c.id}>
             <td>
+              {/*
+                `c.programId` falls back to the enclosing `programId` because
+                an older frozen payload carried the category row without it
+                (finding 103) — both name the same Program here, so either is
+                a correct link.
+              */}
               <Link href={`/program/${c.programId ?? programId}/category/${c.id}` as never}>
                 <strong className="mono">{c.code}</strong>
               </Link>

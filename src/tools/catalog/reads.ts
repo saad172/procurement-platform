@@ -5,6 +5,7 @@ import { isDatabaseId, notAnIdObjection } from '../ids';
 import { defineTool, type ReadWithWidget, type ToolContext, type WidgetType } from '../define';
 import { loadShortlist } from '@/db/queries/shortlist';
 import { DEFAULT_WEIGHTS, normaliseWeights } from '@/domain/score';
+import { parseRiskObject } from '@/domain/scoring/risk-factors';
 import { isWhatIf, parseViewState } from '@/lib/view-state';
 
 /**
@@ -295,29 +296,63 @@ const getSupplierFamily = defineTool({
      * put ~870,000 tokens into one model turn and fired the assess Job's
      * token ceiling. The cap did its job; the read was the bug.
      */
+    const envelope = {
+      entityId: match.entityId,
+      // What the traversal reported it covered, not how many rows we hold.
+      // Counting rows answers a different question, and it was the wrong
+      // answer whenever a Profile had been enriched twice: Bosch's family
+      // was stored 100 times for 50 members, so this reported 100 to the
+      // model.
+      explored: members[0]?.exploredCount ?? members.length,
+      truncated: members.some((m) => m.truncated),
+    };
+    /**
+     * Factor names, levels **and the `country` marker**, which is what the
+     * widget needs to exclude a country-derived factor the way the page does.
+     * `parseRiskObject` (`@/domain/scoring/risk-factors`) is the one reader
+     * of the raw `risk` JSONB column — the same function `entity-page.ts`
+     * and `score.ts` use — so `country` here means exactly what
+     * `isCountryDerived()` checks it against on the page. A widget that
+     * named the three country-derived factors by string instead (`cpi_score`,
+     * `basel_aml`, `eu_high_risk_third`) would be a second, driftable copy of
+     * the identification `scoring/risk-factors.ts` already rejected in
+     * favour of this marker.
+     */
+    const widgetMembers = members.map((m) => ({
+      entityId: m.memberEntityId,
+      label: m.label,
+      country: m.country,
+      hopDepth: m.hopDepth,
+      sanctioned: m.sanctioned,
+      riskFactors: parseRiskObject(m.risk).map((f) => ({
+        name: f.name,
+        level: f.level ?? null,
+        country: f.country,
+      })),
+    }));
+    /**
+     * **The model reads no `country` per FACTOR** — the member's own
+     * `country` (its registered address) is unaffected and stays. Adding the
+     * factor-level marker to the model's copy would change every later
+     * turn's request hash for any replay recorded before this field existed,
+     * the same class of drift finding 100 describes, at a tool result
+     * instead of a prompt. `isCountryDerived` is for the widget's own
+     * rendering; the model already gets a Compliance risk figure with the
+     * country-derived factors already excluded (`domain/scoring/
+     * criteria.ts`), so it never needed this marker.
+     */
+    const modelMembers = widgetMembers.map(({ riskFactors, ...member }) => ({
+      ...member,
+      riskFactors: riskFactors.map(({ name, level }) => ({ name, level })),
+    }));
+
     return {
       ok: true,
-      data: widget('supplier_family', {
-        entityId: match.entityId,
-        // What the traversal reported it covered, not how many rows we hold.
-        // Counting rows answers a different question, and it was the wrong
-        // answer whenever a Profile had been enriched twice: Bosch's family was
-        // stored 100 times for 50 members, so this reported 100 to the model.
-        explored: members[0]?.exploredCount ?? members.length,
-        truncated: members.some((m) => m.truncated),
-        members: members.map((m) => ({
-          entityId: m.memberEntityId,
-          label: m.label,
-          country: m.country,
-          hopDepth: m.hopDepth,
-          sanctioned: m.sanctioned,
-          // Factor NAMES and levels, which is what a badge needs. The full risk
-          // object stays on the entity, one hop away.
-          riskFactors: Object.entries((m.risk ?? {}) as Record<string, { level?: string }>).map(
-            ([name, detail]) => ({ name, level: detail?.level ?? null }),
-          ),
-        })),
-      }),
+      data: widget(
+        'supplier_family',
+        { ...envelope, members: modelMembers },
+        { ...envelope, members: widgetMembers },
+      ),
     };
   },
 });

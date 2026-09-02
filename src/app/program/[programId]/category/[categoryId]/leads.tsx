@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type * as t from '@/db/schema';
+import { leadRelation } from '@/domain/lead-answer';
 import { dismiss, promote } from './lead-actions';
 
 /**
@@ -123,15 +124,7 @@ function LeadRow({
         {lead.latestShipmentDate ?? 'not recorded'}
       </td>
       <td>
-        {lead.relationVerified ? (
-          <span className="badge good" title="Found in an accepted supplier's ownership family">
-            related by ownership · verified
-          </span>
-        ) : lead.relatedSupplierId ? (
-          <span className="badge warn">possibly related · name match, unverified</span>
-        ) : (
-          <span className="note">—</span>
-        )}
+        <RelationBadge lead={lead} />
       </td>
       <td>
         <LeadActions
@@ -143,6 +136,22 @@ function LeadRow({
       </td>
     </tr>
   );
+}
+
+/** `leadRelation()` (`@/domain/lead-answer`) owns the wording; this only picks the tone and the markup that carries it. */
+function RelationBadge({ lead }: { lead: typeof t.lead.$inferSelect }) {
+  const relation = leadRelation(lead);
+  if (relation.kind === 'verified') {
+    return (
+      <span className="badge good" title={relation.title}>
+        {relation.label}
+      </span>
+    );
+  }
+  if (relation.kind === 'unverified') {
+    return <span className="badge warn">{relation.label}</span>;
+  }
+  return <span className="note">—</span>;
 }
 
 /** What can still be done with a Lead — promoted, dismissed, or already settled either way. */

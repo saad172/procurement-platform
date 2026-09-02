@@ -5,6 +5,7 @@ import { CriterionCell } from '@/components/criterion-cell';
 import { WeightRail } from '@/components/weight-rail';
 import type { loadSupplierPage } from '@/db/queries/supplier-page';
 import { describeFamilyExposure } from '@/domain/family';
+import { settledByLine } from '@/domain/supplier-answer';
 import { SupplierActions } from './supplier-actions';
 
 /**
@@ -86,16 +87,14 @@ export function Heading({ data, programId }: { data: Data; programId: string }) 
                 )}
                 {match.entity?.city ? `, ${match.entity.city}` : ''}{' '}
                 {/*
-                  Each of the three says something different about who decided,
-                  and "settled by agents" on a page that also says "agreed
-                  without a model" would be two claims about one fact.
+                  settledByLine (domain/supplier-answer.ts) is the one place
+                  that decides which of the three sentences this is — shared
+                  with the supplier_card chat widget, so "settled by agents"
+                  here and "agreed without a model" there can never both be
+                  said about the same Match.
                 */}
                 <span className="term">
-                  {match.settledBy === 'rules'
-                    ? 'agreed by the checks alone, with no model involved'
-                    : match.settledBy === 'agents'
-                      ? 'two independent reads agreed on it'
-                      : 'a person decided this'}
+                  {settledByLine(match.settledBy)}
                   <i>settled by {match.settledBy}</i>
                 </span>
               </>

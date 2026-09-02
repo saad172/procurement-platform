@@ -1,5 +1,6 @@
 import { RawPayload } from './raw';
-import { WhereGrid, isObj, num, str } from './parts-card';
+import { WhereGrid } from './figures';
+import { isObj, num, str } from './narrow';
 
 /**
  * `usage_meter` — mirrors the Runs page's *Your Sayari account* block
@@ -16,6 +17,8 @@ import { WhereGrid, isObj, num, str } from './parts-card';
  */
 export function UsageMeterWidget({ payload }: { payload: unknown }) {
   const u = parse(payload);
+  // Falls back rather than throws: a widget frozen onto a message outlives
+  // the shape `parse()` expects (finding 103).
   if (!u) return <RawPayload payload={payload} />;
   return (
     <div>

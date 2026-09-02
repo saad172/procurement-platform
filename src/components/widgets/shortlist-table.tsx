@@ -1,22 +1,27 @@
 import { z } from 'zod/v4';
+import { EXCLUDED_HEADING, EXCLUDED_REASONS, SHORTLIST_EMPTY_LINE } from '@/domain/category-answer';
+import { CRITERION_LABELS, WEIGHTED_CRITERIA, confidenceTone } from '@/domain/score';
 import { RawPayload } from './raw';
-import {
-  CRITERION_LABELS,
-  WEIGHTED_CRITERIA,
-  confidenceTone,
-  coverageNote,
-  fmtScore,
-} from './parts-table';
+import { coverageNote, fmtScore } from './criterion-format';
 
 /**
- * `shortlist_table` — the Category page's Shortlist in miniature, plus the
- * weight vector rendered as a row of six labelled weights (SPEC §14.4): the
- * freeze is legible, not merely true.
+ * `shortlist_table` — the Category page's `Shortlist` section in miniature
+ * (`src/app/program/[programId]/category/[categoryId]/sections.tsx`), plus
+ * the weight vector rendered as a row of six labelled weights: `get_shortlist`
+ * carries its weights **as a rendered field** so the freeze is legible, not
+ * merely true (SPEC §14.4) — a person reading the widget can see which
+ * ranking produced it without a second lookup.
  *
- * `get_shortlist`'s widget payload carries no `programId` and no
- * `categoryId` — only `category`, the name — so a Supplier here is named,
- * never linked; guessing the Program from the page a chat is open on would
- * point a citation-adjacent figure at the wrong row on a wrong turn.
+ * **No link on a Supplier row.** `get_shortlist`'s widget payload names the
+ * Category by string but carries no `programId` and no `categoryId` (finding
+ * 103) — the page's URL needs both, and there is no safe way to recover
+ * either from a Program-scoped chat without risking a citation-adjacent
+ * figure pointing at the wrong Program's row.
+ *
+ * The page's two rules travel with it unchanged: a filtered row keeps its
+ * true rank (`ExcludedList` below is the *other* half of that, never a
+ * demoted rank), and Excluded is never a low Score — it is a different kind
+ * of row entirely, split by reason.
  */
 
 const rowSchema = z.object({
@@ -43,6 +48,8 @@ type Row = z.infer<typeof rowSchema>;
 
 export function ShortlistTableWidget({ payload }: { payload: unknown }) {
   const parsed = payloadSchema.safeParse(payload);
+  // Falls back rather than throws: a widget frozen onto a message outlives
+  // the shape this schema names (finding 103).
   if (!parsed.success) return <RawPayload payload={payload} />;
   const d = parsed.data;
   return (
@@ -63,17 +70,25 @@ export function ShortlistTableWidget({ payload }: { payload: unknown }) {
   );
 }
 
+/** ── The vector that produced this ranking ── */
 function WeightsLine({ weights, whatIf }: { weights: Record<string, number>; whatIf: boolean }) {
   return (
     <p className="note" style={{ margin: '0 0 0.6rem' }}>
       {whatIf ? 'What-if weights' : 'Program default weights'}:{' '}
+      {/*
+        `get_shortlist` always resolves all six keys before freezing
+        (`normaliseWeights`, `src/tools/catalog/reads.ts`), so `?? 0` is not a
+        live gap — it is what stops an older frozen payload's missing key from
+        rendering `undefined` instead of a number.
+      */}
       {WEIGHTED_CRITERIA.map((key) => `${CRITERION_LABELS[key]} ${weights[key] ?? 0}`).join(' · ')}
     </p>
   );
 }
 
+/** ── Who is bidding, best fit first — the true rank, filtered rows kept in ── */
 function RankedTable({ rows }: { rows: Row[] }) {
-  if (rows.length === 0) return <p className="empty">Nothing is ranked here yet.</p>;
+  if (rows.length === 0) return <p className="empty">{SHORTLIST_EMPTY_LINE}</p>;
   return (
     <table>
       <thead>
@@ -87,6 +102,9 @@ function RankedTable({ rows }: { rows: Row[] }) {
       </thead>
       <tbody>
         {rows.map((r) => (
+          // `visible === false` rather than a filtered-out row missing: the
+          // page's "gap is the disclosure" rule means a hidden row keeps its
+          // seat and its true rank, just dimmed.
           <tr key={r.supplierId} className={r.visible === false ? 'hidden-by-filter' : undefined}>
             <td className="num">{r.rank}</td>
             <td>
@@ -115,23 +133,37 @@ function RankedTable({ rows }: { rows: Row[] }) {
   );
 }
 
+/**
+ * ── In this program, but not rankable yet ──
+ *
+ * `no_match` and `no_category` are kept apart because they are different
+ * problems for different people: the first has no Profile to measure and
+ * belongs on Needs Review, the second is correctly resolved but bids on
+ * nothing here and needs no action at all. The heading and each reason's
+ * caption come from `domain/category-answer.ts`, the same constants the
+ * page's `Excluded` section reads for its fuller paragraph — one wording per
+ * reason, at two lengths.
+ */
 function ExcludedList({ excluded }: { excluded: { row: Row; reason: string }[] }) {
   if (excluded.length === 0) return null;
   return (
     <div style={{ marginTop: '0.7rem' }}>
       <p className="note" style={{ margin: '0 0 0.3rem', fontWeight: 600 }}>
-        In this program, but not rankable yet
+        {EXCLUDED_HEADING}
       </p>
       <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
         {excluded.map((e) => (
           <li key={e.row.supplierId} className="note">
-            <strong>{e.row.displayName}</strong>{' '}
-            {e.reason === 'no_match'
-              ? '— no settled match, no estimated criterion'
-              : '— not mapped to this category'}
+            <strong>{e.row.displayName}</strong> {excludedCaption(e.reason)}
           </li>
         ))}
       </ul>
     </div>
   );
+}
+
+/** `reason` is a bare string off the frozen payload; only two values `EXCLUDED_REASONS` names ever reach here in practice. */
+function excludedCaption(reason: string): string {
+  const known = EXCLUDED_REASONS as Record<string, { caption: string } | undefined>;
+  return known[reason]?.caption ?? `— excluded (${reason})`;
 }

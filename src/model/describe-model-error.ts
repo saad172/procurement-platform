@@ -38,13 +38,15 @@ import { describeError } from '@/lib/describe-error';
  * `error.type`, which is why every branch below falls through to a type check
  * on a bare `APIError` as well as an `instanceof` on the named subclass.
  *
- * Anything this table does not name — `not_found_error`, `billing_error`, a
- * gateway `timeout_error`, or a non-SDK error entirely — falls back to
- * `describeError`. That import looks backwards, since `src/jobs/**` is the
- * caller of `runLoop()` everywhere else, but `src/jobs/describe-error.ts`
- * itself imports nothing at all: it is a leaf module, so the edge this file
- * adds (`src/model` → `src/jobs/describe-error`) closes no cycle back through
- * `src/jobs` → `src/model`. Checked, not assumed.
+ * A **named, still-generic** Anthropic error — `not_found_error`,
+ * `billing_error`, a gateway `timeout_error`, or any other plain `APIError`
+ * this table does not special-case — gets its status and detail read out
+ * rather than falling straight to `describeError`'s wire-body fallback,
+ * which is the sentence this file exists to stop reaching the dock.
+ * Everything that is not even an SDK error (a non-`APIError` throw) falls
+ * back to `describeError`. `src/lib` is a leaf module — `src/model/wire.ts`
+ * already imports `canonical-json` from it — so the edge this file adds
+ * (`src/model` → `src/lib/describe-error`) closes no cycle.
  */
 
 /** The API's own nested `error.message`, the one field that names the bad field. */
@@ -90,6 +92,18 @@ export function describeModelError(error: unknown): string {
 
   if (error instanceof APIError && isOverloaded(error)) {
     return 'the model is overloaded right now; ask again in a moment.';
+  }
+
+  /**
+   * Every other `APIError` this SDK version can throw — `not_found_error`,
+   * `billing_error`, a gateway `timeout_error`, or a plain 500 `api_error` —
+   * is still an `APIError`, so it still carries `status` and a body worth
+   * reading. Falling through to `describeError` here is exactly the bug this
+   * file exists for: `describeError` takes `error.message`, and for an
+   * `APIError` that message is the wire body verbatim.
+   */
+  if (error instanceof APIError) {
+    return `the model returned ${error.status}: ${apiBodyMessage(error) ?? 'no detail'}`;
   }
 
   return describeError(error);

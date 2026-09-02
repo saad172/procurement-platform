@@ -50,6 +50,30 @@ export const WEIGHTED_CRITERIA: readonly CriterionKey[] = [
 ];
 
 /**
+ * The buyer-facing name of each weighted Criterion, in the order every page
+ * and chat widget lists them.
+ *
+ * **Not the same string as `program_criterion_weight.label`**
+ * (`src/db/seed-data/program.ts` `CRITERIA`, around line 262), even though the
+ * seed carries the same six words: that row is read by `loadCriterionWeights()`
+ * (`src/jobs/assess.ts`) into the Assessment prompt, so it is what an *agent*
+ * reads and could in principle diverge from Program to Program. This constant
+ * is what the *screen* renders — the weight rail, `CriterionCell`, and every
+ * widget that mirrors either — and it is the one of the two authoritative for
+ * what a person sees. The weight rail and the widgets' `criterion-format.ts`
+ * (then `parts-table.tsx`) each declared this table for themselves before it
+ * moved here.
+ */
+export const CRITERION_LABELS: Record<CriterionKey, string> = {
+  compliance_risk: 'Compliance risk',
+  ownership_exposure: 'Ownership exposure',
+  country_resilience: 'Country resilience',
+  tariff_exposure: 'Tariff exposure',
+  proximity: 'Proximity',
+  media_signal: 'Media signal',
+};
+
+/**
  * The Program default. Presets are code constants rather than rows because the
  * seed's own presets had already gone stale — summing to 101 and 112 — when a
  * Criterion was dropped, and a stored row would have survived that silently.
@@ -159,6 +183,20 @@ export function dataConfidence(input: SupplierScoringInput): DataConfidenceBand 
     return 'adequate';
   }
   return 'thin';
+}
+
+/**
+ * The band's badge tone. `strong` reads good, `thin` reads warn, and
+ * `adequate` sits between as mute — the three tones every page already uses
+ * for this badge, so a widget or a rail cannot quietly invent a fourth.
+ * The widgets' `criterion-format.ts` (then `parts-table.tsx`) and the
+ * Category page's Shortlist row each carried this mapping themselves before
+ * it moved here.
+ */
+export function confidenceTone(band: DataConfidenceBand | string): string {
+  if (band === 'strong') return 'good';
+  if (band === 'thin') return 'warn';
+  return 'mute';
 }
 
 /**
@@ -449,7 +487,7 @@ export function buildShortlist(scores: readonly SupplierScore[]): {
   return { ranked, excluded };
 }
 
-export { EXPECTED_ENRICHMENTS } from './scoring/anchors';
+export { EXPECTED_ENRICHMENTS, criterionBand } from './scoring/anchors';
 export type {
   CriterionKey,
   CriterionOutcome,

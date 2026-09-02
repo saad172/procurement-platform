@@ -74,6 +74,35 @@ export type SupplierAnswerInput = {
   categoryName: string | null;
 };
 
+/**
+ * A Supplier with no roster row — one Discover promoted rather than one on
+ * the imported list (CONTEXT.md's **Lead** entry). `rosterName` is `null` for
+ * exactly this case, and three renderers each named the fallback the same
+ * way before it moved here: `supplier_card`, and the entity page's `Heading`
+ * and `KnownAs` line.
+ */
+export const PROMOTED_LEAD_LABEL = '(promoted lead)';
+
+/**
+ * `agreed by the checks alone, with no model involved` / `two independent
+ * reads agreed on it` / `a person decided this` — the Supplier page's own
+ * words for `match.settled_by` (`db/schema/enums.ts` `matchSettledBy`), one
+ * definition read by both the page and the `supplier_card` chat widget so the
+ * two cannot drift into describing one Match two ways. The Supplier page's
+ * `Heading` and the widget's `parts-card.tsx` (since renamed `narrow.ts`)
+ * each wrote this ternary for themselves before it moved here.
+ *
+ * `discovered` never reaches this function: a promoted Lead's Match is
+ * pre-settled with zero attempts (SPEC §11.3), and both callers say so as
+ * their own sentence — "we found this one by searching" — before asking who
+ * settled the rest.
+ */
+export function settledByLine(settledBy: string): string {
+  if (settledBy === 'rules') return 'agreed by the checks alone, with no model involved';
+  if (settledBy === 'agents') return 'two independent reads agreed on it';
+  return 'a person decided this';
+}
+
 export function supplierAnswer(input: SupplierAnswerInput): SupplierAnswer {
   const { name, match } = input;
 

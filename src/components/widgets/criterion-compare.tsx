@@ -1,17 +1,29 @@
 import Link from 'next/link';
 import { z } from 'zod/v4';
+import { CRITERION_LABELS, WEIGHTED_CRITERIA } from '@/domain/score';
+import { CriterionCell } from '@/components/criterion-cell';
 import { RawPayload } from './raw';
-import { CRITERION_LABELS, WEIGHTED_CRITERIA, criterionBand } from './parts-table';
+import { toScoredCriterion } from './criterion-format';
 
 /**
- * `criterion_compare` — the one comparison no page draws: Suppliers ×
- * Criteria, banded the way `criterion-cell.tsx` bands every other Score.
+ * `criterion_compare` — the one comparison no page draws (SPEC §14.4):
+ * Suppliers × Criteria, a grid rather than a ranking, drawn through the same
+ * `CriterionCell` every page bands a Criterion with, so a band read off this
+ * grid is the same claim as one read off the Supplier page. It exists
+ * because a chat question — *"how does Bosch stack up against the other two
+ * on compliance?"* — is a question the Shortlist and the Supplier page each
+ * answer one row at a time, and this is the shape that answers it in one
+ * table.
  *
- * `compare_suppliers` accepts a `categoryId` but never filters on it, so a
- * Supplier bidding on two Categories can carry two current `tariff_exposure`
- * rows for one cell — both are rendered rather than one picked silently.
- * `supplier.findFirst` returning nothing serialises the whole `supplier` key
- * away, so that column reads "unmatched" with no id to link.
+ * `compare_suppliers` accepts a `categoryId` but never filters on it (finding
+ * 103): a Supplier bidding on two Categories carries two current
+ * `tariff_exposure` rows under one criterion key, so `Cell` renders every one
+ * it is handed rather than pick a winner silently. `supplier.findFirst`
+ * returning nothing serialises the whole `supplier` key away rather than
+ * `null`, which is why a column's identity is checked with `supplier` (the
+ * field), not a nullable id — the column is not "unmatched" (no Match ever
+ * ran here), it is a row `compare_suppliers` could not resolve to a Supplier
+ * at all.
  */
 
 const valueSchema = z.object({
@@ -33,10 +45,13 @@ type Value = z.infer<typeof valueSchema>;
 
 export function CriterionCompareWidget({ payload }: { payload: unknown }) {
   const parsed = payloadSchema.safeParse(payload);
+  // Falls back rather than throws: a widget frozen onto a message outlives
+  // the shape this schema names (finding 103).
   if (!parsed.success) return <RawPayload payload={payload} />;
   return <CompareTable columns={parsed.data} />;
 }
 
+/** ── Suppliers across the top, the six weighted Criteria down the side ── */
 function CompareTable({ columns }: { columns: Column[] }) {
   return (
     <table>
@@ -64,11 +79,12 @@ function CompareTable({ columns }: { columns: Column[] }) {
   );
 }
 
+/** A column with no `supplier` is one `compare_suppliers` could not resolve — a payload gap, not a fourth Match outcome. */
 function ColumnHeader({ supplier }: { supplier: Column['supplier'] }) {
   if (!supplier) {
     return (
       <th>
-        <span className="note">unmatched</span>
+        <span className="note">supplier row not in this payload</span>
       </th>
     );
   }
@@ -81,45 +97,14 @@ function ColumnHeader({ supplier }: { supplier: Column['supplier'] }) {
   );
 }
 
+/** Usually one entry; more than one is the uncollapsed multi-Category case the header names. */
 function Cell({ entries }: { entries: Value[] }) {
   if (entries.length === 0) return <span className="note">—</span>;
   return (
     <>
       {entries.map((v, i) => (
-        <ValueLine key={i} v={v} />
+        <CriterionCell key={i} criterion={toScoredCriterion(v)} />
       ))}
     </>
   );
-}
-
-/** Never a bare number (SPEC §9.1) — value plus band plus the raw input beside it. */
-function ValueLine({ v }: { v: Value }) {
-  if (v.value == null) {
-    return (
-      <div>
-        <span className="criterion-unknown">unknown</span>
-        <div className="criterion-raw">{v.unknownReason ?? 'no reason recorded'}</div>
-      </div>
-    );
-  }
-  return (
-    <div>
-      <span className="criterion-value">{v.value.toFixed(1)}</span>{' '}
-      <span className="badge mute">{criterionBand(v.value)}</span>
-      <div className="criterion-raw">{describeRaw(v.rawInputs)}</div>
-    </div>
-  );
-}
-
-function describeRaw(raw: Record<string, unknown>): string {
-  if (typeof raw.mfnRatePct === 'number') return `MFN ${raw.mfnRatePct}%`;
-  if (typeof raw.km === 'number') return `${raw.km.toLocaleString('en-US')} km`;
-  if (Array.isArray(raw.factorsScored)) {
-    return raw.factorsScored.length === 0
-      ? 'no risk factor deducted'
-      : `${raw.factorsScored.length} risk factor(s) deducted`;
-  }
-  if (typeof raw.articleCount === 'number') return `${raw.articleCount} article(s)`;
-  if (Array.isArray(raw.indicators)) return `${raw.indicators.length} of 6 indicators`;
-  return '';
 }
