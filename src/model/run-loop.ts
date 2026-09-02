@@ -285,14 +285,50 @@ async function checkCapsAndBudget(
     };
   }
 
+  /**
+   * ── A truncated turn is a failure of ours, and says so ───────────────────
+   *
+   * `max_tokens` and `model_context_window_exceeded` both end the SDK's loop —
+   * `determineNextStepFromStopReason` sorts them into `stop` — so the turn
+   * arrived here as an ordinary `done` carrying a half-written final message.
+   * Every caller then read that as *the model mis-shaped its output*, which
+   * bought it two free retries against the same truncation and put the wrong
+   * sentence in front of whoever read the Job afterwards.
+   *
+   * **A diagnostic that is wrong is worse than one that is missing** (finding
+   * 72), so this is `failed` and it names the stop reason. Callers route
+   * `failed` to a free retry too — a truncation is worth another attempt — but
+   * they report it as the loop failing rather than as the draft's shape.
+   */
+  if (turn.stop_reason === 'max_tokens' || turn.stop_reason === 'model_context_window_exceeded') {
+    controller.abort();
+    return {
+      status: 'failed',
+      error:
+        `the turn was cut off with stop_reason "${turn.stop_reason}", so its output is incomplete ` +
+        `(max_tokens is ${MAX_TOKENS.toLocaleString('en-US')} — a truncation guard, never a budget)`,
+    };
+  }
+
   // `max_iterations` stops SILENTLY, leaving stop_reason: 'tool_use' on a
   // truncated run. It is a backstop set far above our own ceiling, so if it
-  // fires that is a bug in our counting, not a limit doing its job.
+  // fires that is a bug in our counting, not a limit doing its job — and it
+  // ABORTS rather than only logging, because a backstop that is announced and
+  // then stepped over is not a backstop.
   if (turns >= MAX_ITERATIONS_BACKSTOP) {
     console.error(
       `[model] runLoop(${params.loop}) hit max_iterations (${MAX_ITERATIONS_BACKSTOP}). ` +
         `This is a backstop and should be unreachable — our own ceiling is ${params.caps.toolCalls} tool calls.`,
     );
+    controller.abort();
+    return {
+      status: 'terminated',
+      reason: `stopped at the ${MAX_ITERATIONS_BACKSTOP}-request backstop, which should have been unreachable`,
+      turns,
+      toolCalls,
+      tokens,
+      toolUses,
+    };
   }
 
   if (toolCalls > params.caps.toolCalls) {
