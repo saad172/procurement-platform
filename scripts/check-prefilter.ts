@@ -5,7 +5,7 @@
 import { config } from 'dotenv';
 config({ path: '.env', quiet: true });
 import postgres from 'postgres';
-import { prefilterScore } from '../src/jobs/discover';
+import { prefilterScore } from '../src/domain/discover-leads';
 
 async function main() {
   const sql = postgres(process.env.DATABASE_URL!);

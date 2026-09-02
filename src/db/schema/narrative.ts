@@ -353,8 +353,21 @@ export const lead = pgTable(
       .notNull()
       .references(() => entity.id),
 
+    /**
+     * The closed enum the classifier returned, or **null when it returned
+     * nothing** (SPEC §11.1).
+     *
+     * Null is not `unclear`. `unclear` is a real answer and is often the right
+     * one — a guess dressed as a classification is worse than an admission —
+     * and writing it for a loop that failed, hit a cap or answered outside the
+     * enum made the two indistinguishable on the row and in every reader.
+     * `not_classified_reason` carries what happened instead, so the badge can
+     * say *not classified: the classifier loop stopped: tool-call cap reached*
+     * rather than putting words in the model's mouth.
+     */
     classification: leadClassification('classification'),
     classificationReasoning: text('classification_reasoning'),
+    notClassifiedReason: text('not_classified_reason'),
 
     // Evidence, as plain columns rather than prose.
     shipmentCount: integer('shipment_count'),

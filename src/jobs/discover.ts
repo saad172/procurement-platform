@@ -1,7 +1,16 @@
-import { eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { DISCOVER_CLASSIFY_TOP_N, DISCOVER_TRADE_LIMIT, JOB_CAPS } from '@/config/constants';
+import {
+  decideLeadRelation,
+  prefilterScore,
+  programTerritories,
+  readLeadClassification,
+  type LeadClassificationOutcome,
+  type LeadRelationDecision,
+  type RosterSupplier,
+} from '@/domain/discover-leads';
 import { hsHeading } from '@/domain/hs-code';
 import { runLoop } from '@/model';
 import { toRunnableTools } from '@/model/tool-adapter';
@@ -22,63 +31,6 @@ import { upsertEntity } from './resolve';
  * **Discover proposes and never adds.** A person promotes a Lead into a
  * Supplier; the app has no path that does it unasked.
  */
-
-/**
- * **Noise is the hard part**, and it has no rule.
- *
- * HS 8507.60 is *any* lithium-ion battery, not a traction pack, so the BAT line
- * into USA/MEX returns **14 560 counterparties** whose first page is led by
- * Apple, Amazon and a freight forwarder. The two rows that most need separating
- * are structurally identical: DAMCO CHINA LIMITED at 16 930 shipments and a
- * real component maker at a tenth of that differ in no field a filter can read.
- *
- * So the prefilter below is cheap and honest about what it cannot do, and the
- * classifier does the rest.
- *
- * **Measured** on the 100-row BAT page (`pnpm check:prefilter`), against
- * Sayari's own `logisticsEntity` flag as ground truth:
- *
- * | | count |
- * |---|---|
- * | rows Sayari flags as logistics | 14 |
- * | of those, caught by name | 9 |
- * | of those, missed by name | 5 |
- * | **manufacturers wrongly demoted** | **0** |
- *
- * Zero false positives is the property that matters. A heuristic that never
- * demotes a real manufacturer is safe to sort by even when it misses a third of
- * the forwarders — the misses survive to the classifier, which is where the
- * judgement was supposed to happen anyway. Had it had false positives, the
- * reorder would be quietly deciding the outcome, and the tests below would
- * fail rather than the classifier catching it.
- */
-const FORWARDER_MARKERS = [
-  'logistics',
-  'forwarding',
-  'freight',
-  'shipping',
-  'transport',
-  'express',
-  'cargo',
-  'customs',
-  'broker',
-  'warehous',
-  'damco',
-  'kuehne',
-  'expeditors',
-  'panalpina',
-  'schenker',
-  'agility',
-  'ceva',
-  'dsv',
-  '3pl',
-];
-
-/** Cheap, and it only ever *reorders* — it never removes a row. */
-export function prefilterScore(label: string): number {
-  const name = label.toLowerCase();
-  return FORWARDER_MARKERS.some((marker) => name.includes(marker)) ? -1 : 0;
-}
 
 export type DiscoverDeps = {
   db: Database;
@@ -123,10 +75,23 @@ async function loadDiscoverQuery(
   if (lines.length === 0) return { result: { proposed: 0, classified: 0, alreadyOnRoster: 0 } };
 
   const program = await db.query.program.findFirst({ where: eq(t.program.id, args.programId) });
+  const plants = await db
+    .select({ country: t.plant.country })
+    .from(t.plant)
+    .where(eq(t.plant.programId, args.programId))
+    .orderBy(asc(t.plant.code));
 
-  // Shipments arriving in the Program's territories. Both, because the
-  // Mexican plant is a real destination even though one importer is stored.
-  const arrivalCountries = [program?.importingCountry ?? 'USA', 'MEX'];
+  /**
+   * Shipments arriving in **the Sourcing Program's territories** (SPEC §11).
+   *
+   * The second entry used to be the literal `'MEX'`, which for a Program
+   * importing into Mexico asked for `['MEX', 'MEX']`. It is the Plants:
+   * `programTerritories` derives the list from the importing country the
+   * Program declares plus the countries its Plants sit in, deduped. For the
+   * founding Program that is `['USA', 'MEX']` — the same query, from rows a
+   * person authored rather than from a constant in a query builder.
+   */
+  const arrivalCountries = programTerritories(program, plants);
 
   /**
    * Trade data indexes HS at **six digits**, so the seed's 8- and 10-digit
@@ -148,8 +113,9 @@ async function loadDiscoverQuery(
 type RankedCandidates = {
   ranked: { entity: SayariEntity; shipments: number | null; latestShipmentDate: string | null }[];
   alreadyOnRoster: number;
-  familyMembers: Map<string, string>;
-  rosterNames: string[];
+  /** Family member entity id → the Supplier of THIS Program whose family holds it. */
+  familyOwners: Map<string, string>;
+  roster: RosterSupplier[];
 };
 
 /** Runs the trade search, then ranks and dedupes it against the roster. */
@@ -180,23 +146,15 @@ async function searchTradeCandidates(
       .filter((id): id is string => id != null),
   );
 
-  const rosterNames = (
-    await db
-      .select({ name: t.supplier.rosterName })
-      .from(t.supplier)
-      .where(eq(t.supplier.programId, args.programId))
-  )
-    .map((row) => row.name)
-    .filter((name): name is string => name != null);
+  // The roster, in roster order, so the name-token flag resolves to the same
+  // Supplier every run rather than to whichever row Postgres reached first.
+  const roster = await db
+    .select({ supplierId: t.supplier.id, rosterName: t.supplier.rosterName })
+    .from(t.supplier)
+    .where(eq(t.supplier.programId, args.programId))
+    .orderBy(asc(t.supplier.rosterIndex));
 
-  // Family members of accepted Suppliers — a Lead that is one renders
-  // "related by ownership, VERIFIED" rather than as an unverified guess.
-  const familyMembers = new Map<string, string>();
-  for (const row of await db
-    .select({ member: t.familyMember.memberEntityId, root: t.familyMember.rootEntityId })
-    .from(t.familyMember)) {
-    familyMembers.set(row.member, row.root);
-  }
+  const familyOwners = await loadFamilyOwners(db, args.programId);
 
   const rows = trade.data.data ?? [];
   let alreadyOnRoster = 0;
@@ -242,7 +200,7 @@ async function searchTradeCandidates(
     )
     .slice(0, DISCOVER_CLASSIFY_TOP_N);
 
-  return { ranked, alreadyOnRoster, familyMembers, rosterNames };
+  return { ranked, alreadyOnRoster, familyOwners, roster };
 }
 
 /** Classifies each ranked candidate and records it as a Lead. */
@@ -253,105 +211,156 @@ async function classifyAndRecordLeads(
   search: RankedCandidates,
 ): Promise<{ classified: number }> {
   const { db } = deps;
-  const { hsCodes, arrivalCountries } = query;
-  const { ranked, familyMembers, rosterNames } = search;
-
-  const registry = getRegistry();
-  const classifierTool = registry.byName.get('submit_lead_classification')!;
+  const { ranked, familyOwners, roster } = search;
   let classified = 0;
 
   for (const candidate of ranked) {
     await upsertEntity(db, candidate.entity);
 
-    // The classifier costs ZERO ADDITIONAL SAYARI CALLS: a trade result is
-    // already a full entity.
-    const result = await runLoop(
-      {
-        loop: 'classifier',
-        system: classifierPrompts.system,
-        tools: toRunnableTools([classifierTool], deps.toolCtx),
-        messages: [
-          {
-            role: 'user',
-            content: classifierPrompts.buildFirstUserMessage({
-              companyName: candidate.entity.label,
-              countries: candidate.entity.countries ?? [],
-              shipmentCount: candidate.shipments,
-              topHsCodes: hsCodes,
-              businessPurpose: attributeTexts(
-                candidate.entity.attributes?.business_purpose?.data,
-              ).join('; '),
-              addresses: candidate.entity.addresses ?? [],
-            }),
-          },
-        ],
-        caps: JOB_CAPS.discover,
-      },
-      deps.modelCtx,
-    );
+    const outcome = readLeadClassification(await classifyCandidate(deps, query, candidate));
+    if (outcome.classification) classified += 1;
 
-    const submitted =
-      result.status === 'done'
-        ? (result.toolUses.find((use) => use.name === 'submit_lead_classification')?.input as
-            | { classification: string; reasoning: string }
-            | undefined)
-        : undefined;
-    if (submitted) classified += 1;
-
-    const related = familyMembers.get(candidate.entity.id);
-    const nameFlag = !related && sharesNameToken(candidate.entity.label, rosterNames);
-
-    await db
-      .insert(t.lead)
-      .values({
-        programId: args.programId,
-        categoryId: args.categoryId,
-        entityId: candidate.entity.id,
-        // A closed enum, so AN ENUM IS NOT A CLAIM — which is what lets Discover
-        // add a table and NO NEW CITATION TARGET GROUP. The reasoning stays
-        // inspectable in the trace and no sentence is written from it.
-        classification: (submitted?.classification ?? 'unclear') as never,
-        classificationReasoning: submitted?.reasoning ?? null,
-        shipmentCount: candidate.shipments,
-        latestShipmentDate: candidate.latestShipmentDate,
-        topHsCodes: hsCodes as never,
-        arrivalCountries: arrivalCountries as never,
-        relatedSupplierId: null,
-        // Verified where the ownership graph puts it in an accepted Supplier's
-        // family; otherwise a LABELLED, never hidden, name-token guess.
-        relationVerified: Boolean(related),
-        jobId: deps.jobId ?? null,
-      })
-      .onConflictDoNothing();
-
-    void nameFlag;
+    await recordLead(db, {
+      programId: args.programId,
+      categoryId: args.categoryId,
+      candidate,
+      query,
+      classification: outcome,
+      relation: decideLeadRelation(
+        { entityId: candidate.entity.id, label: candidate.entity.label },
+        { familyOwners, roster },
+      ),
+      jobId: deps.jobId,
+    });
   }
 
   return { classified };
 }
 
 /**
- * The unverified name-token overlap flag (SPEC §11.2).
+ * One classifier loop over one trade row.
  *
- * Roster Suppliers appear in trade data as their foreign subsidiaries, and
- * `traversal.ubo` returns nothing, so entity-id dedupe alone would propose a
- * company already on the list under a different id. This catches those — and
- * it is **labelled, never hidden**, because an unverified relationship
- * presented as fact is worse than one presented as a question.
+ * The classifier costs **zero additional Sayari calls**: a trade result is
+ * already a full entity, so everything the prompt names is in hand.
  */
-export function sharesNameToken(label: string, rosterNames: readonly string[]): string | null {
-  const tokens = new Set(
-    label
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((token) => token.length > 3),
+async function classifyCandidate(
+  deps: DiscoverDeps,
+  query: DiscoverQuery,
+  candidate: RankedCandidates['ranked'][number],
+) {
+  const classifierTool = getRegistry().byName.get('submit_lead_classification')!;
+  return runLoop(
+    {
+      loop: 'classifier',
+      system: classifierPrompts.system,
+      tools: toRunnableTools([classifierTool], deps.toolCtx),
+      messages: [
+        {
+          role: 'user',
+          content: classifierPrompts.buildFirstUserMessage({
+            companyName: candidate.entity.label,
+            countries: candidate.entity.countries ?? [],
+            shipmentCount: candidate.shipments,
+            topHsCodes: query.hsCodes,
+            businessPurpose: attributeTexts(
+              candidate.entity.attributes?.business_purpose?.data,
+            ).join('; '),
+            addresses: candidate.entity.addresses ?? [],
+          }),
+        },
+      ],
+      caps: JOB_CAPS.discover,
+    },
+    deps.modelCtx,
   );
-  for (const name of rosterNames) {
-    const nameTokens = name
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((token) => token.length > 3);
-    if (nameTokens.some((token) => tokens.has(token))) return name;
+}
+
+/**
+ * Writes one Lead, with everything that was decided about it.
+ *
+ * Separated from the loop above so the write can be exercised without a model:
+ * `discoverLeads` runs a classifier per candidate and cannot replay offline,
+ * and the two facts most worth pinning — that the name-token flag is stored
+ * and that the related Supplier is named — are on this row rather than in the
+ * loop. `void nameFlag` and a hardcoded `relatedSupplierId: null` is what a
+ * value computed near an insert and never written into it looks like.
+ */
+export async function recordLead(
+  db: Database,
+  args: {
+    programId: string;
+    categoryId: string;
+    candidate: RankedCandidates['ranked'][number];
+    query: DiscoverQuery;
+    classification: LeadClassificationOutcome;
+    relation: LeadRelationDecision;
+    jobId?: string | undefined;
+  },
+): Promise<void> {
+  await db
+    .insert(t.lead)
+    .values({
+      programId: args.programId,
+      categoryId: args.categoryId,
+      entityId: args.candidate.entity.id,
+      // A closed enum, so AN ENUM IS NOT A CLAIM — which is what lets Discover
+      // add a table and NO NEW CITATION TARGET GROUP. The reasoning stays
+      // inspectable in the trace and no sentence is written from it.
+      //
+      // Null rather than `unclear` when the classifier produced nothing:
+      // `unclear` is a real answer a person can act on, and a loop that hit a
+      // cap is not it. The reason rides beside it.
+      classification: args.classification.classification,
+      classificationReasoning: args.classification.reasoning,
+      notClassifiedReason: args.classification.notClassifiedReason,
+      shipmentCount: args.candidate.shipments,
+      latestShipmentDate: args.candidate.latestShipmentDate,
+      topHsCodes: args.query.hsCodes as never,
+      arrivalCountries: args.query.arrivalCountries as never,
+      // Verified where THIS Program's ownership graph puts it in an accepted
+      // Supplier's family; otherwise a LABELLED, never hidden, name-token
+      // guess — which now names the Supplier it guessed at.
+      relatedSupplierId: args.relation.relatedSupplierId,
+      relationVerified: args.relation.relationVerified,
+      jobId: args.jobId ?? null,
+    })
+    .onConflictDoNothing();
+}
+
+/**
+ * Family members of **this Program's** accepted Profiles, mapped to the
+ * Supplier each one hangs off (SPEC §11.2).
+ *
+ * The map was built from `select().from(family_member)` with no `WHERE` at
+ * all, so a Lead could be marked *related by ownership · verified* off another
+ * Program's ownership graph — and the row it was verified against named no
+ * Supplier, because only the root entity id was kept. Joining through `match`
+ * and `supplier` is what makes the badge a statement about this roster, and
+ * carrying the Supplier id is what lets it say whose family the Lead is in.
+ *
+ * Ordered, and first-wins: two Suppliers can legitimately share a Family
+ * member (the seed holds two shared-parent pairs), and which one the badge
+ * names must not be decided by Postgres row order. Roster order is the order
+ * a person reads the shortlist in.
+ */
+export async function loadFamilyOwners(
+  db: Database,
+  programId: string,
+): Promise<Map<string, string>> {
+  const rows = await db
+    .select({
+      member: t.familyMember.memberEntityId,
+      supplierId: t.supplier.id,
+    })
+    .from(t.familyMember)
+    .innerJoin(t.match, eq(t.match.entityId, t.familyMember.rootEntityId))
+    .innerJoin(t.supplier, eq(t.supplier.id, t.match.supplierId))
+    .where(and(eq(t.supplier.programId, programId), eq(t.match.status, 'accepted')))
+    .orderBy(asc(t.supplier.rosterIndex), asc(t.familyMember.memberEntityId));
+
+  const owners = new Map<string, string>();
+  for (const row of rows) {
+    if (!owners.has(row.member)) owners.set(row.member, row.supplierId);
   }
-  return null;
+  return owners;
 }
