@@ -45,6 +45,21 @@ export const enrichment = pgTable(
     /** An entity id, an ISO country code, an HS code, or an address string. */
     subjectKey: text('subject_key').notNull(),
     requestParams: jsonb('request_params').notNull(),
+    /**
+     * Which re-fetch of this subject this row is: 0 for the first, 1 for the
+     * next, counted rather than timestamped so two runs an hour apart agree.
+     *
+     * `recordEnrichment` has always computed this number — it is what
+     * `derivedId` keys the row's id on — and then dropped it, so the table
+     * was append-only with **no readable order over its own generations**.
+     * `fetched_at` cannot stand in: it comes from the upstream body, so a
+     * replay against a warm cache writes two generations carrying the same
+     * instant, and `seedUpstream` writes a whole fixture's rows in one
+     * statement (the same tie `readCache` documents in `src/upstream/call.ts`).
+     * Every latest-generation read in `src/db/queries/enrichments.ts` orders
+     * on this column, with `id` as the tiebreak that makes the order total.
+     */
+    generation: integer('generation').notNull().default(0),
     /** The raw body this was projected from, so a Citation can reach the source. */
     upstreamResponseId: uuid('upstream_response_id')
       .notNull()
@@ -54,10 +69,30 @@ export const enrichment = pgTable(
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
     jobId: uuid('job_id'),
   },
-  (t) => [index('enrichment_subject_idx').on(t.source, t.subjectKind, t.subjectKey, t.fetchedAt)],
+  (t) => [
+    index('enrichment_subject_idx').on(t.source, t.subjectKind, t.subjectKey, t.fetchedAt),
+    /** The index the latest-generation reads run on, in the order they read it. */
+    index('enrichment_generation_idx').on(t.source, t.subjectKind, t.subjectKey, t.generation),
+  ],
 );
 
-// ── The six typed value tables ───────────────────────────────────────────────
+/**
+ * ── The six typed value tables ───────────────────────────────────────────────
+ *
+ * **Every one of them is append-only per generation**, and that is deliberate:
+ * a value row's `enrichment_id` is what a Citation resolves through, so a
+ * re-fetch that overwrote the row in place would move a number underneath the
+ * sentence that argued from it. `family_member` is the one exception, and it
+ * is an exception for a stated reason (its own comment below).
+ *
+ * The rule that makes append-only safe is on the **read**: a reader takes the
+ * latest generation and nothing else, in an explicit total order. Reading
+ * every generation at once is how a second Enrichment came to double the
+ * article count (`news_item`) and how the year that reached a Score came to
+ * depend on Postgres row order (`country_indicator`). The readers that hold
+ * that rule live in `src/db/queries/enrichments.ts`; a new one belongs there
+ * rather than inline, so the rule has one place to be true in.
+ */
 
 /**
  * World Bank Indicators v2 — LPI overall plus five WGI dimensions (SPEC §7.1).

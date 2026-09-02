@@ -2,6 +2,7 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { parseViewState } from '@/lib/view-state';
+import { latestGeocodePoints } from '@/db/queries/enrichments';
 import { activeRun, rosterWork, workerSeemsUp } from '@/db/queries/runs';
 import { programAnswer } from '@/domain/program-answer';
 import { loadRuns } from '@/db/queries/runs';
@@ -88,11 +89,11 @@ async function readProgramRows(db: Database, programId: string) {
     .innerJoin(t.entity, eq(t.entity.id, t.match.entityId))
     .where(and(eq(t.supplier.programId, programId), eq(t.match.status, 'accepted')));
 
-  const geocodePoints = await db
-    .select({ supplierKey: t.enrichment.subjectKey, lat: t.geocode.lat, lon: t.geocode.lon })
-    .from(t.geocode)
-    .innerJoin(t.enrichment, eq(t.enrichment.id, t.geocode.enrichmentId))
-    .where(eq(t.enrichment.subjectKind, 'address'));
+  // One point per geocoded Supplier, from the LATEST geocode Enrichment. This
+  // read joined every generation, and the derivation below folds them into a
+  // map by subject — so a re-geocoded address left the dot's position to
+  // whichever row Postgres reached first.
+  const geocodePoints = await latestGeocodePoints(db);
 
   const bidderCountRows = await db
     .select({ categoryId: t.supplierCategory.categoryId })

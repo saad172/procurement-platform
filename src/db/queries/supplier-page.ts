@@ -12,7 +12,7 @@ import {
 } from '@/domain/derive-supplier-page';
 import { entitySchema, type SayariEntity } from '@/upstream/projections/sayari';
 import { parseViewState } from '@/lib/view-state';
-import { loadEnrichments } from './enrichments';
+import { loadEnrichmentHistory } from './enrichments';
 import { loadShortlist, loadSupplierSnapshots, scoreSnapshot } from './shortlist';
 
 /**
@@ -88,7 +88,11 @@ async function readSupplierRows(db: Database, programId: string, supplierId: str
 
   // Ages are computed in the query, not during render: reading a clock while
   // rendering is not idempotent, and one read per request is the right number.
-  const enrichments = await loadEnrichments(db, match?.entityId ?? supplierId);
+  //
+  // Every generation, deliberately: the panel this feeds is headed "what we
+  // fetched, and when", so a second fetch of the same source is a second row
+  // with its own age badge rather than a replacement (SPEC §7.2).
+  const enrichments = await loadEnrichmentHistory(db, match?.entityId ?? supplierId);
 
   const assessment = await db.query.assessment.findFirst({
     where: and(eq(t.assessment.supplierId, supplierId), eq(t.assessment.kind, 'standard')),

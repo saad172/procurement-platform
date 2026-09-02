@@ -1,6 +1,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
+import { latestCountryIndicators, latestNewsItems } from '@/db/queries/enrichments';
 import { computeFamilyExposure, unionRiskFactors } from '@/domain/family';
 import { nearestPlant } from '@/domain/geo';
 import { scoreSupplier } from '@/domain/score';
@@ -273,17 +274,22 @@ async function assembleScoringInput(
   const plants = await loadPlants(db, args.programId);
   const nearest = nearestPlant(lat != null && lon != null ? { lat, lon } : undefined, plants);
 
+  /**
+   * **The latest generation of each, and no earlier one.**
+   *
+   * Both used to be read straight off the value table for the whole subject —
+   * every generation at once, and for the indicators with no `ORDER BY` at
+   * all — so a second Enrichment doubled the article count behind the media
+   * signal Criterion and left the country's value and year to Postgres row
+   * order. `db/queries/enrichments.ts` holds the rule and the argument; what
+   * matters here is that re-enriching a Supplier may not move a Criterion
+   * when the upstream body has not moved (SPEC §9.1).
+   */
   const indicators = profileRow.country
-    ? await db
-        .select()
-        .from(t.countryIndicator)
-        .where(eq(t.countryIndicator.country, profileRow.country))
+    ? await latestCountryIndicators(db, profileRow.country)
     : [];
 
-  const newsRows = await db
-    .select()
-    .from(t.newsItem)
-    .where(eq(t.newsItem.entityId, match.entityId));
+  const newsRows = await latestNewsItems(db, match.entityId);
 
   const presentEnrichments = [
     'sayari_negative_news',

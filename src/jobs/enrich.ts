@@ -98,6 +98,10 @@ async function recordEnrichment(
       subjectKind: args.subjectKind,
       subjectKey: args.subjectKey,
       requestParams: args.requestParams as never,
+      // Stored, not only hashed into the id: it is the order every
+      // latest-generation read in `db/queries/enrichments.ts` runs on, and
+      // `fetched_at` cannot stand in for it on a warm cache.
+      generation,
       upstreamResponseId: args.result.upstreamResponseId,
       fetchedAt: args.result.fetchedAt,
       jobId: ctx.jobId ?? null,
@@ -117,6 +121,31 @@ async function recordEnrichment(
  * "Bosch" would return articles about a company we have not identified, and a
  * zero result would be meaningless in a way that looks exactly like a clean
  * record.
+ *
+ * ## Why the articles stay append-only, and the read is what changed
+ *
+ * A second Enrichment used to **double the article count**: these rows carried
+ * a random id and no conflict target, and `assembleScoringInput` read every
+ * `news_item` for the entity regardless of which Enrichment fetched it. Nine
+ * Yazaki articles became eighteen, and the flag-weighted figure behind the
+ * media signal Criterion doubled with them (SPEC §9.2).
+ *
+ * Deduping on a natural key of the article — title plus url — was the other
+ * way to fix it, and it would have broken `recordEnrichment`'s append-only
+ * generation model: the surviving row would carry the **first** Enrichment's
+ * id for ever, so the Citation on a sentence written from the second fetch
+ * would point at a dated call that did not return that article, and a body
+ * that dropped an article could never be distinguished from one we had not
+ * re-read. An Enrichment is *a dated call and what it returned*, so each
+ * generation keeps its own rows and the reader takes the latest
+ * (`latestNewsItems`).
+ *
+ * The id is derived instead of random, from the Enrichment and the article's
+ * position in the body, so **writing the same generation twice is a no-op**
+ * rather than a double — the case `recordEnrichment` documents, where two Jobs
+ * race on one subject and the loser adopts the winner's row. Position rather
+ * than content, because a feed that genuinely returns the same headline twice
+ * is reporting two articles, and this is not the place to overrule it.
  */
 export async function enrichNegativeNews(
   ctx: EnrichContext,
@@ -132,23 +161,34 @@ export async function enrichNegativeNews(
   });
 
   const articles = result.data.data ?? [];
-  for (const article of articles) {
-    await ctx.db.insert(t.newsItem).values({
-      enrichmentId,
-      entityId: args.entityId,
-      title: article.title ?? '(untitled)',
-      sourceName: article.source ?? null,
-      url: article.url ?? null,
-      publishedAt: parseDate(article.published),
-      riskFlags: (article.risk_flags ?? null) as never,
-    });
+  for (const [ordinal, article] of articles.entries()) {
+    await ctx.db
+      .insert(t.newsItem)
+      .values({
+        id: derivedId('news_item', `${enrichmentId}:${args.entityId}`, ordinal),
+        enrichmentId,
+        entityId: args.entityId,
+        title: article.title ?? '(untitled)',
+        sourceName: article.source ?? null,
+        url: article.url ?? null,
+        publishedAt: parseDate(article.published),
+        riskFlags: (article.risk_flags ?? null) as never,
+      })
+      .onConflictDoNothing({ target: t.newsItem.id });
   }
   return { enrichmentId, articleCount: articles.length };
 }
 
 // ── 2. World Bank ────────────────────────────────────────────────────────────
 
-/** Shared across every Supplier in the country — hence six calls, not fifty. */
+/**
+ * Shared across every Supplier in the country — hence six calls, not fifty.
+ *
+ * Each indicator is its own Enrichment subject (`<country>:<code>`), so a
+ * re-fetch appends a generation per indicator and the scoring read takes the
+ * newest of each (`latestCountryIndicators`). Nothing is updated in place:
+ * the Score cites the `country_indicator` row it was computed from.
+ */
 export async function enrichCountry(
   ctx: EnrichContext,
   args: { country: string },
@@ -193,6 +233,17 @@ export async function enrichCountry(
 
 // ── 3. GLEIF ─────────────────────────────────────────────────────────────────
 
+/**
+ * The exact-LEI join, stored as a `lei_record` per generation.
+ *
+ * **Nothing in `src/` reads this table yet** — the LEI witness Discriminator
+ * runs against the live join during a Match, and the Supplier page renders the
+ * `enrichment` row rather than the record. Audited and said out loud rather
+ * than left to be discovered: a reader added later belongs in
+ * `db/queries/enrichments.ts` with the same latest-generation rule as its
+ * neighbours, because these rows accumulate exactly like the ones that were
+ * being double-counted.
+ */
 export async function enrichLei(
   ctx: EnrichContext,
   args: { entityId: string; lei: string },
@@ -232,6 +283,11 @@ export async function enrichLei(
  * The (origin → MEX) duty is **fetched and rendered beside** the scored figure
  * and is never scored, because the Program stores one importer and the Mexican
  * Plant makes that an explicit proxy.
+ *
+ * Like `lei_record`, **nothing in `src/` reads `tariff_line`**: the rate this
+ * returns goes straight into the Criterion, and the row exists so a sentence
+ * can cite the fetch it came from. Same rule if that changes — the reader goes
+ * in `db/queries/enrichments.ts` and takes the latest generation.
  */
 export async function enrichTariff(
   ctx: EnrichContext,
@@ -293,6 +349,10 @@ export function parseRate(text: string | null): number | null {
  *
  * Sayari's own `x`/`y` supersedes this for a resolved Profile, so calling it
  * there would spend a rate-limited request to learn something already known.
+ *
+ * Appended per generation like the rest; the Program map reads it through
+ * `latestGeocodePoints`, which is what stops a re-geocode from putting two
+ * coordinates in front of one dot.
  */
 export async function enrichGeocode(
   ctx: EnrichContext,
