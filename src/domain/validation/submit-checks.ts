@@ -44,7 +44,20 @@ export type ResolvedEvidence = {
       name: string;
       matchAccepted: boolean;
       categoryIds: string[];
-      hasScore: boolean;
+      /**
+       * The Categories this Supplier has a Score on — **per Category, because a
+       * Score is** (SPEC §9). It was one boolean over every Criterion value the
+       * Supplier held, while the objection it produces says *"has no score for
+       * this category"*: a Supplier scored in one Category and not in another
+       * answered that objection with the wrong Category's evidence.
+       */
+      categoriesWithScore: string[];
+      /**
+       * The badge as `score.ts` lights it — `isDisqualifying(factor)` on any
+       * risk factor, **or** `sanctioned`. Reading `sanctioned` alone made this
+       * check narrower than the badge it enforces, so the pick bar and check 7
+       * passed Suppliers the Shortlist was showing as disqualified.
+       */
       disqualifying: boolean;
       /** Set when this Supplier's own Assessment published with objections. */
       publishedWithObjections: boolean;
@@ -430,7 +443,7 @@ function checkPickLegality(
         message: `${supplier.name} does not bid on this category, so it cannot be picked for it.`,
       });
     }
-    if (!supplier.hasScore) {
+    if (!supplier.categoriesWithScore.includes(categoryId)) {
       objections.push({
         check: 'pick_legality',
         message: `${supplier.name} has no score for this category.`,

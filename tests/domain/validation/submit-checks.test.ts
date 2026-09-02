@@ -28,7 +28,7 @@ function evidence(overrides: Partial<ResolvedEvidence> = {}): ResolvedEvidence {
           name: 'Alpha',
           matchAccepted: true,
           categoryIds: ['cat-1'],
-          hasScore: true,
+          categoriesWithScore: ['cat-1'],
           disqualifying: false,
           publishedWithObjections: false,
           onShortlist: true,
@@ -271,6 +271,32 @@ describe('checks 4 and 6 — eligibility and pick legality', () => {
       evidence: evidence(),
     });
     expect(objections.some((o) => /does not bid on this category/.test(o.message))).toBe(true);
+  });
+
+  it('rejects a pick in the one category the supplier has no score in', () => {
+    // A Score is per Program × Category, so *has a score* is too. The Supplier
+    // bids on both and is scored in one: the pick is legal in `cat-1` and not
+    // in `cat-2`, and a single boolean could not say that.
+    const e = evidence();
+    const supplier = e.suppliers.get('supplier-a')!;
+    supplier.categoryIds = ['cat-1', 'cat-2'];
+    supplier.categoriesWithScore = ['cat-1'];
+
+    const scored = checkRecommendation({
+      picks: [{ supplierId: 'supplier-a', role: 'award', rank: 1 }],
+      sentences: legalRecommendation(),
+      categoryId: 'cat-1',
+      evidence: e,
+    });
+    expect(scored.some((o) => /no score for this category/.test(o.message))).toBe(false);
+
+    const unscored = checkRecommendation({
+      picks: [{ supplierId: 'supplier-a', role: 'award', rank: 1 }],
+      sentences: legalRecommendation(),
+      categoryId: 'cat-2',
+      evidence: e,
+    });
+    expect(unscored.some((o) => /no score for this category/.test(o.message))).toBe(true);
   });
 
   it('rejects more than three picks, and more than one award', () => {

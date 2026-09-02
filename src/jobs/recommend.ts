@@ -222,7 +222,7 @@ async function validateRecommendDraft(
   const evidence = await buildEvidence(ctx.db, {
     programId: ctx.args.programId,
     supplierIds: ctx.supplierIds,
-    frozenInputs: ctx.frozenInputs as unknown as Record<string, unknown>,
+    frozenInputs: ctx.frozenInputs,
     citations: draft.sentences.flatMap((s) => s.citations),
   });
   return checkRecommendation({

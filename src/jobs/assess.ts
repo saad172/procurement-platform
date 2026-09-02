@@ -317,46 +317,48 @@ async function tariffFlagsFor(
     .orderBy(asc(t.categoryFlag.categoryId), asc(t.tariffFlag.key));
 }
 
-/** Assembles what the eight checks need to know, from rows rather than prose. */
+/**
+ * Assembles what the eight checks need to know, from rows rather than prose.
+ *
+ * **Through `loadSupplierSnapshots` and `scoreSnapshot`**, which are what the
+ * Category page ranks with. The checks used to read their own rows and reach
+ * their own conclusions from them, and both conclusions were narrower than the
+ * page's: *disqualifying* was `entity.sanctioned` alone where `score.ts` lights
+ * the badge on `isDisqualifying(factor) || sanctioned`, so check 7 and the pick
+ * bar let through exactly the Suppliers the badge was raised about; and *has a
+ * score* was "any Criterion value is non-null", which is a fact about the
+ * Supplier where the objection it produces — *"has no score for this
+ * category"* — is a fact about one Category.
+ */
 export async function buildEvidence(
   db: Database,
   args: {
     programId: string;
     supplierIds: string[];
-    frozenInputs: Record<string, unknown>;
+    frozenInputs: FrozenInputs;
     citations: SubmittedSentence['citations'];
   },
 ): Promise<ResolvedEvidence> {
   const rowsByCitation = await resolveCitations(db, args.citations);
 
+  const snapshots = await loadSupplierSnapshots(db, {
+    programId: args.programId,
+    supplierIds: args.supplierIds,
+  });
+  const snapshotById = new Map(snapshots.map((snapshot) => [snapshot.supplierId, snapshot]));
+
   const suppliers: ResolvedEvidence['suppliers'] = new Map();
   const unknownCriteria: string[] = [];
 
   for (const supplierId of args.supplierIds) {
-    const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.id, supplierId) });
-    if (!supplier) continue;
-    const match = await db.query.match.findFirst({ where: eq(t.match.supplierId, supplierId) });
-    const categories = await db
-      .select({ categoryId: t.supplierCategory.categoryId })
-      .from(t.supplierCategory)
-      .where(eq(t.supplierCategory.supplierId, supplierId))
-      .orderBy(asc(t.supplierCategory.categoryId));
-    const values = await db
-      .select()
-      .from(t.criterionValue)
-      .where(
-        and(eq(t.criterionValue.supplierId, supplierId), eq(t.criterionValue.isCurrent, true)),
-      );
+    const snapshot = snapshotById.get(supplierId);
+    if (!snapshot) continue;
 
-    for (const value of values) {
+    for (const value of snapshot.values) {
       if (value.value == null && WEIGHTED_CRITERIA.includes(value.criterionKey as never)) {
         unknownCriteria.push(value.criterionKey);
       }
     }
-
-    const profile = match?.entityId
-      ? await db.query.entity.findFirst({ where: eq(t.entity.id, match.entityId) })
-      : undefined;
 
     const assessment = await db.query.assessment.findFirst({
       where: and(eq(t.assessment.supplierId, supplierId), eq(t.assessment.kind, 'standard')),
@@ -364,14 +366,22 @@ export async function buildEvidence(
     });
 
     suppliers.set(supplierId, {
-      name: supplier.rosterName ?? profile?.label ?? supplierId,
-      matchAccepted: match?.status === 'accepted',
-      categoryIds: categories.map((c) => c.categoryId),
-      hasScore: values.some((v) => v.value != null),
-      disqualifying: profile?.sanctioned === true,
+      name: snapshot.displayName,
+      matchAccepted: snapshot.matchAccepted,
+      categoryIds: snapshot.categoryIds,
+      /**
+       * **Per Category, computed the way the Shortlist computes it** — with the
+       * effective weight vector this version froze, so a Score the checks can
+       * see and a Score the document quotes are the same number.
+       */
+      categoriesWithScore: snapshot.categoryIds.filter(
+        (categoryId) =>
+          scoreSnapshot(snapshot, args.frozenInputs.effectiveWeights, categoryId).score != null,
+      ),
+      disqualifying: snapshot.disqualifyingFactors.length > 0,
       publishedWithObjections:
         assessment?.versions[0]?.evaluatorOutcome === 'published_with_objections',
-      onShortlist: match?.status === 'accepted' && categories.length > 0,
+      onShortlist: snapshot.matchAccepted && snapshot.categoryIds.length > 0,
     });
   }
 
@@ -586,7 +596,7 @@ async function validateAssessDraft(
   const evidence = await buildEvidence(ctx.db, {
     programId: ctx.args.programId,
     supplierIds: [ctx.args.supplierId],
-    frozenInputs: ctx.frozenInputs as unknown as Record<string, unknown>,
+    frozenInputs: ctx.frozenInputs,
     citations: draft.sentences.flatMap((s) => s.citations),
   });
   return checkAssessment({
