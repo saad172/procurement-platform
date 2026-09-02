@@ -79,11 +79,15 @@ export function diffVersions(args: {
 
 function flatten(inputs: FrozenInputs): Map<string, unknown> {
   const out = new Map<string, unknown>();
-  for (const [key, value] of Object.entries(inputs.weights)) out.set(`weights.${key}`, value);
+  for (const [key, value] of Object.entries(inputs.effectiveWeights))
+    out.set(`effectiveWeights.${key}`, value);
   for (const [key, value] of Object.entries(inputs.criterionValues))
     out.set(`criterionValues.${key}`, value);
   for (const [key, value] of Object.entries(inputs.scores)) out.set(`scores.${key}`, value);
-  out.set('shortlistOrder', inputs.shortlistOrder.join('|'));
+  for (const [categoryId, order] of Object.entries(inputs.shortlistOrder))
+    out.set(`shortlistOrder.${categoryId}`, order.join('|'));
+  for (const [key, rank] of Object.entries(inputs.shortlistRanks))
+    out.set(`shortlistRanks.${key}`, rank);
   for (const [key, value] of Object.entries(inputs.supplierVerdicts)) {
     out.set(`verdicts.${key}.verdict`, value.verdict);
     out.set(`verdicts.${key}.evaluatorOutcome`, value.evaluatorOutcome);

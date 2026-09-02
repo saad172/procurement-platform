@@ -28,7 +28,7 @@ function evidence(overrides: Partial<ResolvedEvidence> = {}): ResolvedEvidence {
           name: 'Alpha',
           matchAccepted: true,
           categoryIds: ['cat-1'],
-          hasScore: true,
+          categoriesWithScore: ['cat-1'],
           disqualifying: false,
           publishedWithObjections: false,
           onShortlist: true,
@@ -178,6 +178,38 @@ describe('check 5 — required sections, and what `limits` is for', () => {
     expect(objections).toEqual([]);
   });
 
+  it('refuses a limits section that only uses the criterion’s head word', () => {
+    /**
+     * *tariff*, *media*, *country* are ordinary words in the one section this
+     * check searches — the section where a writer talks about what is missing.
+     * A sentence about the tariff caveat is not a sentence saying the Tariff
+     * exposure Criterion returned unknown, and the reader of the limits section
+     * needs to find every one that did.
+     */
+    const objections = checkAssessment({
+      verdict: 'recommend',
+      supplierId: 'supplier-a',
+      sentences: [
+        cited('identity', 'Alpha is the company.'),
+        cited('limits', 'The tariff rate is an MFN figure for one importer.'),
+      ],
+      evidence: evidence({ unknownCriteria: ['tariff_exposure'] }),
+    });
+    expect(objections.some((o) => /Missing: tariff_exposure/.test(o.message))).toBe(true);
+  });
+
+  it('accepts the criterion’s key or its words with spaces, and says which to write', () => {
+    for (const naming of ['tariff_exposure is unknown.', 'Tariff exposure is unknown.']) {
+      const objections = checkAssessment({
+        verdict: 'recommend',
+        supplierId: 'supplier-a',
+        sentences: [cited('identity', 'Alpha is the company.'), cited('limits', naming)],
+        evidence: evidence({ unknownCriteria: ['tariff_exposure'] }),
+      });
+      expect(objections, naming).toEqual([]);
+    }
+  });
+
   it('refuses an AUTHORED dissent section — nobody writes dissent', () => {
     const objections = checkAssessment({
       verdict: 'recommend',
@@ -271,6 +303,32 @@ describe('checks 4 and 6 — eligibility and pick legality', () => {
       evidence: evidence(),
     });
     expect(objections.some((o) => /does not bid on this category/.test(o.message))).toBe(true);
+  });
+
+  it('rejects a pick in the one category the supplier has no score in', () => {
+    // A Score is per Program × Category, so *has a score* is too. The Supplier
+    // bids on both and is scored in one: the pick is legal in `cat-1` and not
+    // in `cat-2`, and a single boolean could not say that.
+    const e = evidence();
+    const supplier = e.suppliers.get('supplier-a')!;
+    supplier.categoryIds = ['cat-1', 'cat-2'];
+    supplier.categoriesWithScore = ['cat-1'];
+
+    const scored = checkRecommendation({
+      picks: [{ supplierId: 'supplier-a', role: 'award', rank: 1 }],
+      sentences: legalRecommendation(),
+      categoryId: 'cat-1',
+      evidence: e,
+    });
+    expect(scored.some((o) => /no score for this category/.test(o.message))).toBe(false);
+
+    const unscored = checkRecommendation({
+      picks: [{ supplierId: 'supplier-a', role: 'award', rank: 1 }],
+      sentences: legalRecommendation(),
+      categoryId: 'cat-2',
+      evidence: e,
+    });
+    expect(unscored.some((o) => /no score for this category/.test(o.message))).toBe(true);
   });
 
   it('rejects more than three picks, and more than one award', () => {
@@ -390,6 +448,61 @@ describe('check 8 — upstream disclosure', () => {
       evidence: e,
     });
     expect(objections.some((o) => o.check === 'upstream_disclosure')).toBe(false);
+  });
+
+  it('does not accept a longer supplier’s name as a disclosure of a shorter one', () => {
+    /**
+     * The failure this closes reads as compliance: an open question about
+     * *Alpha Services* satisfied the check for *Alpha*, so the disagreement
+     * that had to be disclosed vanished at the boundary while a different
+     * company's name sat in the sentence.
+     */
+    const e = evidence();
+    e.suppliers.get('supplier-a')!.publishedWithObjections = true;
+    e.suppliers.set('supplier-b', {
+      ...e.suppliers.get('supplier-a')!,
+      name: 'Alpha Services',
+      publishedWithObjections: false,
+    });
+
+    const wrongCompany = checkRecommendation({
+      picks: [],
+      sentences: [
+        cited('headline', 'Award nobody yet.'),
+        cited('open_questions', 'Alpha Services has not confirmed capacity.'),
+      ],
+      categoryId: 'cat-1',
+      evidence: e,
+    });
+    expect(wrongCompany.some((o) => o.check === 'upstream_disclosure')).toBe(true);
+
+    // And naming both, in one sentence each, discloses both.
+    const bothNamed = checkRecommendation({
+      picks: [],
+      sentences: [
+        cited('headline', 'Award nobody yet.'),
+        cited('open_questions', 'Alpha Services has not confirmed capacity.'),
+        cited('open_questions', 'Alpha published with unresolved objections.'),
+      ],
+      categoryId: 'cat-1',
+      evidence: e,
+    });
+    expect(bothNamed.some((o) => o.check === 'upstream_disclosure')).toBe(false);
+  });
+
+  it('does not accept a name buried inside a longer word', () => {
+    const e = evidence();
+    e.suppliers.get('supplier-a')!.publishedWithObjections = true;
+    const objections = checkRecommendation({
+      picks: [],
+      sentences: [
+        cited('headline', 'Award nobody yet.'),
+        cited('open_questions', 'Alphabetical ordering was used for the excluded block.'),
+      ],
+      categoryId: 'cat-1',
+      evidence: e,
+    });
+    expect(objections.some((o) => o.check === 'upstream_disclosure')).toBe(true);
   });
 });
 

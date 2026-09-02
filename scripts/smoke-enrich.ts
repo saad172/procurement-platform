@@ -97,7 +97,12 @@ async function main(): Promise<void> {
         hopDepth: byId.get(e!.id)?.hopDepth ?? 1,
         fromDeepTraversal: byId.get(e!.id)?.discoveredByJob != null,
       })),
-      { explored: members.length, reachable: null },
+      {
+        explored: members.length,
+        // Read off the stored rows, the same facts the page reads.
+        reachable: members[0]?.reachableCount ?? null,
+        partial: members.some((m) => m.truncated),
+      },
     );
     console.log(`\n  FAMILY EXPOSURE: ${describeFamilyExposure(exposure)}`);
     if (exposure.state === 'exposure_found') {

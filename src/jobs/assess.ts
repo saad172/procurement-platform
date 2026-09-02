@@ -3,7 +3,7 @@ import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { JOB_CAPS } from '@/config/constants';
 import { DEFAULT_WEIGHTS, WEIGHTED_CRITERIA } from '@/domain/score';
-import { loadSupplierSnapshots, scoreSnapshot } from '@/db/queries/shortlist';
+import { loadShortlist, loadSupplierSnapshots, scoreSnapshot } from '@/db/queries/shortlist';
 import type { FrozenInputs } from '@/domain/staleness';
 import {
   checkAssessment,
@@ -16,6 +16,7 @@ import { toRunnableTools } from '@/model/tool-adapter';
 import * as assessPrompts from '@/model/prompts/assess';
 import { getRegistry, type ToolContext, type ToolDefinition } from '@/tools';
 import { citationKey, publishVersion, resolveCitations } from './publish';
+import { evaluateWithVerdict } from './evaluation';
 import { roundCheckpoint } from './round-checkpoint';
 import { readSubmission } from './submission';
 import {
@@ -52,24 +53,108 @@ export async function buildFrozenInputs(
   db: Database,
   args: { programId: string; supplierIds: string[] },
 ): Promise<FrozenInputs> {
-  const weights = await loadCriterionWeights(db, args.programId);
+  const stored = await loadCriterionWeights(db, args.programId);
+
+  /**
+   * **One vector, and it is the one the Scores were computed with.**
+   *
+   * This used to freeze the stored rows alone while `scores` was computed from
+   * `{ ...DEFAULT_WEIGHTS, ...stored }` — so a Program that had saved five of
+   * the six weights froze a vector that could not reproduce its own frozen
+   * Scores, and the *inputs moved* banner compared a vector nothing had used.
+   * A frozen input is what the argument was made from; anything else in this
+   * object is a second answer to the same question.
+   *
+   * Key order is prompt bytes a fixture replays against, and it is stable:
+   * `DEFAULT_WEIGHTS`' six keys in the constant's own order, then any stored
+   * key outside them in the query's `ORDER BY criterion_key`.
+   */
+  const effectiveWeights = {
+    ...DEFAULT_WEIGHTS,
+    ...Object.fromEntries(stored.map((w) => [w.criterionKey, Number(w.weight)])),
+  };
+
   const perSupplier = await loadPerSupplierFrozenFacts(db, args.supplierIds);
-  const scores = await computeFrozenScores(db, args, weights, perSupplier.categoriesBySupplier);
+  const categoryIds = [...perSupplier.categoryIds].sort();
+  const scores = await computeFrozenScores(
+    db,
+    args,
+    effectiveWeights,
+    perSupplier.categoriesBySupplier,
+  );
+  const shortlists = await freezeShortlists(db, {
+    programId: args.programId,
+    supplierIds: args.supplierIds,
+    categoryIds,
+    weights: effectiveWeights,
+    categoriesBySupplier: perSupplier.categoriesBySupplier,
+  });
 
   return {
-    /**
-     * Left as the **stored rows alone**, not `scoringWeights`. Filling absent
-     * keys from the constant here would reorder this object, and its key order
-     * is prompt bytes a fixture replays against.
-     */
-    weights: Object.fromEntries(weights.map((w) => [w.criterionKey, Number(w.weight)])),
+    effectiveWeights,
     criterionValues: perSupplier.criterionValues,
     scores,
-    shortlistOrder: args.supplierIds,
+    shortlistOrder: shortlists.order,
+    shortlistRanks: shortlists.ranks,
     supplierVerdicts: perSupplier.supplierVerdicts,
     rosterRows: perSupplier.rosterRows,
-    tariffFlags: await tariffFlagsFor(db, [...perSupplier.categoryIds].sort()),
+    tariffFlags: await tariffFlagsFor(db, categoryIds),
   };
+}
+
+/**
+ * The Shortlist order, as a Shortlist actually orders it.
+ *
+ * `shortlistOrder` was `args.supplierIds` — which for a Recommendation is the
+ * bidder list in `supplier_id` order, an order nothing on screen has ever been
+ * in. Both the schema comment and `staleness.ts` call this field the Shortlist
+ * order and compare it as one, so a re-rank moved no banner while a re-import
+ * that renumbered nothing would have.
+ *
+ * **Per Category, because a Shortlist is per Category** (SPEC §13.1): the same
+ * Supplier sits at a different rank in each one it bids on, so a single flat
+ * list could only ever be one Category's answer.
+ *
+ * The ranks are frozen beside the order because a rank is a **figure a sentence
+ * quotes** — *"second of nine"* — and an array of ids carries no number the
+ * fidelity check can match it against.
+ */
+async function freezeShortlists(
+  db: Database,
+  args: {
+    programId: string;
+    supplierIds: string[];
+    categoryIds: string[];
+    weights: Record<string, number>;
+    categoriesBySupplier: Map<string, string[]>;
+  },
+): Promise<{ order: FrozenInputs['shortlistOrder']; ranks: FrozenInputs['shortlistRanks'] }> {
+  const order: FrozenInputs['shortlistOrder'] = {};
+  const ranks: FrozenInputs['shortlistRanks'] = {};
+  const rankOf = new Map<string, number | null>();
+
+  for (const categoryId of args.categoryIds) {
+    // The same `loadShortlist` the Category page calls, with the same vector
+    // the Scores were computed with — a frozen order that disagreed with the
+    // ranking on screen would be worse than no frozen order at all.
+    const shortlist = await loadShortlist(db, {
+      programId: args.programId,
+      categoryId,
+      weights: args.weights,
+    });
+    order[categoryId] = shortlist.ranked.map((row) => row.supplierId);
+    for (const row of shortlist.ranked) rankOf.set(`${row.supplierId}:${categoryId}`, row.rank);
+  }
+
+  for (const supplierId of args.supplierIds) {
+    for (const categoryId of args.categoriesBySupplier.get(supplierId) ?? []) {
+      // Null where the Supplier bids on the Category and reaches no rank —
+      // excluded is never ranked low (SPEC §13.3).
+      ranks[`${supplierId}:${categoryId}`] = rankOf.get(`${supplierId}:${categoryId}`) ?? null;
+    }
+  }
+
+  return { order, ranks };
 }
 
 async function loadCriterionWeights(db: Database, programId: string) {
@@ -186,14 +271,10 @@ async function loadPerSupplierFrozenFacts(
 async function computeFrozenScores(
   db: Database,
   args: { programId: string; supplierIds: string[] },
-  weights: Awaited<ReturnType<typeof loadCriterionWeights>>,
+  scoringWeights: Record<string, number>,
   categoriesBySupplier: Map<string, string[]>,
 ): Promise<Record<string, number | null>> {
   const scores: Record<string, number | null> = {};
-  const scoringWeights = {
-    ...DEFAULT_WEIGHTS,
-    ...Object.fromEntries(weights.map((w) => [w.criterionKey, Number(w.weight)])),
-  };
   const snapshots = await loadSupplierSnapshots(db, {
     programId: args.programId,
     supplierIds: args.supplierIds,
@@ -236,46 +317,48 @@ async function tariffFlagsFor(
     .orderBy(asc(t.categoryFlag.categoryId), asc(t.tariffFlag.key));
 }
 
-/** Assembles what the eight checks need to know, from rows rather than prose. */
+/**
+ * Assembles what the eight checks need to know, from rows rather than prose.
+ *
+ * **Through `loadSupplierSnapshots` and `scoreSnapshot`**, which are what the
+ * Category page ranks with. The checks used to read their own rows and reach
+ * their own conclusions from them, and both conclusions were narrower than the
+ * page's: *disqualifying* was `entity.sanctioned` alone where `score.ts` lights
+ * the badge on `isDisqualifying(factor) || sanctioned`, so check 7 and the pick
+ * bar let through exactly the Suppliers the badge was raised about; and *has a
+ * score* was "any Criterion value is non-null", which is a fact about the
+ * Supplier where the objection it produces — *"has no score for this
+ * category"* — is a fact about one Category.
+ */
 export async function buildEvidence(
   db: Database,
   args: {
     programId: string;
     supplierIds: string[];
-    frozenInputs: Record<string, unknown>;
+    frozenInputs: FrozenInputs;
     citations: SubmittedSentence['citations'];
   },
 ): Promise<ResolvedEvidence> {
   const rowsByCitation = await resolveCitations(db, args.citations);
 
+  const snapshots = await loadSupplierSnapshots(db, {
+    programId: args.programId,
+    supplierIds: args.supplierIds,
+  });
+  const snapshotById = new Map(snapshots.map((snapshot) => [snapshot.supplierId, snapshot]));
+
   const suppliers: ResolvedEvidence['suppliers'] = new Map();
   const unknownCriteria: string[] = [];
 
   for (const supplierId of args.supplierIds) {
-    const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.id, supplierId) });
-    if (!supplier) continue;
-    const match = await db.query.match.findFirst({ where: eq(t.match.supplierId, supplierId) });
-    const categories = await db
-      .select({ categoryId: t.supplierCategory.categoryId })
-      .from(t.supplierCategory)
-      .where(eq(t.supplierCategory.supplierId, supplierId))
-      .orderBy(asc(t.supplierCategory.categoryId));
-    const values = await db
-      .select()
-      .from(t.criterionValue)
-      .where(
-        and(eq(t.criterionValue.supplierId, supplierId), eq(t.criterionValue.isCurrent, true)),
-      );
+    const snapshot = snapshotById.get(supplierId);
+    if (!snapshot) continue;
 
-    for (const value of values) {
+    for (const value of snapshot.values) {
       if (value.value == null && WEIGHTED_CRITERIA.includes(value.criterionKey as never)) {
         unknownCriteria.push(value.criterionKey);
       }
     }
-
-    const profile = match?.entityId
-      ? await db.query.entity.findFirst({ where: eq(t.entity.id, match.entityId) })
-      : undefined;
 
     const assessment = await db.query.assessment.findFirst({
       where: and(eq(t.assessment.supplierId, supplierId), eq(t.assessment.kind, 'standard')),
@@ -283,14 +366,22 @@ export async function buildEvidence(
     });
 
     suppliers.set(supplierId, {
-      name: supplier.rosterName ?? profile?.label ?? supplierId,
-      matchAccepted: match?.status === 'accepted',
-      categoryIds: categories.map((c) => c.categoryId),
-      hasScore: values.some((v) => v.value != null),
-      disqualifying: profile?.sanctioned === true,
+      name: snapshot.displayName,
+      matchAccepted: snapshot.matchAccepted,
+      categoryIds: snapshot.categoryIds,
+      /**
+       * **Per Category, computed the way the Shortlist computes it** — with the
+       * effective weight vector this version froze, so a Score the checks can
+       * see and a Score the document quotes are the same number.
+       */
+      categoriesWithScore: snapshot.categoryIds.filter(
+        (categoryId) =>
+          scoreSnapshot(snapshot, args.frozenInputs.effectiveWeights, categoryId).score != null,
+      ),
+      disqualifying: snapshot.disqualifyingFactors.length > 0,
       publishedWithObjections:
         assessment?.versions[0]?.evaluatorOutcome === 'published_with_objections',
-      onShortlist: match?.status === 'accepted' && categories.length > 0,
+      onShortlist: snapshot.matchAccepted && snapshot.categoryIds.length > 0,
     });
   }
 
@@ -423,13 +514,14 @@ async function loadAssessContext(
     ? JSON.stringify(briefResult.data, null, 2)
     : '(the brief could not be built)';
 
-  const proposerTools = [
-    registry.byName.get('get_supplier')!,
-    registry.byName.get('get_supplier_family')!,
-    registry.byName.get('get_assessment_brief')!,
-    registry.byName.get('get_entity')!,
-    registry.byName.get('submit_assessment')!,
-  ];
+  /**
+   * **Derived, not hand-written.** The list used to be five `byName.get()`
+   * calls here and a `.filter()` in the evaluator turn removing the submit —
+   * one list stated twice, in two files, with nothing checking they agreed.
+   * `finalizeRegistry()` derives both roles from one read list and refuses to
+   * boot if either names a tool that is not there.
+   */
+  const proposerTools = registry.forNarrativeRole('assess', 'proposer');
 
   return { db, deps, args, supplier, program, frozenInputs, brief, proposerTools };
 }
@@ -504,7 +596,7 @@ async function validateAssessDraft(
   const evidence = await buildEvidence(ctx.db, {
     programId: ctx.args.programId,
     supplierIds: [ctx.args.supplierId],
-    frozenInputs: ctx.frozenInputs as unknown as Record<string, unknown>,
+    frozenInputs: ctx.frozenInputs,
     citations: draft.sentences.flatMap((s) => s.citations),
   });
   return checkAssessment({
@@ -515,141 +607,90 @@ async function validateAssessDraft(
   });
 }
 
+/**
+ * The evaluator turn.
+ *
+ * It is **stateless** and sees exactly what the proposer saw — never its own
+ * earlier objections, and never the replies to them. What it returns is a
+ * submitted verdict rather than prose: see `evaluation.ts` for why the parse
+ * that used to read the six items out of a paragraph is gone.
+ */
 async function runAssessEvaluate(
   ctx: AssessRoundContext,
   roundArgs: { roundN: number; draft: AssessDraft },
 ): Promise<EvaluationResult> {
   const { roundN, draft } = roundArgs;
-  // The evaluator is STATELESS and sees exactly what the proposer saw —
-  // never its own earlier objections, and never the replies to them.
-  const result = await runLoop(
-    {
-      loop: 'assess',
-      system: assessPrompts.evaluatorSystem,
-      /**
-       * **The evaluator reads what the proposer read.**
-       *
-       * It used to hold `get_assessment_brief` alone, while the proposer
-       * had four read tools — so it was asked to verify claims against
-       * evidence it could not see, and it said so: *"the cited rows are
-       * real and resolvable, but they carry only a key and a value.
-       * Nothing in the row supports the sub-structure the draft attributes
-       * to it."* That objection was **correct**, it survived three Rounds,
-       * and no draft could ever have answered it.
-       *
-       * A verifier weaker than the thing it verifies does not measure
-       * accuracy, it measures what fits through its own window.
-       *
-       * It still cannot **write** — no `submit_assessment` — so the
-       * asymmetry that matters is preserved: the proposer proposes, the
-       * evaluator judges, and neither can do the other's job.
-       */
-      tools: toRunnableTools(
-        ctx.proposerTools.filter((tool) => tool.name !== 'submit_assessment'),
-        ctx.deps.toolCtx,
-      ),
-      messages: [
-        {
-          role: 'user',
-          content: [
-            assessPrompts.buildFirstUserMessage({
-              supplierName: ctx.supplier.rosterName ?? ctx.args.supplierId,
-              programName: ctx.program?.name ?? '(unnamed program)',
-              roundN,
-              brief: ctx.brief,
-              frozenInputs: JSON.stringify(ctx.frozenInputs, null, 2),
-            }),
-            '',
-            'THE DRAFT TO REVIEW',
-            JSON.stringify(draft, null, 2),
-            '',
-            'Return your six rubric verdicts. If every item passes, say so plainly.',
-          ].join('\n'),
-        },
-      ],
-      caps: JOB_CAPS.assess,
-      roundN,
-    },
-    ctx.deps.modelCtx,
-  );
+  const registry = getRegistry();
+  const tools = registry.forNarrativeRole('assess', 'evaluator');
 
-  // The evaluator's stops are the Job's stops too — and this one reads a
-  // non-`done` outcome as prose, so a terminated evaluator would otherwise have
-  // been scored as a rubric with no failures, which is a pass.
-  raiseIfStopped(result);
+  return evaluateWithVerdict(async () => {
+    const result = await runLoop(
+      {
+        loop: 'assess',
+        system: assessPrompts.evaluatorSystem,
+        /**
+         * **The evaluator reads what the proposer read.**
+         *
+         * It used to hold `get_assessment_brief` alone, while the proposer
+         * had four read tools — so it was asked to verify claims against
+         * evidence it could not see, and it said so: *"the cited rows are
+         * real and resolvable, but they carry only a key and a value.
+         * Nothing in the row supports the sub-structure the draft attributes
+         * to it."* That objection was **correct**, it survived three Rounds,
+         * and no draft could ever have answered it.
+         *
+         * A verifier weaker than the thing it verifies does not measure
+         * accuracy, it measures what fits through its own window.
+         *
+         * The one difference is the write: `submit_evaluation` in place of
+         * `submit_assessment`. The proposer proposes, the evaluator judges,
+         * and neither can do the other's job.
+         */
+        tools: toRunnableTools(tools, ctx.deps.toolCtx),
+        messages: [
+          {
+            role: 'user',
+            content: [
+              assessPrompts.buildFirstUserMessage({
+                supplierName: ctx.supplier.rosterName ?? ctx.args.supplierId,
+                programName: ctx.program?.name ?? '(unnamed program)',
+                roundN,
+                brief: ctx.brief,
+                frozenInputs: JSON.stringify(ctx.frozenInputs, null, 2),
+              }),
+              '',
+              'THE DRAFT TO REVIEW',
+              JSON.stringify(draft, null, 2),
+              '',
+              'Call submit_evaluation once, with a verdict for every rubric item.',
+            ].join('\n'),
+          },
+        ],
+        caps: JOB_CAPS.assess,
+        roundN,
+        /**
+         * **The evaluator's turns carry a tool digest too** (SPEC §15.7).
+         *
+         * It had none, so half of every assess Job's Trace recorded no tool
+         * names and no digest hash — and the fixture manifest, which reads the
+         * digest off the turns, could only ever see the proposer's list. A
+         * Round where the evaluator's tools changed would have replayed
+         * without anything saying so.
+         */
+        toolDigest: registry.digest(tools),
+      },
+      ctx.deps.modelCtx,
+    );
 
-  const text = textOf(result);
-  const objections = parseObjections(text);
-  return objections.length === 0
-    ? { kind: 'pass', rubric: { raw: text }, text }
-    : { kind: 'objections', objections, rubric: { raw: text }, text };
-}
-
-function textOf(result: Awaited<ReturnType<typeof runLoop>>): string {
-  if (result.status !== 'done') return `the evaluator loop ended as ${result.status}`;
-  const message = result.finalMessage as
-    | { content?: { type: string; text?: string }[] }
-    | undefined;
-  return (message?.content ?? [])
-    .filter((block) => block.type === 'text')
-    .map((block) => block.text ?? '')
-    .join('\n')
-    .trim();
-}
-
-/** The six rubric items, which are also what the parse anchors on. */
-export const RUBRIC_ITEMS = [
-  'support',
-  'strength',
-  'number fidelity',
-  'caveats',
-  'eligibility',
-  'omission',
-] as const;
-
-/**
- * Reads the evaluator's rubric into objections.
- *
- * **Anchored on the six item names, not on the word "fail".** The first version
- * searched every line for `/fail/` and objected on any hit — which fires on
- * *"caveats: pass — no mandatory line is missing, so this does not fail"*. A
- * validator that objects to a passing verdict costs a Round for nothing, and
- * three of those is a version published with objections nobody raised.
- *
- * So a line counts only when it names one of the six items **and** marks it
- * failed. The rubric text is stored verbatim on the Round either way, so
- * nothing is lost to this parse — it decides whether a Round is spent, not what
- * is recorded.
- *
- * `output_config.format` would make this structural rather than parsed, and is
- * deliberately not used: SPEC §17.8 keeps the *tool* as the only write path, so
- * a schema-constrained final message would be a second way to produce a record.
- * The rubric is a Round annotation rather than a record, but the rule is worth
- * more than the convenience.
- */
-export function parseObjections(text: string): string[] {
-  const objections: string[] = [];
-
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    if (line.length === 0) continue;
-
-    // Strip markdown emphasis and list markers so `**support** — fail` matches.
-    const plain = line.replace(/[*_`]/g, '').replace(/^[-•\d.)\s]+/, '');
-    const item = RUBRIC_ITEMS.find((name) => new RegExp(`^${name}\\b`, 'i').test(plain));
-    if (!item) continue;
-
-    // The verdict is what follows the item name, up to the first sentence end —
-    // so a later "does not fail" in the explanation cannot flip a pass.
-    const verdict =
-      plain
-        .slice(item.length)
-        .replace(/^[\s:—–-]+/, '')
-        .split(/[.;]/)[0] ?? '';
-    if (/^\s*fail(ed|s)?\b/i.test(verdict)) objections.push(plain);
-  }
-
-  return objections;
+    /**
+     * **The evaluator's stops are the Job's stops too.** A ceiling or a budget
+     * pause is not a verdict the loop can score and not a turn worth retrying:
+     * `raiseIfStopped` takes both out of the free retry below, because a second
+     * attempt against the same ceiling spends the same ceiling again.
+     */
+    raiseIfStopped(result);
+    return result;
+  });
 }
 
 export { citationKey };

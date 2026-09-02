@@ -44,7 +44,20 @@ export type ResolvedEvidence = {
       name: string;
       matchAccepted: boolean;
       categoryIds: string[];
-      hasScore: boolean;
+      /**
+       * The Categories this Supplier has a Score on — **per Category, because a
+       * Score is** (SPEC §9). It was one boolean over every Criterion value the
+       * Supplier held, while the objection it produces says *"has no score for
+       * this category"*: a Supplier scored in one Category and not in another
+       * answered that objection with the wrong Category's evidence.
+       */
+      categoriesWithScore: string[];
+      /**
+       * The badge as `score.ts` lights it — `isDisqualifying(factor)` on any
+       * risk factor, **or** `sanctioned`. Reading `sanctioned` alone made this
+       * check narrower than the badge it enforces, so the pick bar and check 7
+       * passed Suppliers the Shortlist was showing as disqualified.
+       */
       disqualifying: boolean;
       /** Set when this Supplier's own Assessment published with objections. */
       publishedWithObjections: boolean;
@@ -351,31 +364,30 @@ function checkLimitsNamesUnknowns(
 }
 
 /**
- * Whether a limits section names one criterion.
+ * Whether a limits section names one criterion: **its key, or its key with the
+ * underscores as spaces.** Nothing shorter.
  *
- * **The head word is enough, and it has to be.** The check used to demand the
- * whole key, `tariff_exposure` or `tariff exposure`, as a literal substring. A
- * draft that said *"One tariff criterion returned unknown, with the stored
- * reason that no MFN rate was returned for HS 8504.40"* named the criterion,
- * gave its reason, and was rejected — three Rounds of it, then a Job that
- * published nothing.
+ * The check once demanded exactly that and was loosened to accept the key's
+ * head word, because a draft saying *"One tariff criterion returned unknown,
+ * with the stored reason that no MFN rate was returned for HS 8504.40"* was
+ * rejected three Rounds running for naming the criterion in its own words
+ * rather than in ours. The rejection was wrong; the remedy was too broad.
  *
- * That is a check objecting to phrasing rather than to substance, which this
- * codebase has been caught by once already (see the entity-id shape in
- * `number-fidelity`). What the reader needs is to find every unknown criterion
- * in the limits section; *tariff* finds it. The scope is already narrow — only
- * `limits` sentences are searched, and a limits section is where a writer talks
- * about what is missing — so the head word carries little risk of a false pass
- * and removes a real class of false rejection.
+ * **A head word is an ordinary word in the one section it is searched in.** The
+ * limits section is where a writer talks about tariffs, about media coverage,
+ * about the country — so *"the tariff rate is an MFN figure for one importer"*
+ * satisfied `tariff_exposure`, and *"no adverse media search was run for the
+ * parent"* satisfied `media_signal`, neither sentence saying the Criterion
+ * returned unknown at all. Four characters of a shared vocabulary is not a
+ * name, and this check's whole job is to make sure a reader can find every
+ * `unknown` Criterion in the section that exists to admit them.
  *
- * The objection still asks for the criterion's full words, because a document
- * that uses them reads better. It is guidance the writer can follow, not a
- * gate it can fail on wording alone.
+ * The objection already asks for the criterion's own words and quotes them, so
+ * the writer is told exactly what to write rather than left to guess which
+ * paraphrase will pass.
  */
 function limitsNames(limits: string, key: string): boolean {
-  if (limits.includes(key) || limits.includes(key.replace(/_/g, ' '))) return true;
-  const head = key.split('_')[0]!;
-  return head.length >= 4 && new RegExp(String.raw`\b${head}\b`).test(limits);
+  return limits.includes(key) || limits.includes(key.replace(/_/g, ' '));
 }
 
 // ── Checks 4 and 6: eligibility and pick legality ───────────────────────────
@@ -430,7 +442,7 @@ function checkPickLegality(
         message: `${supplier.name} does not bid on this category, so it cannot be picked for it.`,
       });
     }
-    if (!supplier.hasScore) {
+    if (!supplier.categoriesWithScore.includes(categoryId)) {
       objections.push({
         check: 'pick_legality',
         message: `${supplier.name} has no score for this category.`,
@@ -488,9 +500,12 @@ function checkUpstreamDisclosure(
     .map((s) => s.text.toLowerCase())
     .join(' ');
 
+  const everyName = [...evidence.suppliers.values()].map((s) => s.name.toLowerCase());
   const undisclosed = [...evidence.suppliers.values()].filter(
     (s) =>
-      s.onShortlist && s.publishedWithObjections && !openQuestions.includes(s.name.toLowerCase()),
+      s.onShortlist &&
+      s.publishedWithObjections &&
+      !namesSupplier(openQuestions, s.name.toLowerCase(), everyName),
   );
 
   return undisclosed.map((s) => ({
@@ -499,6 +514,48 @@ function checkUpstreamDisclosure(
       `${s.name}'s assessment published with unresolved objections, and it is on this shortlist. ` +
       `Name it in an open question — an unresolved disagreement must not vanish at the boundary.`,
   }));
+}
+
+/**
+ * Whether the open questions name **this** Supplier, as against one whose name
+ * happens to contain its own.
+ *
+ * A bare `includes()` disclosed the wrong company: a roster carries *Sumitomo
+ * Electric* beside *Sumitomo*, and *Aptiv* beside *Aptiv Services*, so an open
+ * question about the longer one silently satisfied the check for the shorter —
+ * and the check exists precisely so that an unresolved disagreement cannot
+ * vanish at the boundary. A rule whose failure mode is *"we disclosed a
+ * different company"* is worse than no rule, because it reads as compliance.
+ *
+ * So an occurrence counts only where it stands as a whole name: bounded by
+ * something other than a letter or a digit, and not sitting inside a mention of
+ * a longer Supplier name that contains it.
+ */
+function namesSupplier(text: string, name: string, everyName: readonly string[]): boolean {
+  const mine = occurrencesOf(text, name);
+  if (mine.length === 0) return false;
+
+  const inside = everyName
+    .filter((other) => other !== name && other.includes(name))
+    .flatMap((other) => occurrencesOf(text, other));
+
+  return mine.some(([start, end]) => !inside.some(([from, to]) => from <= start && end <= to));
+}
+
+const isNameCharacter = (character: string | undefined): boolean =>
+  character != null && /[\p{L}\p{N}]/u.test(character);
+
+/** Every whole-word span of `needle` in `text`, as `[start, end)` offsets. */
+function occurrencesOf(text: string, needle: string): [number, number][] {
+  const spans: [number, number][] = [];
+  if (needle.length === 0) return spans;
+  for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) {
+    const end = at + needle.length;
+    // "Denso" inside "Densomatic" is not a mention of Denso.
+    if (isNameCharacter(text[at - 1]) || isNameCharacter(text[end])) continue;
+    spans.push([at, end]);
+  }
+  return spans;
 }
 
 function truncate(text: string, length = 60): string {

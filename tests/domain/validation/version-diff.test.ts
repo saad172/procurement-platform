@@ -10,10 +10,11 @@ import type { FrozenInputs } from '@/domain/staleness';
 /** SPEC §10.6 — one of the nine unit tests §19.6 asks for. */
 
 const frozen = (overrides: Partial<FrozenInputs> = {}): FrozenInputs => ({
-  weights: { compliance_risk: 28 },
+  effectiveWeights: { compliance_risk: 28 },
   criterionValues: { 'a:compliance_risk': 92 },
   scores: { a: 84.2 },
-  shortlistOrder: ['a', 'b'],
+  shortlistOrder: { har: ['a', 'b'] },
+  shortlistRanks: { 'a:har': 1, 'b:har': 2 },
   supplierVerdicts: { a: { verdict: 'recommend', evaluatorOutcome: 'passed' } },
   tariffFlags: [],
   rosterRows: { a: { index: 1, name: 'A', address: null, country: 'USA' } },
@@ -50,13 +51,15 @@ describe('the three parts, in order, with the cause first', () => {
     const diff = diffVersions({
       before: { frozen: frozen(), picks: [pick('a', 'award', 1)], sentences },
       after: {
-        frozen: frozen({ weights: { compliance_risk: 40 } }),
+        frozen: frozen({ effectiveWeights: { compliance_risk: 40 } }),
         picks: [pick('a', 'award', 1)],
         sentences,
       },
     });
     expect(diff.empty).toBe(false);
-    expect(diff.inputsChanged).toEqual([{ path: 'weights.compliance_risk', from: 28, to: 40 }]);
+    expect(diff.inputsChanged).toEqual([
+      { path: 'effectiveWeights.compliance_risk', from: 28, to: 40 },
+    ]);
     expect(diff.picks).toEqual([]);
     expect(diff.sentences.every((s) => s.change === 'unchanged')).toBe(true);
   });

@@ -32,7 +32,56 @@ export type Registry = {
   forSurface: (surface: ToolSurface) => ToolDefinition[];
   /** Derived per Round — see `MATCH_RUNGS_BY_ROUND` for why this exists. */
   forMatchRound: (roundN: number) => ToolDefinition[];
+  /** Derived per narrative loop and role — see `NARRATIVE_PROFILES`. */
+  forNarrativeRole: (loop: NarrativeLoop, role: NarrativeRole) => ToolDefinition[];
   digest: (tools: readonly ToolDefinition[]) => { names: string[]; hash: string };
+};
+
+export type NarrativeLoop = 'assess' | 'recommend';
+export type NarrativeRole = 'proposer' | 'evaluator';
+
+/**
+ * The Assessment and Recommendation loops, by role (SPEC §10.3, §15.3).
+ *
+ * **The evaluator reads what the proposer read**, so the read list is written
+ * once and both roles are derived from it. It used to be a `.filter()` at each
+ * call site removing the proposer's submit, which is the same list stated twice
+ * — and the asymmetry that matters is not what they can see (finding 76: a
+ * verifier weaker than the thing it verifies measures its own window) but what
+ * they can write. Each role gets exactly one write, and they are different
+ * writes: the proposer submits the document, the evaluator submits its verdict
+ * on it.
+ *
+ * The digest sizes SPEC §15.3 names are unchanged by this — assess is five
+ * tools for either role, recommend is six — because a role trades one submit
+ * for the other rather than gaining a tool.
+ */
+const NARRATIVE_READS: Record<NarrativeLoop, readonly string[]> = {
+  assess: ['get_supplier', 'get_supplier_family', 'get_assessment_brief', 'get_entity'],
+  recommend: [
+    'get_shortlist',
+    'get_supplier',
+    'get_supplier_family',
+    'get_recommendation_brief',
+    'get_category',
+  ],
+};
+
+/** The one write each role holds. `submit_evaluation` is shared by both evaluators. */
+const NARRATIVE_WRITES: Record<NarrativeLoop, Record<NarrativeRole, string>> = {
+  assess: { proposer: 'submit_assessment', evaluator: 'submit_evaluation' },
+  recommend: { proposer: 'submit_recommendation', evaluator: 'submit_evaluation' },
+};
+
+export const NARRATIVE_PROFILES: Record<NarrativeLoop, Record<NarrativeRole, string[]>> = {
+  assess: {
+    proposer: [...NARRATIVE_READS.assess, NARRATIVE_WRITES.assess.proposer],
+    evaluator: [...NARRATIVE_READS.assess, NARRATIVE_WRITES.assess.evaluator],
+  },
+  recommend: {
+    proposer: [...NARRATIVE_READS.recommend, NARRATIVE_WRITES.recommend.proposer],
+    evaluator: [...NARRATIVE_READS.recommend, NARRATIVE_WRITES.recommend.evaluator],
+  },
 };
 
 /**
@@ -110,6 +159,7 @@ export function finalizeRegistry(tools: readonly ToolDefinition[]): Registry {
   checkEachTool(tools, byName, problems);
   checkDossierProfile(byName, problems);
   checkRoundRungs(byName, problems);
+  checkNarrativeProfiles(byName, problems);
 
   if (problems.length > 0) throw new RegistryError(problems);
 
@@ -259,6 +309,49 @@ function checkRoundRungs(byName: Map<string, ToolDefinition>, problems: string[]
   }
 }
 
+/**
+ * The narrative profiles name real tools, and **`submit_evaluation` appears in
+ * exactly the two evaluator lists**.
+ *
+ * The second half is the one worth checking at boot. A verdict tool that leaked
+ * into a proposer profile would let the writer grade itself; one that leaked
+ * into the Match or Dossier profiles would offer a rubric to a loop that has
+ * none. Invariant 7 already keeps every `submit_*` off chat, so what is left to
+ * state is *which Job may reach this one*, and that is a quantification over
+ * lists a linter cannot see.
+ */
+function checkNarrativeProfiles(byName: Map<string, ToolDefinition>, problems: string[]): void {
+  const holders: string[] = [];
+  for (const [loop, roles] of Object.entries(NARRATIVE_PROFILES)) {
+    for (const [role, names] of Object.entries(roles)) {
+      for (const name of names) {
+        if (!byName.has(name)) {
+          problems.push(
+            `the ${loop} ${role} profile names "${name}", which is not in the registry`,
+          );
+        }
+        if (name === 'submit_evaluation') holders.push(`${loop} ${role}`);
+      }
+    }
+  }
+
+  const otherProfiles = [
+    ...DOSSIER_PROFILE,
+    ...MATCH_COMMON_TOOLS,
+    ...Object.values(MATCH_RUNGS_BY_ROUND).flat(),
+  ];
+  if (otherProfiles.includes('submit_evaluation')) {
+    problems.push(
+      '"submit_evaluation" is offered outside the two evaluator profiles; only an evaluator returns a rubric verdict',
+    );
+  }
+  if (holders.length !== 2 || !holders.every((h) => h.endsWith('evaluator'))) {
+    problems.push(
+      `"submit_evaluation" must appear in exactly the two evaluator profiles, and appears in: ${holders.join(', ') || 'none'}`,
+    );
+  }
+}
+
 function buildRegistry(
   tools: readonly ToolDefinition[],
   byName: Map<string, ToolDefinition>,
@@ -283,6 +376,13 @@ function buildRegistry(
       const rungs = new Set([...(MATCH_RUNGS_BY_ROUND[roundN] ?? []), ...MATCH_COMMON_TOOLS]);
       return tools.filter((t) => rungs.has(t.name));
     },
+    /**
+     * **In profile order, not registry order.** The tool list is prompt bytes:
+     * the request body carries it as written, so a list assembled by filtering
+     * the catalog would reorder the moment a tool was added anywhere above it.
+     */
+    forNarrativeRole: (loop, role) =>
+      NARRATIVE_PROFILES[loop][role].map((name) => byName.get(name)!),
     digest,
   };
 }

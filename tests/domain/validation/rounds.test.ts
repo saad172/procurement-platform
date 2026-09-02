@@ -250,15 +250,20 @@ describe('convergence', () => {
   });
 
   it('records a rubric on every evaluator round', async () => {
+    // What the evaluator submitted, stored whole — `round.rubric` is jsonb and
+    // documented as the six rubric verdicts, so it holds the payload rather
+    // than a transcript of the reply that carried it.
+    const rubric = {
+      items: [{ item: 'support', verdict: 'pass', reasoning: 'every cited row carries its claim' }],
+      summary: 'the draft holds up',
+    };
     const outcome = await runProposerEvaluatorLoop<Draft>({
       propose: async () => draft('a'),
       validate: async () => [],
-      evaluate: async () => ({ kind: 'pass', rubric: { support: 'pass' }, text: 'ok' }),
+      evaluate: async () => ({ kind: 'pass', rubric, text: 'support — pass' }),
     });
     expect(
       outcome.rounds.find((r) => r.role === 'evaluator' && r.source === 'model')!.rubric,
-    ).toEqual({
-      support: 'pass',
-    });
+    ).toEqual(rubric);
   });
 });

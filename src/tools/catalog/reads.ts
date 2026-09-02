@@ -162,6 +162,23 @@ function projectSupplierCard(loaded: NonNullable<Awaited<ReturnType<typeof loadS
       rosterAddress: supplier.rosterAddress,
       rosterCountry: supplier.rosterCountry,
       origin: supplier.origin,
+      /**
+       * **Still the Category's code and name, not its id.**
+       *
+       * A Shortlist citation is the pair `{programId, categoryId}` and neither
+       * half is here — which is the gap that let a Recommendation cite
+       * `programId: "MY2029-CROSSOVER-BEV-NA"`, a readable slug in no table
+       * (finding 73). Both halves now reach both narrative loops through their
+       * briefs, which are job-only.
+       *
+       * They are deliberately **not** added here as well. `get_supplier` is on
+       * every surface and is one of the five tools every Match Round holds, so
+       * a field added to this payload changes the request body of the resolve
+       * loop and of chat — two fixtures re-recorded for a reason that has
+       * nothing to do with either. Worth doing, and worth doing where the
+       * recording cost is understood rather than as a side effect of an
+       * Assessment needing an id.
+       */
       categories: supplier.categories.map((link) => ({
         code: link.category.code,
         name: link.category.name,
@@ -238,7 +255,7 @@ function projectSupplierCard(loaded: NonNullable<Awaited<ReturnType<typeof loadS
 const getSupplierFamily = defineTool({
   name: 'get_supplier_family',
   description:
-    "A supplier's corporate family: the companies reachable downward through ownership, what risk they carry, and how much of the family was explored.",
+    "A supplier's corporate family: the companies reachable downward through ownership, what risk they carry, and how much of the family was explored. Cite the enrichmentId for the explored and truncated figures, and a member's own entityId for what that member carries.",
   input: z.object({ supplierId: z.string() }),
   surfaces: ['chat', 'job', 'mcp'],
   effect: 'read',
@@ -256,9 +273,53 @@ const getSupplierFamily = defineTool({
         ],
       };
     }
-    const members = await ctx.db
+
+    const members = await loadFamilyMembers(ctx, match.entityId);
+    const { widgetMembers, modelMembers } = projectFamilyMembers(members);
+    const envelope = {
+      entityId: match.entityId,
+      /**
+       * **The id the coverage figures can be cited through** (finding 106).
+       *
+       * The family walk is an Enrichment — a dated call — and `explored` and
+       * `truncated` are facts about *it*, carried on its `family_member` rows.
+       * The tool told the model *"explored: 45"* and handed it no id that fact
+       * could resolve to, so the one citation on offer was the member's
+       * `entityId`, and an `entity` row carries no explored count to answer to
+       * it. The number check refused the sentence, correctly, for a figure the
+       * model had read off this very payload.
+       */
+      enrichmentId: members[0]?.enrichmentId ?? null,
+      // What the traversal reported it covered, not how many rows we hold.
+      // Counting rows answers a different question, and it was the wrong
+      // answer whenever a Profile had been enriched twice: Bosch's family
+      // was stored 100 times for 50 members, so this reported 100 to the
+      // model.
+      explored: members[0]?.exploredCount ?? members.length,
+      reachable: members[0]?.reachableCount ?? null,
+      truncated: members.some((m) => m.truncated),
+    };
+
+    return {
+      ok: true,
+      data: widget(
+        'supplier_family',
+        { ...envelope, members: modelMembers },
+        { ...envelope, members: widgetMembers },
+      ),
+    };
+  },
+});
+
+/** The stored family, in the one order a prompt can rely on. */
+async function loadFamilyMembers(ctx: ToolContext, rootEntityId: string) {
+  return (
+    ctx.db
       .select({
         memberEntityId: t.familyMember.memberEntityId,
+        // Per member as well as on the envelope: a re-enrichment updates the
+        // rows it re-read, so two members can belong to two different walks.
+        enrichmentId: t.familyMember.enrichmentId,
         hopDepth: t.familyMember.hopDepth,
         truncated: t.familyMember.truncated,
         exploredCount: t.familyMember.exploredCount,
@@ -271,7 +332,7 @@ const getSupplierFamily = defineTool({
       })
       .from(t.familyMember)
       .innerJoin(t.entity, eq(t.entity.id, t.familyMember.memberEntityId))
-      .where(eq(t.familyMember.rootEntityId, match.entityId))
+      .where(eq(t.familyMember.rootEntityId, rootEntityId))
       /**
        * **A query that feeds a prompt needs a total order.**
        *
@@ -285,77 +346,65 @@ const getSupplierFamily = defineTool({
        * in: the immediate subsidiaries, then what sits behind them. `entityId`
        * breaks the tie, since it is the only field guaranteed unique.
        */
-      .orderBy(asc(t.familyMember.hopDepth), asc(t.familyMember.memberEntityId));
+      .orderBy(asc(t.familyMember.hopDepth), asc(t.familyMember.memberEntityId))
+  );
+}
 
-    /**
-     * A **projection**, not the stored rows.
-     *
-     * SPEC §15.2 calls a page read a *thin wrapper over the query each page
-     * already runs for SSR*, and a page renders a member's name, country and
-     * risk badge — never the raw traversal path. Returning the rows wholesale
-     * put ~870,000 tokens into one model turn and fired the assess Job's
-     * token ceiling. The cap did its job; the read was the bug.
-     */
-    const envelope = {
-      entityId: match.entityId,
-      // What the traversal reported it covered, not how many rows we hold.
-      // Counting rows answers a different question, and it was the wrong
-      // answer whenever a Profile had been enriched twice: Bosch's family
-      // was stored 100 times for 50 members, so this reported 100 to the
-      // model.
-      explored: members[0]?.exploredCount ?? members.length,
-      truncated: members.some((m) => m.truncated),
-    };
-    /**
-     * Factor names, levels **and the `country` marker**, which is what the
-     * widget needs to exclude a country-derived factor the way the page does.
-     * `parseRiskObject` (`@/domain/scoring/risk-factors`) is the one reader
-     * of the raw `risk` JSONB column — the same function `entity-page.ts`
-     * and `score.ts` use — so `country` here means exactly what
-     * `isCountryDerived()` checks it against on the page. A widget that
-     * named the three country-derived factors by string instead (`cpi_score`,
-     * `basel_aml`, `eu_high_risk_third`) would be a second, driftable copy of
-     * the identification `scoring/risk-factors.ts` already rejected in
-     * favour of this marker.
-     */
-    const widgetMembers = members.map((m) => ({
-      entityId: m.memberEntityId,
-      label: m.label,
-      country: m.country,
-      hopDepth: m.hopDepth,
-      sanctioned: m.sanctioned,
-      riskFactors: parseRiskObject(m.risk).map((f) => ({
-        name: f.name,
-        level: f.level ?? null,
-        country: f.country,
-      })),
-    }));
-    /**
-     * **The model reads no `country` per FACTOR** — the member's own
-     * `country` (its registered address) is unaffected and stays. Adding the
-     * factor-level marker to the model's copy would change every later
-     * turn's request hash for any replay recorded before this field existed,
-     * the same class of drift finding 100 describes, at a tool result
-     * instead of a prompt. `isCountryDerived` is for the widget's own
-     * rendering; the model already gets a Compliance risk figure with the
-     * country-derived factors already excluded (`domain/scoring/
-     * criteria.ts`), so it never needed this marker.
-     */
-    const modelMembers = widgetMembers.map(({ riskFactors, ...member }) => ({
-      ...member,
-      riskFactors: riskFactors.map(({ name, level }) => ({ name, level })),
-    }));
+/**
+ * A **projection**, not the stored rows.
+ *
+ * SPEC §15.2 calls a page read a *thin wrapper over the query each page
+ * already runs for SSR*, and a page renders a member's name, country and
+ * risk badge — never the raw traversal path. Returning the rows wholesale
+ * put ~870,000 tokens into one model turn and fired the assess Job's
+ * token ceiling. The cap did its job; the read was the bug.
+ */
+function projectFamilyMembers(members: Awaited<ReturnType<typeof loadFamilyMembers>>) {
+  /**
+   * Factor names, levels **and the `country` marker**, which is what the
+   * widget needs to exclude a country-derived factor the way the page does.
+   * `parseRiskObject` (`@/domain/scoring/risk-factors`) is the one reader
+   * of the raw `risk` JSONB column — the same function `entity-page.ts`
+   * and `score.ts` use — so `country` here means exactly what
+   * `isCountryDerived()` checks it against on the page. A widget that
+   * named the three country-derived factors by string instead (`cpi_score`,
+   * `basel_aml`, `eu_high_risk_third`) would be a second, driftable copy of
+   * the identification `scoring/risk-factors.ts` already rejected in
+   * favour of this marker.
+   */
+  const widgetMembers = members.map((m) => ({
+    entityId: m.memberEntityId,
+    // The member's own walk, so a sentence about one member cites the
+    // Enrichment that reached it rather than the envelope's.
+    enrichmentId: m.enrichmentId,
+    label: m.label,
+    country: m.country,
+    hopDepth: m.hopDepth,
+    sanctioned: m.sanctioned,
+    riskFactors: parseRiskObject(m.risk).map((f) => ({
+      name: f.name,
+      level: f.level ?? null,
+      country: f.country,
+    })),
+  }));
+  /**
+   * **The model reads no `country` per FACTOR** — the member's own
+   * `country` (its registered address) is unaffected and stays. Adding the
+   * factor-level marker to the model's copy would change every later
+   * turn's request hash for any replay recorded before this field existed,
+   * the same class of drift finding 100 describes, at a tool result
+   * instead of a prompt. `isCountryDerived` is for the widget's own
+   * rendering; the model already gets a Compliance risk figure with the
+   * country-derived factors already excluded (`domain/scoring/
+   * criteria.ts`), so it never needed this marker.
+   */
+  const modelMembers = widgetMembers.map(({ riskFactors, ...member }) => ({
+    ...member,
+    riskFactors: riskFactors.map(({ name, level }) => ({ name, level })),
+  }));
 
-    return {
-      ok: true,
-      data: widget(
-        'supplier_family',
-        { ...envelope, members: modelMembers },
-        { ...envelope, members: widgetMembers },
-      ),
-    };
-  },
-});
+  return { widgetMembers, modelMembers };
+}
 
 export const getEntity = defineTool({
   name: 'get_entity',
@@ -659,7 +708,8 @@ export const getUsage = defineTool({
 /** Job-only: the brief the assess loop argues from. */
 const getAssessmentBrief = defineTool({
   name: 'get_assessment_brief',
-  description: "Everything one supplier's assessment is written from, as rows rather than prose.",
+  description:
+    "Everything one supplier's assessment is written from, as rows rather than prose. Every id here is a citation target: the match id, each criterion value id, and the program and category ids that together cite a shortlist.",
   input: z.object({ supplierId: z.string(), programId: z.string() }),
   surfaces: ['job'],
   effect: 'read',
@@ -678,7 +728,7 @@ const getAssessmentBrief = defineTool({
 const getRecommendationBrief = defineTool({
   name: 'get_recommendation_brief',
   description:
-    'Everything one recommendation is written from: the shortlist, each supplier’s criterion values and verdict, as row ids rather than prose.',
+    'Everything one recommendation is written from: the shortlist, each supplier’s criterion values and verdict, as row ids rather than prose. Every id here is a citation target, including the program and category ids that together cite a shortlist.',
   input: z.object({ programId: z.string(), categoryId: z.string() }),
   surfaces: ['job'],
   effect: 'read',
@@ -698,6 +748,12 @@ const getRecommendationBrief = defineTool({
 async function briefFor(ctx: ToolContext, supplierId: string) {
   const supplier = await ctx.db.query.supplier.findFirst({ where: eq(t.supplier.id, supplierId) });
   const match = await ctx.db.query.match.findFirst({ where: eq(t.match.supplierId, supplierId) });
+  const categories = await ctx.db
+    .select({ categoryId: t.supplierCategory.categoryId })
+    .from(t.supplierCategory)
+    .where(eq(t.supplierCategory.supplierId, supplierId))
+    // Ordered, because the brief is prompt bytes a fixture replays against.
+    .orderBy(asc(t.supplierCategory.categoryId));
   const values = await ctx.db
     .select()
     .from(t.criterionValue)
@@ -710,6 +766,18 @@ async function briefFor(ctx: ToolContext, supplierId: string) {
   return {
     supplierId,
     supplierName: supplier?.rosterName ?? '(promoted lead)',
+    /**
+     * **The two ids a Shortlist citation is made of.**
+     *
+     * A Citation to a Shortlist is the pair `{programId, categoryId}`, and this
+     * brief carried neither — so an Assessment arguing about where its Supplier
+     * ranks had no way to cite the ranking, and the one attempt at it named the
+     * Program by a slug the model invented (finding 73). The Categories are the
+     * ones this Supplier bids on, which is also what says whether a `tariff`
+     * section is legal at all.
+     */
+    programId: supplier?.programId ?? null,
+    categoryIds: categories.map((c) => c.categoryId),
     matchId: match?.id ?? null,
     matchStatus: match?.status ?? null,
     entityId: match?.entityId ?? null,

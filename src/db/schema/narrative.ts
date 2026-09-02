@@ -91,6 +91,11 @@ export const recommendation = pgTable(
  * The verdicts are in there because a Supplier re-assessed into
  * `do_not_shortlist` was otherwise invisible to both staleness signals — its
  * verdict moved no number, and a Recommendation may not cite an Assessment.
+ *
+ * The weight vector is the **effective** one — the Program's saved rows filled
+ * from `DEFAULT_WEIGHTS`, which is what the frozen Scores were computed with —
+ * and the Shortlist order is **per Category**, because a Shortlist is. Both
+ * were once something narrower wearing these names; see `buildFrozenInputs`.
  */
 const versionColumns = {
   n: integer('n').notNull(),

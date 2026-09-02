@@ -159,8 +159,8 @@ export function computeFamilyExposure(
 const rank = (level: RiskLevel) => (level === 'high' ? 3 : level === 'elevated' ? 2 : 1);
 
 /**
- * The sentence the badge renders as — *"high · 2 of 17 members"*, and
- * *"17 of 2 275 explored"* where the read was truncated.
+ * The sentence the badge renders as — *"high · 2 of 17 explored"*, and
+ * *"17 of 2 275 nodes explored"* where the API said how far it searched.
  *
  * The phrasing is the honest one: an absent family member proves nothing,
  * because the read is capped.
@@ -171,7 +171,16 @@ const rank = (level: RiskLevel) => (level === 'high' ? 3 : level === 'elevated' 
  *
  * 1. **The reachable set is known and larger than what we hold** — the API
  *    finished searching (`partial_results: false`) and reported how many nodes
- *    it visited. *"200 of 5 047 explored"*, which is SPEC §8.2's own phrasing.
+ *    it visited. *"200 of 5 047 nodes explored"*.
+ *
+ *    **The unit is named, and that is load-bearing.** `explored_count` counts
+ *    the nodes the traversal walked, not the companies in the family: the
+ *    Yazaki ownership call reports 5,047 against a family of seventeen. Written
+ *    as *"17 of 5,047 explored"* the sentence reads as a family of five
+ *    thousand companies, which is a coverage claim nobody measured — the same
+ *    class of quietly-wrong figure as the *"28 of 100 explored"* a doubled
+ *    family once produced. Saying *nodes* is the difference between reporting
+ *    how wide the search was and inventing how big the family is.
  * 2. **The walk stopped at a cap and the reachable set is unknown** — the API
  *    itself returned partial results, so the number it reports bounds nothing.
  *    *"200 explored to the cap"*: the count is a floor, and saying only *"200
@@ -187,7 +196,7 @@ const rank = (level: RiskLevel) => (level === 'high' ? 3 : level === 'elevated' 
 export function describeFamilyExposure(exposure: FamilyExposure): string {
   const coverage =
     exposure.reachable != null && exposure.reachable > exposure.explored
-      ? `${exposure.explored} of ${exposure.reachable.toLocaleString('en-US')} explored`
+      ? `${exposure.explored} of ${exposure.reachable.toLocaleString('en-US')} nodes explored`
       : exposure.partial
         ? `${exposure.explored} explored to the cap`
         : `${exposure.explored} explored`;
