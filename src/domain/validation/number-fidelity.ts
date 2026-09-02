@@ -88,8 +88,24 @@ const IDENTIFIER_PATTERN = new RegExp(String.raw`\b(?:${HS_CODE}|${LEI}|${ENTITY
  * ASCII hyphen only, deliberately. The anchor lines this app writes use an en
  * dash for ranges (`0–8,000 km`) and a true minus for deductions (`high −40`),
  * so a genuine range is still read as the two numbers it contains.
+ *
+ * **A digit run glued to a letter is not a figure either**, and the lookbehind
+ * said nothing about what follows. Measured on a live Assessment Job (run
+ * `022cd220`, Magna International): the brief handed the model a Category uuid,
+ * the model wrote *"In category 96c09ae3-9f90-5f8a-9652-b8ca56fc1cc4 the
+ * supplier…"*, and the checker demanded that **96** appear in the frozen
+ * inputs — three Rounds on it, then the Job was terminated. `(?![\dA-Za-z_])`
+ * skips such a run entirely: **an identifier fragment is not a claim about a
+ * quantity**, and neither is the *10* in *"ranks 10th"*.
+ *
+ * The `\d` in that class is what makes the guard hold. Without it the digit run
+ * simply backtracks to a shorter one that happens to be followed by a digit, so
+ * `96c09ae3` reads as *9* and `1996th` as *199* — a fragment of a fragment, and
+ * a figure no row carries. Whitespace is not in the class, so a unit written
+ * the way a sentence writes one (`6815 km`, `2.5%`, `48,033`) still reads.
  */
-const NUMBER_PATTERN = /(?<![\w.\-])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?!-\d)\s*(%)?/g;
+const NUMBER_PATTERN =
+  /(?<![\w.\-])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?![\dA-Za-z_])(?!-\d)\s*(%)?/g;
 
 /** How many decimal places the sentence itself wrote. */
 function decimalsOf(fraction: string | undefined): number {

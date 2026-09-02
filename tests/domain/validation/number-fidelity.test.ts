@@ -255,3 +255,50 @@ describe('hyphenated tokens', () => {
     expect(failures).toEqual([]);
   });
 });
+
+/**
+ * A digit run glued to a letter is not a figure.
+ *
+ * Measured on a live Assessment Job (run 022cd220, Magna International): the
+ * brief handed the model a Category uuid, and the sentence "In category
+ * 96c09ae3-9f90-5f8a-9652-b8ca56fc1cc4 the supplier…" was rejected because
+ * *96* appears in no frozen input. Three Rounds went on it and the Job was
+ * terminated.
+ */
+describe('digits glued to letters', () => {
+  const noEvidence = candidatesFrom({}, []);
+
+  it('does not read the leading group of a uuid as a number', () => {
+    // The uuid is one the brief handed the model. An identifier fragment is
+    // not a claim about a quantity, so there is nothing here to verify.
+    expect(
+      checkNumberFidelity(
+        'In category 96c09ae3-9f90-5f8a-9652-b8ca56fc1cc4 the supplier bids on housings.',
+        noEvidence,
+      ),
+    ).toEqual([]);
+  });
+
+  it('does not read an ordinal as a number', () => {
+    expect(checkNumberFidelity('It ranks 10th on the shortlist.', noEvidence)).toEqual([]);
+    expect(checkNumberFidelity('It is the 3rd source in this category.', noEvidence)).toEqual([]);
+  });
+
+  it('still reads a figure written before its unit', () => {
+    const c = candidatesFrom({}, [{ km: 6815 }]);
+    expect(checkNumberFidelity('It is 6815 km from the nearest plant.', c)).toEqual([]);
+    expect(
+      checkNumberFidelity('It is 6915 km from the nearest plant.', c).map((f) => f.token),
+    ).toEqual(['6915']);
+  });
+
+  it('still reads a percentage and a thousands-separated figure', () => {
+    const c = candidatesFrom({}, [{ rate: 2.5, members: 48033 }]);
+    expect(checkNumberFidelity('The rate is 2.5% across 48,033 members.', c)).toEqual([]);
+    expect(
+      checkNumberFidelity('The rate is 3.5% across 48,034 members.', c)
+        .map((f) => f.token)
+        .sort(),
+    ).toEqual(['3.5%', '48,034']);
+  });
+});
