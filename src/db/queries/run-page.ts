@@ -99,5 +99,21 @@ async function loadSubjects(
     for (const row of rows) names.set(row.id, `${row.code} · ${row.name}`);
   }
 
+  /**
+   * Entities too, because two Job kinds are about a company rather than about a
+   * roster row: `fetch_entity` and `traverse`. Without this the Run page showed
+   * a truncated uuid for both — which is exactly the "a truncated uuid told a
+   * reviewer nothing" complaint the Subject column was added to answer, left
+   * standing for the one subject type nobody had queried.
+   */
+  const entityIds = jobs.filter((job) => job.subjectType === 'entity').map((job) => job.subjectId);
+  if (entityIds.length > 0) {
+    const rows = await db
+      .select({ id: t.entity.id, label: t.entity.label })
+      .from(t.entity)
+      .where(inArray(t.entity.id, entityIds));
+    for (const row of rows) names.set(row.id, row.label);
+  }
+
   return names;
 }

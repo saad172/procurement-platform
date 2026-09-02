@@ -193,12 +193,17 @@ describe('an enqueue_* tool whose Job kind no worker runs', () => {
    * The twelfth invariant, and the only one that does not throw.
    *
    * Chat can propose `enqueue_deep_traversal` (kind `traverse`) and
-   * `enqueue_dossier` (kind `dossier`), and the worker has a handler for
+   * `enqueue_dossier` (kind `dossier`), and the worker had a handler for
    * neither — so an accepted proposal produced a Job that dequeued and failed
    * with *"no handler registered"*, from a button a person deliberately
    * pressed. Refusing to boot on it would refuse to boot the application rather
-   * than the mistake, so it is a **warning** until those two kinds are either
+   * than the mistake, so it is a **warning** until those kinds are either
    * handled or withdrawn.
+   *
+   * **`traverse` is now handled**, so the real catalog warns about one tool
+   * rather than two — and the assertion below is the reason this warning names
+   * its tools instead of counting them: the list shrinking is the evidence that
+   * a Job kind became runnable.
    */
   it('is reported by name, with the kind it names and the kinds that run', () => {
     const registry = finalizeRegistry([
@@ -232,15 +237,17 @@ describe('an enqueue_* tool whose Job kind no worker runs', () => {
     expect(registry.warnings).toEqual([]);
   });
 
-  it('names the two the real catalog carries, and no others', async () => {
-    // The finding, kept where a reader will see it: these are the two, and the
-    // list is short enough to state rather than count.
+  it('names the one the real catalog still carries, and no others', async () => {
+    // The finding, kept where a reader will see it: `enqueue_dossier` is the
+    // last one, and the list is short enough to state rather than count.
+    // `enqueue_deep_traversal` is deliberately asserted absent — a Deep
+    // Traversal a person accepts now reaches a worker that runs it.
     const { getRegistry, resetRegistryForTesting } = await import('@/tools');
     resetRegistryForTesting();
     const warnings = getRegistry().warnings.join(' ');
-    expect(warnings).toContain('enqueue_deep_traversal');
     expect(warnings).toContain('enqueue_dossier');
-    expect(getRegistry().warnings).toHaveLength(2);
+    expect(warnings).not.toContain('enqueue_deep_traversal');
+    expect(getRegistry().warnings).toHaveLength(1);
   });
 });
 

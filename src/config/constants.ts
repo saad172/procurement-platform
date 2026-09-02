@@ -55,6 +55,32 @@ export const DEEP_TRAVERSAL_MAX_HOPS = 3;
 export const DEEP_TRAVERSAL_MAX_NODES = 200;
 
 /**
+ * The API's maximum page, and therefore what one upstream call buys.
+ *
+ * `Ownership.limit` and `Ubo.limit` are documented *"Defaults to 10. Max of
+ * 50"*, so 50 is not a number this app chose — asking for more is answered with
+ * 50 anyway. It sits beside the caps because it is what converts the node cap
+ * into a **call** count: the walk pages by 50 in each direction, so the honest
+ * estimate the confirm gate shows is derived from these three numbers rather
+ * than guessed.
+ */
+export const DEEP_TRAVERSAL_PAGE_SIZE = 50;
+
+/**
+ * Pages per direction, and therefore the call ceiling the estimate quotes.
+ *
+ * Downward (`traversal.ownership`) and upward (`traversal.ubo`) share the node
+ * cap, so this is a worst case for one direction rather than a per-direction
+ * allowance: a walk that fills all 200 nodes going down makes no upward call at
+ * all. Four each way is eight, comfortably under `JOB_CAPS.traverse.toolCalls`
+ * — which is the shape §18.3 asks for, a ceiling that does not fire on a
+ * healthy run.
+ */
+export const DEEP_TRAVERSAL_MAX_PAGES = Math.ceil(
+  DEEP_TRAVERSAL_MAX_NODES / DEEP_TRAVERSAL_PAGE_SIZE,
+);
+
+/**
  * Per-Job ceilings. A cap that fires on a healthy run is a bug, so these are
  * sized at ~2× worst-case-expected tool calls and ~3× tokens (SPEC §18.3).
  *
@@ -85,19 +111,20 @@ export type JobKind = keyof typeof JOB_CAPS;
  * The Job kinds a worker can actually run (SPEC §2.2).
  *
  * `JOB_CAPS` names eight kinds because it sizes a ceiling for each; the worker
- * registers a handler for six. The two that are not here — `traverse` and
- * `dossier` — have `enqueue_*` tools that chat can propose, so an accepted
- * proposal produced a Job that dequeued and failed with *"no handler registered
- * for job kind"*: a red row in a Run, from a button a person deliberately
- * pressed, for work the app never had.
+ * registers a handler for seven. The one that is not here — `dossier` — has an
+ * `enqueue_*` tool that chat can propose, so an accepted proposal produced a
+ * Job that dequeued and failed with *"no handler registered for job kind"*: a
+ * red row in a Run, from a button a person deliberately pressed, for work the
+ * app never had.
  *
  * One list, read by two places that had no idea they were describing the same
  * set: `buildJobHandlers` types its dispatch table against it, so a kind added
  * here without a handler is a compile error, and `finalizeRegistry()` checks
  * every `enqueue_*` tool's declared kind against it at boot.
  *
- * `traverse` is expected to join this list when the Deep Traversal handler
- * lands; `dossier` is flag-gated and deliberately outside it.
+ * **`traverse` has joined it**, which is what the Deep Traversal handler
+ * landing means in this file. `dossier` is flag-gated and deliberately outside
+ * it, so the boot warning is now about one tool rather than two.
  */
 export const RUNNABLE_JOB_KINDS = [
   'enrich',
@@ -106,6 +133,7 @@ export const RUNNABLE_JOB_KINDS = [
   'resolve',
   'assess',
   'recommend',
+  'traverse',
 ] as const satisfies readonly JobKind[];
 
 export type RunnableJobKind = (typeof RUNNABLE_JOB_KINDS)[number];

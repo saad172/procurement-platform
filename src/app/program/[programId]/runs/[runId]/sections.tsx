@@ -3,6 +3,7 @@ import type * as t from '@/db/schema';
 import type { JobActivity, RunProgress } from '@/db/queries/runs';
 import type { loadRunPage } from '@/db/queries/run-page';
 import { RUN_BUDGET_USD_PER_SUPPLIER } from '@/config/constants';
+import { jobKindLabel } from '@/domain/job-kinds';
 import { cancelRun, resumeRun, retryJob, retryRun } from '../../run-actions';
 import { LiveRefresh } from '@/components/live-refresh';
 
@@ -250,7 +251,9 @@ function JobRow({
 }) {
   return (
     <tr>
-      <td>{job.kind}</td>
+      {/* Never the raw enum: `traverse` is a Deep Traversal, and a column
+          value is not a word anybody uses. */}
+      <td>{jobKindLabel(job.kind)}</td>
       <td>
         {/*
           The subject, named and linked. A truncated uuid told a reviewer
@@ -315,7 +318,7 @@ function Phase({ kind, progress }: { kind: string; progress: RunProgress }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
-        <strong>{kind}</strong>
+        <strong>{jobKindLabel(kind)}</strong>
         <span className="note">
           {progress.settled} of {progress.total}
           {progress.running > 0 ? ` · ${progress.running} running` : ''}
@@ -407,7 +410,7 @@ function Doing({
   );
 }
 
-/** The Supplier or Category a Job is about, linked to its own page. */
+/** The Supplier, Category or company a Job is about, linked to its own page. */
 function Subject({
   programId,
   job,
@@ -425,7 +428,11 @@ function Subject({
       ? `/program/${programId}/supplier/${job.subjectId}`
       : job.subjectType === 'category'
         ? `/program/${programId}/category/${job.subjectId}`
-        : null;
+        : // A Deep Traversal and a record fetch are both about a company, and
+          // the company has a page of its own to land on.
+          job.subjectType === 'entity'
+          ? `/program/${programId}/entity/${job.subjectId}`
+          : null;
 
   return href ? <Link href={href as never}>{name}</Link> : <>{name}</>;
 }

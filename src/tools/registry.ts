@@ -123,20 +123,24 @@ export function finalizeRegistry(tools: readonly ToolDefinition[]): Registry {
  * 12. **Every `enqueue_*` tool names a Job kind a worker can run.**
  *
  * Chat can propose `enqueue_deep_traversal` (kind `traverse`) and
- * `enqueue_dossier` (kind `dossier`); the worker registers handlers for six
- * kinds, and neither is among them. So an accepted proposal — a person reading
- * an estimate and pressing a button — produced a Job that dequeued and failed
- * with *"no handler registered for job kind"*. The confirm gate's whole claim
- * is that a spend is a person's act; a button that cannot work is worse than
- * no button.
+ * `enqueue_dossier` (kind `dossier`), and the worker registered a handler for
+ * neither. So an accepted proposal — a person reading an estimate and pressing
+ * a button — produced a Job that dequeued and failed with *"no handler
+ * registered for job kind"*. The confirm gate's whole claim is that a spend is
+ * a person's act; a button that cannot work is worse than no button.
+ *
+ * **It is now down to one.** The Deep Traversal handler has landed and
+ * `traverse` is in `RUNNABLE_JOB_KINDS`, so `enqueue_deep_traversal` no longer
+ * warns — which is the whole point of a warning that names its tools rather
+ * than counting them.
  *
  * **A warning, not a refusal, and only for now.** Every other invariant here
- * throws, which is what makes them invariants. This one cannot: the two tools
- * are in the catalog today, so throwing would refuse to boot the application
- * rather than the mistake — and *removing* them from chat changes the tool list
- * in the recorded chat request, which reddens `chat/one-turn` for a reason that
- * is not drift. It becomes a refusal the moment the `traverse` handler lands
- * and `enqueue_dossier` is either handled or withdrawn.
+ * throws, which is what makes them invariants. This one cannot yet:
+ * `enqueue_dossier` is in the catalog today, so throwing would refuse to boot
+ * the application rather than the mistake — and *removing* it from chat changes
+ * the tool list in the recorded chat request, which reddens `chat/one-turn` for
+ * a reason that is not drift. It becomes a refusal the moment `dossier` is
+ * either handled or withdrawn.
  */
 function enqueueKindWarnings(tools: readonly ToolDefinition[]): string[] {
   const runnable = new Set<string>(RUNNABLE_JOB_KINDS);
