@@ -302,3 +302,48 @@ describe('digits glued to letters', () => {
     ).toEqual(['3.5%', '48,034']);
   });
 });
+
+/**
+ * A figure copied exactly as stored must not be refused.
+ *
+ * Measured on a live Assessment (Faurecia, twice): the model wrote the
+ * proximity Criterion's value as `20.190218190717246` — the stored value,
+ * digit for digit — and the check rejected it, because rounding a float and
+ * comparing with `===` does not survive fifteen decimals. The objection asked
+ * the model to write the figure as it is stored, and then refused the figure as
+ * it is stored.
+ */
+describe('a figure written exactly as stored', () => {
+  const stored = candidatesFrom({}, [{ proximity: 20.190218190717246 }]);
+
+  it('accepts the full stored value, all fifteen decimals of it', () => {
+    expect(checkNumberFidelity('Proximity scores 20.190218190717246.', stored)).toEqual([]);
+  });
+
+  it('accepts the same value written shorter', () => {
+    expect(checkNumberFidelity('Proximity scores 20.19.', stored)).toEqual([]);
+    expect(checkNumberFidelity('Proximity scores 20.190218.', stored)).toEqual([]);
+  });
+
+  it('accepts a figure rounded to the decimals the sentence used', () => {
+    expect(checkNumberFidelity('Proximity scores 20.2.', stored)).toEqual([]);
+  });
+
+  it('still rejects a figure the rounding does not reach', () => {
+    // 20.3 is not 20.19… at one decimal, so it is a claim the row does not
+    // carry. Tolerating representation must not tolerate paraphrase.
+    const failures = checkNumberFidelity('Proximity scores 20.3.', stored);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.token).toBe('20.3');
+  });
+
+  it('accepts a percentage at full precision against its stored fraction', () => {
+    const fraction = candidatesFrom({}, [{ share: 0.20190218190717246 }]);
+    expect(
+      checkNumberFidelity('It carries 20.190218190717246% of the shipments.', fraction),
+    ).toEqual([]);
+    expect(
+      checkNumberFidelity('It carries 21.190218190717246% of the shipments.', fraction),
+    ).toHaveLength(1);
+  });
+});
