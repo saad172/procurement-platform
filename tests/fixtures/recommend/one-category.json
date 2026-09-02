@@ -1,37 +1,37 @@
 {
   "manifest": {
     "name": "recommend/one-category",
-    "recordedAt": "2026-09-01T20:25:24.421Z",
+    "recordedAt": "2026-09-02T21:39:07.631Z",
     "loopHashes": {
-      "recommend": "d1055e65a1bd1b6ae55961762ea2a66ef869656dab40e165a468a799fc98f34e"
+      "recommend": "5c1f6a3b3e09cac0ebe775d99f1f7abcf5ece20cb54602fb3f030cf8ed272861"
     },
     "toolDigests": {
-      "recommend": "7ea2c4044023cb88ce2762529a025fd4baf35ad6338a862f0e4c3b282fc85ad8"
+      "recommend": "3bddf0cc7e033f10c6f2f24421717575ac30ca707656bd733228ea9503633f06"
     }
   },
   "turns": [
     {
       "n": 1,
-      "wireHash": "eec125fbd02f86ce80db6f57b7e6aa57e5d87de44cd1d71747d9468ca90f8cef",
-      "bodyHash": "37304c68d413e449bd0e9845d1a4e9f4697db3a61f5e61eb826c877e6f6a8d42",
+      "wireHash": "5b6f26b45fbb0dd45f69e712b682530326937c38e7ad690920a996f590184816",
+      "bodyHash": "58a862254943a769fab081f36db5da25e21e787158f59685c860c49f0b8df314",
       "loop": "recommend",
       "roundN": 1,
       "response": {
         "model": "claude-opus-5",
-        "id": "msg_011CedLpY9oetQY8tRRXeJ4L",
+        "id": "msg_011CefL7DBAKpqSTCRviqyXd",
         "type": "message",
         "role": "assistant",
         "content": [
           {
             "type": "text",
-            "text": "I'll start by reading the shortlist, the recommendation brief, and the one matched supplier."
+            "text": "I'll pull the stored rows before writing anything."
           },
           {
             "type": "tool_use",
-            "id": "toolu_01RPN6shKzXf3SvA5ZN3TA9u",
+            "id": "toolu_01UMzwRSxH2QQPd8Vtypm8Wd",
             "name": "get_recommendation_brief",
             "input": {
-              "programId": "05c366c6-0000-0000-0000-000000000000",
+              "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
               "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
             },
             "caller": {
@@ -40,18 +40,7 @@
           },
           {
             "type": "tool_use",
-            "id": "toolu_01LvhJwRY3o7FcFZRt8LtYZj",
-            "name": "get_category",
-            "input": {
-              "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
-            },
-            "caller": {
-              "type": "direct"
-            }
-          },
-          {
-            "type": "tool_use",
-            "id": "toolu_01SsLpkNefUtuXQDSPww3hoG",
+            "id": "toolu_015pHYaGPxa9rz32ZLNqeBAh",
             "name": "get_supplier",
             "input": {
               "supplierId": "a4ea162a-1cbb-54e3-a646-36e332386843"
@@ -65,27 +54,27 @@
         "stop_sequence": null,
         "stop_details": null,
         "usage": {
-          "input_tokens": 7000,
-          "cache_creation_input_tokens": 0,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 8051,
           "cache_read_input_tokens": 0,
           "cache_creation": {
-            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 8051,
             "ephemeral_1h_input_tokens": 0
           },
           "iterations": [
             {
-              "input_tokens": 7000,
-              "output_tokens": 296,
+              "input_tokens": 2,
+              "output_tokens": 221,
               "cache_read_input_tokens": 0,
-              "cache_creation_input_tokens": 0,
+              "cache_creation_input_tokens": 8051,
               "cache_creation": {
-                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 8051,
                 "ephemeral_1h_input_tokens": 0
               },
               "type": "message"
             }
           ],
-          "output_tokens": 296,
+          "output_tokens": 221,
           "output_tokens_details": {
             "thinking_tokens": 0
           },
@@ -96,24 +85,24 @@
     },
     {
       "n": 2,
-      "wireHash": "4a2be8fcc64855ae65521c228b8416157de109e8813556199c898094c785f9f4",
-      "bodyHash": "e430bf00d563e53a468b1afb78da17ebb5fc963bdbb313384cb091068d15a107",
+      "wireHash": "9cb63a575e10241801483a87bfade0939b262f419450179b221176e28d96a93a",
+      "bodyHash": "8c643931ebcb3667a590a2223f41768758011fbeeca02feebe8134151993af43",
       "loop": "recommend",
       "roundN": 1,
       "response": {
         "model": "claude-opus-5",
-        "id": "msg_011CedLpwZU7oL1BKajKhnRE",
+        "id": "msg_011CefL7c45C1BBcn1SUctt4",
         "type": "message",
         "role": "assistant",
         "content": [
           {
             "type": "thinking",
-            "thinking": "I'm pulling up the shortlist and family details for Yazaki, using its program ID to look up the record.",
-            "signature": "CAIS1wIKjgEIERgCKkD38qu9UTkMq5jep6n9gXAIIjQc4xmbb6VKHY71GfPHun76H8t5MNtOdOCgFZ7oZSGUDebKBH0V+5G7EWoSLn6HMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiQ5NTZhNzE4ZC0wYTJiLTQ1MzEtODM2NC1hNjljZDkzMmU3Y2KoAYHo3NQGEgyK8Juz9Iq5NFGKXxsaDHoDaJ7dW1nm+9RYTiIwPbJ1iFyV2qGlvUHdVLt1Rw3MF1L5TKzzgYVGfNNAmO/kZKpszVJxG8cA+RtPYp2AKnY5TDHBExBWYb9pIBjEw3PjDQ7lTBPogeZOS6FTxoCSBicYEQrYFdPpkQrjrkREtVHmQrxjr9jDwFDScGaERa/iD1xt8BJxd2ibXuvHxylISKfzkZSXu3iXsmHU/IO0Ygm8IhneJi3pPs4z/O7m01JzD98xyzvJGAE="
+            "thinking": "I should also pull the shortlist, category, and family for Yazaki. The supplier output didn't include any enrichments, so I'll check the family next.",
+            "signature": "CAISgQMKjgEIERgCKkDUQ/iVorZf4UFYEk1xJ65w8bQ1ZEx5Wexbozyf/hFX4Sz0M3wzOeA3yHrbM1/DOyeYQ0gpFLhLJDGHAqT0FK9sMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiRjNjQ3ZWRhMS0zYTdmLTQyMTUtYjYzMC03M2YxNmE4YjdmZWKoAdes4tQGEgz3n21tcPwGlerqE2YaDMsGo4yHc6ShXqmVQSIwy71L8LeUWEXkacjojb8jGXxIfX64VSXmF0FJo7f6F0nuo47zlHjf2Z3xUM2uSKJ3Kp8BIAKZCKzUCofBmoaAWyeT+g6f8xaBTIE8dBx/fQpxmuZcx7IAKgL1i9fFm2NiBjCB6uRtgPPXncRZFgfI2U75qP/RM+pLWATfZ0xm0pRpnyzpGCa9FYyXr6cLMJi47WE2VVxu0frqJtyosZjb80WtCdk/xBABWR4b6E2JvHHI4RMsNYqY7Ijhs8D5D7i91TWZqDcFLUFNszyO4ey9i9RLGAE="
           },
           {
             "type": "tool_use",
-            "id": "toolu_01EnscCQm4tWXdRvDSnvFgpG",
+            "id": "toolu_01LYebmDuQqbr2rBLDx2tgg2",
             "name": "get_shortlist",
             "input": {
               "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
@@ -125,7 +114,7 @@
           },
           {
             "type": "tool_use",
-            "id": "toolu_01RZAfhr8YyshWcVJLGPv3H6",
+            "id": "toolu_01Svb4EFeuWEzSxtoxQ7Wc8v",
             "name": "get_supplier_family",
             "input": {
               "supplierId": "a4ea162a-1cbb-54e3-a646-36e332386843"
@@ -139,29 +128,29 @@
         "stop_sequence": null,
         "stop_details": null,
         "usage": {
-          "input_tokens": 10724,
-          "cache_creation_input_tokens": 0,
-          "cache_read_input_tokens": 0,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 3726,
+          "cache_read_input_tokens": 8051,
           "cache_creation": {
-            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 3726,
             "ephemeral_1h_input_tokens": 0
           },
           "iterations": [
             {
-              "input_tokens": 10724,
-              "output_tokens": 261,
-              "cache_read_input_tokens": 0,
-              "cache_creation_input_tokens": 0,
+              "input_tokens": 2,
+              "output_tokens": 255,
+              "cache_read_input_tokens": 8051,
+              "cache_creation_input_tokens": 3726,
               "cache_creation": {
-                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 3726,
                 "ephemeral_1h_input_tokens": 0
               },
               "type": "message"
             }
           ],
-          "output_tokens": 261,
+          "output_tokens": 255,
           "output_tokens_details": {
-            "thinking_tokens": 57
+            "thinking_tokens": 51
           },
           "service_tier": "standard",
           "inference_geo": "global"
@@ -170,24 +159,86 @@
     },
     {
       "n": 3,
-      "wireHash": "53a7bea0a69d0331ffe1274a736c42077ed88636cb1b41146f80074afbb33b64",
-      "bodyHash": "8765f6d37d8bdfee91f6608f55429d6c91c188347748a5c5f98e456124947149",
+      "wireHash": "0e0968eaea7c346ca7abdf74ad02104a736c037b3b441a61734f19d2d72c7524",
+      "bodyHash": "fd43b0c0d78bec7d13d99c9204cb86d49f4fde4135335813fc7b537abe834e44",
       "loop": "recommend",
       "roundN": 1,
       "response": {
         "model": "claude-opus-5",
-        "id": "msg_011CedLqQ2vxBU3QVSS6YitZ",
+        "id": "msg_011CefL81m6ARfanrSxk89fU",
         "type": "message",
         "role": "assistant",
         "content": [
           {
             "type": "thinking",
-            "thinking": "Yazaki is the only shortlisted supplier, ranking first with a score of 67.26, no disqualifying flags, and a verdict of recommend_with_conditions published with objections. I don't have enrichment data since get_supplier only returned criterionValues, but I can still cite criterionValueId, matchId, entityId, shortlist, enrichmentId, and recordId, plus entityId for family members.\n\nFor subtier forced labor risk, I'll reference XIAOGAN YAZAKI and 重庆矢崎仪表 by their entity IDs, using them cautiously since family member entity IDs seem acceptable per the schema. I'm now drafting the required sections — headline, rationale, conditions, open_questions, and supplementary sections on identity, compliance, ownership, country, tariff, media, and limits — starting with the identity section that documents the roster match to 矢崎总业株式会社 with its LEI, citing both the matchId and entityId as separate targets.\n\nFor compliance, I'm noting the perfect risk score reflects no sanctions or PEP status with no scored factors, citing the relevant criterion value. For ownership, I need to flag that exposure is actually unknown rather than clean, since the graph shows 18 owner edges that weren't included in the returned window — I'm trying to figure out the right citation for this, since the family exploration truncation isn't tied to a specific citable target, so I'll phrase it without exact figures and cite through the ownership criterion value that notes the truncation flag instead.\n\nLooking at the subtier-level findings now, I want to flag that one second-hop family member carries a high-level forced-labour factor from Sheffield Hallam reporting plus elevated ILAB child- and forced-labour export factors, while a first-hop member in China carries high-level state-ownership factors — both citable by entity ID. I'm noting that the compliance risk methodology never deducts for subtier badges, which is an important limitation to call out. Now I'm looking at how the country resilience score of 72.5 is built from underlying data sources.\n\nTariff exposure of 50 stems from a 5% MFN rate on the relevant HS code for a Japan-origin import into the US, with the Section 232 autos-and-parts flag treated as a flag rather than a rate since applicability depends on facts the app doesn't have. Proximity scores 0 because the 10,209 km distance is measured from a registered Tokyo address rather than an actual factory to the nearest plant in Michigan. Media signal sits at 70 from a single moderate-flagged article, and overall coverage is 5 of 6 criteria with adequate data confidence and no disqualifying badge.\n\nThe award recommendation goes to Yazaki as the only bidder with an accepted match, conditional on resolving ownership and subtier-labor issues before sourcing — all other candidates (Aptiv, Draexlmaier, Samvardhana Motherson, Lear, Sumitomo Electric) are excluded for having no match, leaving Yazaki as the sole ranked supplier in a shortlist of one.\n\nI'm noting that rank order isn't violated since Yazaki is the only entry at rank 1 with a score of 67.26, and I need to flag as an open question that Yazaki's assessment ended with unresolved objections (published_with_objections). For citations, I'll use the shortlist reference since that's the best available target for the supporting facts here.",
-            "signature": "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"
+            "thinking": "I should also get the category to cite HS lines and flags, so let me check that.",
+            "signature": "CAISuAIKjgEIERgCKkAqHi/INktivFGFQwnIeAoo6cbilU84sYidlXv/oKmGsVJOpVcE+l5EqaqsFR8eM47ErZvXgzZkAzYn6DH4auddMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiRjNjQ3ZWRhMS0zYTdmLTQyMTUtYjYzMC03M2YxNmE4YjdmZWKoAd2s4tQGEgz390aENWjxnDvcgaEaDM9GNFaj95Z/HWJZ4yIwSK65WjoxASjbziOWsXusmqEysyG6ahuDzyzxFdefiDX+Zl68Qc8SAI6NpcS4E5P5KldfQkmZ+5IUMXYpCcarZ9CPuySd1nhMR9QYSmGEh51U65c8wzgEtXX7t+abVNfVd4WYlbywNHt+c8+JNlfPf+7gYGIu8XPUSNH8l0DXr4yVplwrG33SwWcYAQ=="
           },
           {
             "type": "tool_use",
-            "id": "toolu_01CiQFXZ8mrvvfWeS3Y164Zj",
+            "id": "toolu_01NGdE1gzbzAkdm5BtS1TD8G",
+            "name": "get_category",
+            "input": {
+              "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 10069,
+          "cache_read_input_tokens": 11777,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 10069,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 101,
+              "cache_read_input_tokens": 11777,
+              "cache_creation_input_tokens": 10069,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 10069,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "type": "message"
+            }
+          ],
+          "output_tokens": 101,
+          "output_tokens_details": {
+            "thinking_tokens": 25
+          },
+          "service_tier": "standard",
+          "inference_geo": "global"
+        }
+      }
+    },
+    {
+      "n": 4,
+      "wireHash": "24a5a3dcf999563bcf44509f9adc11714de17d42a70e8cd577c36cc3abd5c916",
+      "bodyHash": "f9c882ba20ca30efecb75516dcdd25876d0ff0139aee5c12741d67efcc6ae780",
+      "loop": "recommend",
+      "roundN": 1,
+      "response": {
+        "model": "claude-opus-5",
+        "id": "msg_011CefL8QzLpPR48WqYuGDR4",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "Yazaki is the only shortlisted supplier, with a passed evaluation and recommend-with-conditions verdict, so no unresolved objections need flagging in the disclosure. I'll proceed with Yazaki as the top-ranked award recommendation, noting the conditions attached.\n\nFor citations, I have access to shortlist identifiers, matchId, criterionValueIds, entityIds for the supplier and family members, and an enrichmentId — I'll draw on these to support each claim. I'm now drafting the identity, compliance, and ownership sections: identity confirms the Yazaki roster row matched to the corporate entity in Japan with strong source support, compliance shows a favorable risk score with no sanctions or PEP hits after excluding country-derived factors, and I still need to work through the ownership details.\n\nI'm flagging that ownership exposure is unclear since owner edges exist but weren't captured in the current window, and the corporate family exploration only covered a small fraction of the total reachable entities before truncating. Several named family members carry elevated risk — one tied to Chinese state ownership, another flagged for forced labor exposure in subtier sourcing, another showing elevated Xinjiang-origin subtier risk, and another linked to regulatory action and core SOE status — each needs its own citation. I'm also noting country resilience and logistics performance figures with some governance indicators missing, and working through the tariff classification and rate exposure along with the Section 232 flag, being careful about which citation type applies to the category-level flag versus the rate itself.\n\nNow I'm pulling together the media signal score, the proximity gap between the registered address and the actual plant location, the shortlist coverage and confidence figures, and the final headline naming Yazaki as the sole shortlisted bidder with its overall score, before moving into the rationale and conditions sections.\n\nFor open questions, I'm noting the unresolved ownership, the truncated family data, and the lack of a second-source option since the other five suppliers were excluded as no-matches — landing on a \"recommend with conditions\" verdict. I want to phrase the exclusions and the precise score carefully, rounding to 67.26 while being careful not to cite counts I derived myself rather than ones stated directly in the source data, like the number of missing WGI dimensions.",
+            "signature": "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"
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01Ptg8Jmd5Ndg2b46pF83EMe",
             "name": "submit_recommendation",
             "input": {
               "picks": [
@@ -200,7 +251,7 @@
               "sentences": [
                 {
                   "section": "headline",
-                  "text": "Award HAR to Yazaki, the only bidder on this category carrying an accepted match and therefore the only ranked entry on the shortlist, subject to conditions on ownership visibility and sub-tier labour exposure.",
+                  "text": "Award HAR wire harnesses to Yazaki, the only bidder on this roster with an accepted entity match, at a score of 67.26 and rank 1 — but award it conditionally, because its ownership picture is unresolved and no second source survived matching.",
                   "citations": [
                     {
                       "shortlist": {
@@ -212,11 +263,17 @@
                 },
                 {
                   "section": "identity",
-                  "text": "The roster row 'Yazaki' (Tokyo 108-8333, JPN) was resolved to the Sayari company 矢崎总业株式会社, LEI 35380087YNQB9R822X46, with the match accepted and settled by agents.",
+                  "text": "The Yazaki roster row resolved to the Japanese company entity 矢崎总业株式会社 in Minato-ku, Tokyo, carrying LEI 35380087YNQB9R822X46 and drawn from 13 distinct sources, and the match was accepted by the agents rather than left provisional.",
                   "citations": [
                     {
                       "matchId": "b9bf0205-dc71-5a7d-a29e-6e52a5a1b34a"
-                    },
+                    }
+                  ]
+                },
+                {
+                  "section": "identity",
+                  "text": "The matched entity is not marked sanctioned, PEP or closed, and it has no profile-stated shareholders of significant control on record.",
+                  "citations": [
                     {
                       "entityId": "CX3012yTGIhgMxcZG6hgnA"
                     }
@@ -224,7 +281,7 @@
                 },
                 {
                   "section": "compliance",
-                  "text": "Compliance risk scores the full 100: the matched entity is not sanctioned, not a PEP and not closed, no risk factors were scored against it, and the country-derived Basel AML and CPI indicators were excluded from the deduction.",
+                  "text": "Compliance risk scores the maximum 100: no sanctions, no PEP status and no closure, with no factors scored against the entity at all.",
                   "citations": [
                     {
                       "criterionValueId": "1bd00c4e-01db-5103-91d1-8f01673eb9c8"
@@ -233,7 +290,7 @@
                 },
                 {
                   "section": "compliance",
-                  "text": "That 100 describes the matched legal entity only, because under the anchor rule sub-tier badges are recorded and never deduct.",
+                  "text": "That perfect score is narrower than it looks, because the two country-derived factors on the entity — Basel AML and the CPI score — were excluded from the deduction by design, so the 100 speaks only to entity-specific findings.",
                   "citations": [
                     {
                       "criterionValueId": "1bd00c4e-01db-5103-91d1-8f01673eb9c8"
@@ -242,7 +299,7 @@
                 },
                 {
                   "section": "ownership",
-                  "text": "Ownership exposure is unknown rather than clean: the graph records 18 owner edges but the returned window did not include them, and the relationship set came back truncated.",
+                  "text": "Ownership exposure could not be scored: the graph records 18 owner edges for the matched entity but the returned window did not include them, which the row is explicit is a failure to look far enough rather than evidence of an absent owner.",
                   "citations": [
                     {
                       "criterionValueId": "b88ed0de-cb2f-50d5-a879-16d7756c87b1"
@@ -251,7 +308,16 @@
                 },
                 {
                   "section": "ownership",
-                  "text": "A first-hop family member, 重庆矢崎仪表有限公司 in China, carries high-level state-ownership factors including owned_by_chinese_soe and psa_owned_by_chinese_soe.",
+                  "text": "The corporate-family walk is likewise partial — 50 members explored against 5,047 reachable, and the traversal is flagged truncated — so anything said about the family below is a floor and not a full picture.",
+                  "citations": [
+                    {
+                      "enrichmentId": "5ccba7fa-716a-52cf-a17a-f1d5b51bb746"
+                    }
+                  ]
+                },
+                {
+                  "section": "ownership",
+                  "text": "Within what was explored, the first-hop Chinese member 重庆矢崎仪表有限公司 carries owned_by_chinese_soe and psa_owned_by_chinese_soe at high level plus Chinese SOE adjacency at elevated level.",
                   "citations": [
                     {
                       "entityId": "MI9EBDEvhFO_BhEt2HM5DQ"
@@ -260,7 +326,7 @@
                 },
                 {
                   "section": "ownership",
-                  "text": "A second-hop member, XIAOGAN YAZAKI AUTO PARTS CO., LTD, carries a high-level forced-labour sub-tier factor sourced from Sheffield Hallam University reporting, alongside elevated ILAB child-labour and forced-labour export factors.",
+                  "text": "The member recorded as XIAOGAN YAZAKI AUTO PARTS CO., LTD carries a high-level forced-labour factor sourced to Sheffield Hallam University subtier reporting, alongside elevated ILAB child- and forced-labour export factors.",
                   "citations": [
                     {
                       "entityId": "ssRv0fzea7pcW0r_8IgTug"
@@ -269,7 +335,7 @@
                 },
                 {
                   "section": "ownership",
-                  "text": "A third-hop member registered in the USA, YAZAKI COMPONENT TECHNOLOGY S.R.L., carries elevated Xinjiang-origin sub-tier forced-labour factors, so the exposure is not confined to the Chinese branch of the family.",
+                  "text": "The member recorded as YAZAKI COMPONENT TECHNOLOGY S.R.L. carries elevated Xinjiang-origin subtier forced-labour factors, both directly and via a profile-stated associate.",
                   "citations": [
                     {
                       "entityId": "EgtoJPbPWhG-kWVwCeEo1w"
@@ -277,8 +343,17 @@
                   ]
                 },
                 {
+                  "section": "ownership",
+                  "text": "A further explored member, 滨日综合能源服务（天津）有限公司, is flagged a Chinese core SOE and owned by a regulatory-action entity, both at high level.",
+                  "citations": [
+                    {
+                      "entityId": "SlK0jqAxG6UUXDfS1tkTbA"
+                    }
+                  ]
+                },
+                {
                   "section": "country",
-                  "text": "Country resilience of 72.5 rests on the 2022 Logistics Performance Index alone; all five World Governance Indicator dimensions are missing from the calculation.",
+                  "text": "Country resilience for Japan lands at 72.5, built on a 2022 Logistics Performance Index of 3.9 rescaled to 72.5 at a 35 sub-weight, with the WGI governance dimensions recorded as missing.",
                   "citations": [
                     {
                       "criterionValueId": "2df446af-b7d8-5e4b-8837-c35814a77a58"
@@ -287,7 +362,7 @@
                 },
                 {
                   "section": "tariff",
-                  "text": "Tariff exposure scores 50 on a 5% MFN rate for HS 8544.30 imported into the USA from JPN origin.",
+                  "text": "Tariff exposure scores 50 on an MFN rate of 5% for HS 8544.30, ignition and other vehicle wiring sets, imported into the USA from Japan.",
                   "citations": [
                     {
                       "criterionValueId": "53bf7e49-fd8d-598b-bb8e-5a96a5f7c3c2"
@@ -296,7 +371,7 @@
                 },
                 {
                   "section": "tariff",
-                  "text": "The Section 232 autos-and-parts flag (+25%) is carried as a flag and not as a rate because USMCA-qualifying parts are exempt on importer self-certification and Japan negotiated its own reduced rate, so whether it applies depends on facts this app does not have.",
+                  "text": "The Section 232 autos-and-parts flag (+25%) sits on this line as a flag and not a rate, because USMCA-qualifying parts are exempt entirely on importer self-certification and Japan negotiated its own reduced rate — whether it bites depends on facts this app does not hold.",
                   "citations": [
                     {
                       "criterionValueId": "53bf7e49-fd8d-598b-bb8e-5a96a5f7c3c2"
@@ -305,7 +380,7 @@
                 },
                 {
                   "section": "media",
-                  "text": "Media signal of 70 derives from a single article flagged moderate, with no serious-flagged coverage.",
+                  "text": "Media signal is 70 from a single moderately flagged article and a weighted count of 6, with no seriously flagged coverage.",
                   "citations": [
                     {
                       "criterionValueId": "6f68628d-d2c8-59c7-9872-62ac4205d8ca"
@@ -314,7 +389,7 @@
                 },
                 {
                   "section": "limits",
-                  "text": "Proximity scores 0 at 10,209 km from the registered Tokyo address to the nearest plant, P3 in Lansing, Michigan — a distance measured from a registered address, which is not a factory and says nothing about where harnesses would actually be built.",
+                  "text": "Proximity scores 0: the measured distance to the nearest plant, P3 in Lansing, Michigan, is 10,209 km, and the anchor warns this is measured from a registered address, which is not a factory — so the zero indicts a Tokyo head-office postcode, not Yazaki's North American manufacturing footprint.",
                   "citations": [
                     {
                       "criterionValueId": "87f27081-64a4-55ce-ab73-e72bea597df3"
@@ -323,7 +398,7 @@
                 },
                 {
                   "section": "limits",
-                  "text": "The shortlist reports coverage of 5 of 6 criteria, data confidence 'adequate' and no disqualifying badge for Yazaki.",
+                  "text": "The shortlist itself is thin: one visible supplier of one, with criterion coverage of 5 of 6 and data confidence rated only adequate.",
                   "citations": [
                     {
                       "shortlist": {
@@ -335,7 +410,7 @@
                 },
                 {
                   "section": "rationale",
-                  "text": "Aptiv, Draexlmaier, Samvardhana Motherson, Lear and Sumitomo Electric are each excluded from the shortlist for no_match, so none of them is eligible to be a pick in this round.",
+                  "text": "Lear, Aptiv, Sumitomo Electric, Draexlmaier and Samvardhana Motherson were all excluded for no_match, so none of them is eligible to be a pick and the ranking had only one candidate to order.",
                   "citations": [
                     {
                       "shortlist": {
@@ -347,7 +422,7 @@
                 },
                 {
                   "section": "rationale",
-                  "text": "Yazaki is rank 1 with a score of 67.25903614457832 and is the only visible entry, so the award follows the ranking rather than departing from it, and no second source can be named from this roster.",
+                  "text": "Yazaki is not carrying a disqualifying badge and its assessment closed at recommend_with_conditions with the evaluator passing it, which is what makes an award legally available here rather than a develop role.",
                   "citations": [
                     {
                       "shortlist": {
@@ -359,7 +434,7 @@
                 },
                 {
                   "section": "rationale",
-                  "text": "The score is carried by a clean compliance value of 100 on the matched entity and a country value of 72.5, and is held down by a proximity value of 0 — that is, by distance from a registered head office rather than by any adverse finding.",
+                  "text": "On the evidence that does exist the case is respectable: a clean entity-level compliance score, mid-band Japanese country resilience and near-silent media.",
                   "citations": [
                     {
                       "criterionValueId": "1bd00c4e-01db-5103-91d1-8f01673eb9c8"
@@ -368,14 +443,20 @@
                       "criterionValueId": "2df446af-b7d8-5e4b-8837-c35814a77a58"
                     },
                     {
-                      "criterionValueId": "87f27081-64a4-55ce-ab73-e72bea597df3"
+                      "criterionValueId": "6f68628d-d2c8-59c7-9872-62ac4205d8ca"
                     }
                   ]
                 },
                 {
                   "section": "rationale",
-                  "text": "The award is conditional rather than clean because the single largest-weighted-but-unscored input, ownership exposure, is null on an admission that the search did not look far enough, not on an absent owner.",
+                  "text": "I am not treating the 67.26 as a verdict on Yazaki's suitability, because the one criterion that would most change it — ownership exposure — is unscored, and a rank of 1 out of a field of one carries no comparative information.",
                   "citations": [
+                    {
+                      "shortlist": {
+                        "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
+                        "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
+                      }
+                    },
                     {
                       "criterionValueId": "b88ed0de-cb2f-50d5-a879-16d7756c87b1"
                     }
@@ -383,7 +464,7 @@
                 },
                 {
                   "section": "conditions",
-                  "text": "Before any sourcing commitment, the 18 recorded owner edges must be enumerated and the ownership exposure criterion re-scored, since it is currently null only because the returned window did not reach them.",
+                  "text": "Before any purchase order, the 18 unretrieved owner edges must be walked and ownership exposure scored, since the current unknown is a gap in the search window and not a finding of no owner.",
                   "citations": [
                     {
                       "criterionValueId": "b88ed0de-cb2f-50d5-a879-16d7756c87b1"
@@ -393,7 +474,7 @@
                 },
                 {
                   "section": "conditions",
-                  "text": "Yazaki must confirm in writing that no harness or component destined for this programme passes through XIAOGAN YAZAKI AUTO PARTS CO., LTD, whose high-level forced-labour sub-tier factor would otherwise sit inside the awarded supply chain unscored.",
+                  "text": "Award is conditional on Yazaki certifying that no MY2029 HAR content is sourced from or through the member recorded as XIAOGAN YAZAKI AUTO PARTS CO., LTD, which carries a high-level Sheffield Hallam forced-labour factor.",
                   "citations": [
                     {
                       "entityId": "ssRv0fzea7pcW0r_8IgTug"
@@ -403,8 +484,21 @@
                 },
                 {
                   "section": "conditions",
-                  "text": "The state-ownership position at 重庆矢崎仪表有限公司 must be documented, including whether that entity supplies the North American programme, before the award is released.",
+                  "text": "Award is conditional on a UFLPA-facing subtier declaration covering the member recorded as YAZAKI COMPONENT TECHNOLOGY S.R.L., whose elevated Xinjiang-origin subtier flags bear directly on goods entering the United States.",
                   "citations": [
+                    {
+                      "entityId": "EgtoJPbPWhG-kWVwCeEo1w"
+                    }
+                  ],
+                  "pickSupplierId": "a4ea162a-1cbb-54e3-a646-36e332386843"
+                },
+                {
+                  "section": "conditions",
+                  "text": "Award is conditional on the family traversal being completed past its truncated 50-of-5,047 state before sourcing is locked, because SOE ownership already appears at the first hop in 重庆矢崎仪表有限公司.",
+                  "citations": [
+                    {
+                      "enrichmentId": "5ccba7fa-716a-52cf-a17a-f1d5b51bb746"
+                    },
                     {
                       "entityId": "MI9EBDEvhFO_BhEt2HM5DQ"
                     }
@@ -413,7 +507,7 @@
                 },
                 {
                   "section": "conditions",
-                  "text": "The importer must establish, per shipment lane, whether the Section 232 autos-and-parts action or the Japan negotiated rate applies on top of the 5% MFN line, because the tariff criterion cannot settle it.",
+                  "text": "Award is conditional on the importer establishing whether the Section 232 autos-and-parts flag applies to the actual shipping lane, or whether USMCA self-certification or the Japanese negotiated rate displaces it, as the tariff row states this app cannot settle.",
                   "citations": [
                     {
                       "criterionValueId": "53bf7e49-fd8d-598b-bb8e-5a96a5f7c3c2"
@@ -422,57 +516,50 @@
                   "pickSupplierId": "a4ea162a-1cbb-54e3-a646-36e332386843"
                 },
                 {
-                  "section": "conditions",
-                  "text": "The actual manufacturing and logistics footprint serving the Lansing plant must be supplied by the bidder, since the proximity value of 0 was measured from a Tokyo registered address.",
+                  "section": "open_questions",
+                  "text": "Ownership exposure for Yazaki remains unresolved and I am leaving it so for this round; it is the largest single hole in the score at a 17 weight and it could move the result materially in either direction.",
+                  "citations": [
+                    {
+                      "criterionValueId": "b88ed0de-cb2f-50d5-a879-16d7756c87b1"
+                    }
+                  ]
+                },
+                {
+                  "section": "open_questions",
+                  "text": "There is no second source for HAR at all, because every other bidder failed matching, and that concentration risk is not something the score expresses.",
+                  "citations": [
+                    {
+                      "shortlist": {
+                        "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
+                        "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "section": "open_questions",
+                  "text": "Whether the excluded bidders are genuinely unmatchable or merely unmatched is open; Aptiv and Lear are US-domiciled roster rows whose absence from the shortlist looks more like a resolution failure than a sourcing fact, and re-matching them in round 2 would be the cheapest way to create a second source.",
+                  "citations": [
+                    {
+                      "shortlist": {
+                        "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
+                        "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "section": "open_questions",
+                  "text": "Proximity is recorded as 0 from a Tokyo registered address rather than from a plant, so the true logistics distance for this category is unknown and the 11-weighted proximity term should not be read as a supply-chain finding.",
                   "citations": [
                     {
                       "criterionValueId": "87f27081-64a4-55ce-ab73-e72bea597df3"
                     }
-                  ],
-                  "pickSupplierId": "a4ea162a-1cbb-54e3-a646-36e332386843"
-                },
-                {
-                  "section": "open_questions",
-                  "text": "Yazaki, the awarded supplier, is the shortlisted supplier whose assessment was published with unresolved objections, and this recommendation inherits those objections rather than settling them.",
-                  "citations": [
-                    {
-                      "shortlist": {
-                        "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
-                        "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
-                      }
-                    },
-                    {
-                      "matchId": "b9bf0205-dc71-5a7d-a29e-6e52a5a1b34a"
-                    }
                   ]
                 },
                 {
                   "section": "open_questions",
-                  "text": "Whether the five no-match bidders are genuinely unresolvable or merely unmatched so far is unresolved, and a single-bidder shortlist is a weak basis for a category award in a three-round programme.",
-                  "citations": [
-                    {
-                      "shortlist": {
-                        "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
-                        "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
-                      }
-                    }
-                  ]
-                },
-                {
-                  "section": "open_questions",
-                  "text": "The downward family walk was truncated, so the sub-tier labour and state-ownership factors seen so far are a floor on exposure and not a complete picture.",
-                  "citations": [
-                    {
-                      "criterionValueId": "b88ed0de-cb2f-50d5-a879-16d7756c87b1"
-                    },
-                    {
-                      "entityId": "EgtoJPbPWhG-kWVwCeEo1w"
-                    }
-                  ]
-                },
-                {
-                  "section": "open_questions",
-                  "text": "Country resilience for Japan is left standing on logistics performance alone while the governance dimensions are missing, so that 72.5 should not be read as a governance judgement.",
+                  "text": "Country resilience rests on the logistics indicator alone with the governance dimensions missing, so the 72.5 is a partial construction and would need refreshing if this award is extended beyond MY2029.",
                   "citations": [
                     {
                       "criterionValueId": "2df446af-b7d8-5e4b-8837-c35814a77a58"
@@ -490,29 +577,29 @@
         "stop_sequence": null,
         "stop_details": null,
         "usage": {
-          "input_tokens": 18904,
-          "cache_creation_input_tokens": 0,
-          "cache_read_input_tokens": 0,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 484,
+          "cache_read_input_tokens": 21846,
           "cache_creation": {
-            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 484,
             "ephemeral_1h_input_tokens": 0
           },
           "iterations": [
             {
-              "input_tokens": 18904,
-              "output_tokens": 5916,
-              "cache_read_input_tokens": 0,
-              "cache_creation_input_tokens": 0,
+              "input_tokens": 2,
+              "output_tokens": 6151,
+              "cache_read_input_tokens": 21846,
+              "cache_creation_input_tokens": 484,
               "cache_creation": {
-                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 484,
                 "ephemeral_1h_input_tokens": 0
               },
               "type": "message"
             }
           ],
-          "output_tokens": 5916,
+          "output_tokens": 6151,
           "output_tokens_details": {
-            "thinking_tokens": 1949
+            "thinking_tokens": 1506
           },
           "service_tier": "standard",
           "inference_geo": "global"
@@ -520,47 +607,47 @@
       }
     },
     {
-      "n": 4,
-      "wireHash": "259a548592a6b2cd701e7558b4bd709ff1bf8611268e7094e872da64196289ed",
-      "bodyHash": "21a1e3c67864a072b67f81f5eff51d401a03db684337d0475cf22ec23a46586d",
+      "n": 5,
+      "wireHash": "3c90be4b1f6e1f8d577da556b1974df39c5295223a6e95e8deb1347b362640df",
+      "bodyHash": "382a9800315a4a2f78e380291fe4e95aeaa40b23bb0dd6ac4c66dc90569ac53f",
       "loop": "recommend",
       "roundN": 1,
       "response": {
         "model": "claude-opus-5",
-        "id": "msg_011CedLwCnRMbeDnVzb8Tvrf",
+        "id": "msg_011CefLESEfkmPLWPGynQyLs",
         "type": "message",
         "role": "assistant",
         "content": [
           {
             "type": "text",
-            "text": "The recommendation is recorded.\n\n**Pick: Yazaki — award, rank 1** (the only pick; no second source was available).\n\n**Why:**\n- Yazaki is the sole ranked entry on the HAR shortlist at 67.26. Aptiv, Draexlmaier, Samvardhana Motherson, Lear and Sumitomo Electric are all excluded for `no_match`, so none of them could legally be a pick this round. The award therefore follows rank order — but on a shortlist of one, that is a thin endorsement, and I said so.\n- Compliance scores a clean 100 on the matched entity (not sanctioned, not PEP, not closed, no factors scored). Crucially, that 100 is entity-level only: the anchor rule badges sub-tier findings and never deducts.\n- The real exposure sits below the matched entity and outside the score: a first-hop Chinese member with high-level SOE ownership factors, a second-hop member with a high-level Sheffield Hallam forced-labour sub-tier factor, and a US-registered third-hop member with Xinjiang-origin sub-tier factors. The family walk was truncated, so those are a floor, not a total.\n- Ownership exposure is **null because we did not look far enough** — 18 owner edges recorded, none returned. That is the largest weighted input on the vector and it is unscored, which is why the award is conditional rather than clean.\n- Proximity 0 is 10,209 km from a Tokyo registered address, not from a factory — it depresses the score without telling us anything about supply into Lansing.\n- Tariff 50 reflects the 5% MFN on 8544.30; Section 232 stays a flag, not a rate, because applicability depends on facts outside this app.\n\n**Disclosed:** Yazaki's assessment was published with unresolved objections, and this recommendation inherits them rather than resolving them.\n\nI did not invent counts anywhere — where I could not cite a tally (family size, number of sources), I named the specific rows or wrote it without a figure."
+            "text": "Recommendation recorded.\n\n**Pick: Yazaki — award, rank 1** (the only legal pick; the other five bidders are excluded for `no_match` and cannot be picks).\n\nWhat drove it:\n\n- **It won by default, not by contest.** One visible supplier of one, coverage 5 of 6, data confidence only \"adequate.\" I said explicitly in the rationale that I am not treating the 67.26 as a verdict on suitability — rank 1 in a field of one carries no comparative information.\n- **The biggest hole is ownership.** The criterion is unscored because the graph records 18 owner edges that the returned window never retrieved. That is a search-depth failure, not an absent owner, and it sits at a 17 weight.\n- **The family walk found real risk in the part it did see** — 50 explored against 5,047 reachable, flagged truncated. Named and cited individually rather than tallied: a first-hop Chinese SOE-owned member, a member with a high-level Sheffield Hallam forced-labour factor, one with elevated Xinjiang-origin subtier flags, and one flagged a Chinese core SOE owned by a regulatory-action entity. Each became a condition on the award.\n- **Two scores I declined to read at face value.** Compliance risk of 100 excludes the country-derived factors by design, so it speaks only to entity-specific findings. Proximity of 0 measures 10,209 km from a Tokyo registered address — the anchor itself warns that is not a factory, so it indicts a postcode, not Yazaki's North American footprint.\n- **Tariff stays a flag, not a rate.** 5% MFN on HS 8544.30 gives the 50; whether Section 232 bites depends on USMCA self-certification and the Japanese negotiated rate, which the row says this app cannot settle.\n\nLeft open for round 2: the unwalked owner edges, the absence of any second source, and whether Aptiv and Lear — US-domiciled rows — failed matching for real reasons or merely failed resolution. Re-matching them is the cheapest route to a second source."
           }
         ],
         "stop_reason": "end_turn",
         "stop_sequence": null,
         "stop_details": null,
         "usage": {
-          "input_tokens": 28925,
-          "cache_creation_input_tokens": 0,
-          "cache_read_input_tokens": 0,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 11027,
+          "cache_read_input_tokens": 22330,
           "cache_creation": {
-            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 11027,
             "ephemeral_1h_input_tokens": 0
           },
           "iterations": [
             {
-              "input_tokens": 28925,
-              "output_tokens": 662,
-              "cache_read_input_tokens": 0,
-              "cache_creation_input_tokens": 0,
+              "input_tokens": 2,
+              "output_tokens": 680,
+              "cache_read_input_tokens": 22330,
+              "cache_creation_input_tokens": 11027,
               "cache_creation": {
-                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 11027,
                 "ephemeral_1h_input_tokens": 0
               },
               "type": "message"
             }
           ],
-          "output_tokens": 662,
+          "output_tokens": 680,
           "output_tokens_details": {
             "thinking_tokens": 0
           },
@@ -570,63 +657,24 @@
       }
     },
     {
-      "n": 5,
-      "wireHash": "73e462c9ea550a7920782f08fc9dcf0230ba2bc16f342b16f0a96de5c3cd1ba8",
-      "bodyHash": "249516ccb4784a94d0dd69a5124b16bf09507abbeed97e42749c634cb64f2c4b",
+      "n": 6,
+      "wireHash": "fc002fb55a8d8d9c44bdd35d9b5a9fa85a1bee40eacf5d21309d87e7123492c2",
+      "bodyHash": "a96889ae81441acce73e52e07e7f7f3b91fa7863414848155a0252fe184fc43a",
       "loop": "recommend",
-      "roundN": 1,
+      "roundN": 2,
       "response": {
         "model": "claude-opus-5",
-        "id": "msg_011CedLxAu6XTu9nbEVP5i7u",
+        "id": "msg_011CefLFjjQPN3rE1ydYoWvj",
         "type": "message",
         "role": "assistant",
         "content": [
           {
-            "type": "thinking",
-            "thinking": "I need to gather evidence first—pulling the shortlist, supplier details, supplier family, recommendation brief, and category info before proceeding.",
-            "signature": "CAIS9gIKjgEIERgCKkDAPhSuE1hzpI7DlmjC21I4OS+tm2ayzeALoiRg+lUQpzH2uNmmjiW2txUXU2vjJgYfooSZ0OO3Uppz6uloN6vtMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiQ5NTZhNzE4ZC0wYTJiLTQ1MzEtODM2NC1hNjljZDkzMmU3Y2KoAeLo3NQGEgyxO5o+8j2lcHZM3yYaDMIoH8jdl2LolJ17TyIwAaJVP7ZFRajbC6ZfStzWjYnnXz8BsviaVVYbGlW6GPhVmcJIM4s3G2Zvxfpj2F6vKpQBkv6Bfwwc3rtdB6p9tfp6I8DcATbot0kONGX5sFtPB3BHldaBfg3dv3vB7IuzUo9wT/40wychaR6ln9mqEPL1aB99CA1uZlUts13dW9NT2i4YJxjEzqm6Bbobf+0vje/iy35LRFPr830XOsBuK7sX7bN8dKLhGZ/5K6ShfO4Bq/kto2B2SBxwQwCx5FnpNC3SwuzBZxgB"
-          },
-          {
             "type": "text",
-            "text": "I'll pull the frozen evidence behind this draft."
+            "text": "I'll pull the underlying rows before writing."
           },
           {
             "type": "tool_use",
-            "id": "toolu_012vjYjHWm7adHPJ1F1R5iu5",
-            "name": "get_shortlist",
-            "input": {
-              "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
-              "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
-            },
-            "caller": {
-              "type": "direct"
-            }
-          },
-          {
-            "type": "tool_use",
-            "id": "toolu_01Db78oJtuL2kdZCBRQgTkDi",
-            "name": "get_supplier",
-            "input": {
-              "supplierId": "a4ea162a-1cbb-54e3-a646-36e332386843"
-            },
-            "caller": {
-              "type": "direct"
-            }
-          },
-          {
-            "type": "tool_use",
-            "id": "toolu_01V4yMPGj113VcnGbBYSGaJg",
-            "name": "get_supplier_family",
-            "input": {
-              "supplierId": "a4ea162a-1cbb-54e3-a646-36e332386843"
-            },
-            "caller": {
-              "type": "direct"
-            }
-          },
-          {
-            "type": "tool_use",
-            "id": "toolu_01NjuFv4z4JPyLY9btS5eXX3",
+            "id": "toolu_01Mofh2oQXsqs69oG5Rt3LG9",
             "name": "get_recommendation_brief",
             "input": {
               "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
@@ -638,9 +686,83 @@
           },
           {
             "type": "tool_use",
-            "id": "toolu_019xaEwbR7WdhfHaUZbUoS1H",
-            "name": "get_category",
+            "id": "toolu_01WUeEkpsdVNbXm8nK9wMuP2",
+            "name": "get_supplier",
             "input": {
+              "supplierId": "a4ea162a-1cbb-54e3-a646-36e332386843"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 5864,
+          "cache_read_input_tokens": 2418,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 5864,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 220,
+              "cache_read_input_tokens": 2418,
+              "cache_creation_input_tokens": 5864,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 5864,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "type": "message"
+            }
+          ],
+          "output_tokens": 220,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global"
+        }
+      }
+    },
+    {
+      "n": 7,
+      "wireHash": "2a953aa4ccaf81eb2cd4a4a1ba412a0ec6a263b920fcd2467698db1e8821f4d0",
+      "bodyHash": "b40505bd9821c16c5f89b210bddd6b97ff417e92fb381601dd291131e49b9620",
+      "loop": "recommend",
+      "roundN": 2,
+      "response": {
+        "model": "claude-opus-5",
+        "id": "msg_011CefLG7qSNtiji8p6n7uL9",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "I need to pull up the family and shortlist. I'm noting that the previous round incorrectly cited the LEI and distinctSourceCount on a sentence that didn't reference the entity row—that needs fixing by citing entityId CX3012yTGIhgMxcZG6hgnA instead, since that's the row carrying both fields. There's also a third objection about \"047\" that looks like a family enrichment number, so I want to check the family data to confirm.",
+            "signature": "CAISyAQKjgEIERgCKkAa1gtRy0KMXIW4/ja8yO1sX+/+vs8gnaykD1XeWVMndMU2hn1ZJFGk0Kbg8dbDRDjJ+UyB1GLFtPFtv3YvJ3mHMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiRjNjQ3ZWRhMS0zYTdmLTQyMTUtYjYzMC03M2YxNmE4YjdmZWKoAdCt4tQGEgwK63LUWVq7e0NrBekaDAyBvG0vQsMOGotjZCIwo/u7Ww3Y6Kp+zLjvr088/EP629eWmVgnkalUZ5VNda7k24E1iiNFq3nlXJR+gx9cKuYCKUY1zxgbK3u0Zl0/c4NOdObA4TK1viRTv/YzZzbliZt7mw9c72HjCsnMkA2FLICkGv1VNnjaQKE7bNw5hWyyw/Pqdw+PC8959m+eXRx/kztQ0+575xa6tmYhHTawftkMuFYsf5SqGJBBfdMM5FLEvDSQgYl+MhE2OiZCra+aVsU0fUn0cOmVipc3oOfCqzDDcVhd3/ESLFyfMHdTaofDvyyNJa/R47VzPgP8XOzE2VKQOBCYcJ5dtDSEPeG6Df9XU8PlglHQqVTNxj3xKTXMCXV17pBRqPlmO/f7OtwbYuuXuh3xCu9VcJgw8QuhM4Hgpu7r6XZeAVc2Vb4vIfugBG6t281lkHl48QECge8uUfiE/Y+O4IyqdA/ikMLic5nvwqQ0vhMdQh920F6zNNmFj97lV8l6GUcnYUExUw/dNPU+MbmXUjy7/OtoPD2MHIiOy0ohmA/2yws5qrCWf1FDUySFUFg/YxgB"
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_018phWQrgnJbtfseToaajFrS",
+            "name": "get_supplier_family",
+            "input": {
+              "supplierId": "a4ea162a-1cbb-54e3-a646-36e332386843"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01RUjQ7sUZzbNT78Y3nk67CN",
+            "name": "get_shortlist",
+            "input": {
+              "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
               "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
             },
             "caller": {
@@ -652,29 +774,29 @@
         "stop_sequence": null,
         "stop_details": null,
         "usage": {
-          "input_tokens": 9739,
-          "cache_creation_input_tokens": 0,
-          "cache_read_input_tokens": 0,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 3725,
+          "cache_read_input_tokens": 8282,
           "cache_creation": {
-            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 3725,
             "ephemeral_1h_input_tokens": 0
           },
           "iterations": [
             {
-              "input_tokens": 9739,
-              "output_tokens": 548,
-              "cache_read_input_tokens": 0,
-              "cache_creation_input_tokens": 0,
+              "input_tokens": 2,
+              "output_tokens": 343,
+              "cache_read_input_tokens": 8282,
+              "cache_creation_input_tokens": 3725,
               "cache_creation": {
-                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 3725,
                 "ephemeral_1h_input_tokens": 0
               },
               "type": "message"
             }
           ],
-          "output_tokens": 548,
+          "output_tokens": 343,
           "output_tokens_details": {
-            "thinking_tokens": 53
+            "thinking_tokens": 139
           },
           "service_tier": "standard",
           "inference_geo": "global"
@@ -682,54 +804,720 @@
       }
     },
     {
-      "n": 6,
-      "wireHash": "51854979e286782f0975795efad3329ecd9c2cf379ecfbd722b417e16aca6da4",
-      "bodyHash": "32858893f46e6d4a718730987b60cb7e15182c4df200f4f502d602c02a7ef38b",
+      "n": 8,
+      "wireHash": "8ba9d7fcc670d138f140da024c0f478c0e63398c6a56cca63dc966347aa7a159",
+      "bodyHash": "470a4b5b5b4005094a4ca4bb1f1f8c8e689607aa6accdfbd2ed396ebfe26fa2d",
       "loop": "recommend",
-      "roundN": 1,
+      "roundN": 2,
       "response": {
         "model": "claude-opus-5",
-        "id": "msg_011CedLxcNXnyBn69yr9MHse",
+        "id": "msg_011CefLGpJGoajcSLGo4kF5R",
         "type": "message",
         "role": "assistant",
         "content": [
           {
             "type": "thinking",
-            "thinking": "I'm verifying the draft's claims against the shortlist evidence—checking that Yazaki is indeed the sole accepted bidder, confirming the entity identifiers and compliance scores match, and reviewing how the anchor rule around sub-tier issues applies.\n\nI trace through the ownership chain: first-hop 重庆矢崎仪表有限公司 in China shows elevated Chinese SOE ownership risk, second-hop XIAOGAN YAZAKI AUTO PARTS carries forced/child labor exposure, and third-hop YAZAKI COMPONENT TECHNOLOGY S.R.L. lists a USA country field with elevated Xinjiang-origin sub-tier forced labor risk—all matching what the draft states.\n\nThe claim that exposure isn't confined to the Chinese branch is a mild inference given the messy country fields (an S.R.L. registered in USA, a Russian-named entity in Italy), so I'm inclined to let it pass but want to keep it in mind. I then check country resilience figures (72.5, LPI 2022 only, missing WGI data), tariff details (50, HS 8544.30, JPN origin), and Section 232 language about Japan negotiating its own reduced rate—all of which check out against the source data. Now I'm looking at the media score of 70 with its article and severity counts.\n\nThe weightedCount discrepancy isn't material enough to fail the draft's claim, so I'll let it pass. Checking proximity next — 10,209 km to the nearest plant P3 in Lansing, Michigan holds up. Then verifying the shortlist coverage figure of \"5 of 6.\"\n\nConfidence looks adequate for disqualifying entries as false, and the rationale that five were excluded for no_match checks out. The rank 1 score of 67.259 as the only visible entry is confirmed too.\n\nThe description of compliance as \"clean\" at 100 is fine given the earlier entity-only caveat, and calling ownership exposure the \"largest-weighted-but-unscored input\" is trivially true since it's the only unscored one. Now I'm recomputing the weighted score manually: scored weights sum to 83, and the weighted contributions total out — I want to double check this arithmetic lines up with the stated 67.259 figure.\n\nThe math confirms 67.259 exactly, so ownership exposure was excluded and weights renormalized over the remaining 83%, though the draft doesn't explicitly state this — likely an acceptable omission since it does note the null value and partial coverage. On eligibility, the Yazaki pick has an accepted match and there's no cross-category claim issue since the tariff/232 references stay within this category's flag. I'm now checking that all the mandatory caveat lines are present — proximity from registered address, tariff whyNotARate, missing country indicators, ownership null reason, compliance sub-tier non-deduction note, and the published_with_objections flag all seem to be there.\n\nCross-checking specific facts: the first-hop family member in China matches the country and hop depth correctly, the Xiaogan Yazaki entity's high-level forced-labor factor citing Sheffield Hallam matches, and the elevated ILAB child/forced-labor export factors and third-hop USA entity all check out. But I notice the family walk also surfaces other high-level factors not mentioned in the draft — a hop-2 entity with chinese_core_soe and owned_by_regulatory_action_entity flags, and a hop-3 Tunisia entity with several elevated factors — while the draft only covers three family members total.\n\nSince this data comes from enrichment rather than the recommendation brief itself, and the draft's open_questions already flags the walk as truncated with factors treated as a floor, I'll pass this but suggest optionally adding the omitted entity. Moving to check the headline claim about being the only bidder with an accepted match, the truncation/explored count citation, and the entity IDs referenced in conditions — all appear accurate. Now I'm scrutinizing the ownership section's claim about owner edges existing in the graph but not being returned in the query window.\n\nChecking number fidelity across the draft — the 18, 10,209, percentages, LEI, LPI year, WGI count — everything traces correctly. But the media score claim is questionable: it says the 70 signal derives from \"a single article flagged moderate,\" yet the underlying weightedCount is 6, not the expected 1 from one moderate article, so the anchor doesn't actually support that specific framing.\n\nActually, the draft did faithfully report serious=0, moderate=1, articleCount=1 — the weightedCount 6 discrepancy is an inconsistency in the underlying data, not a fabrication by the draft. Since 70 and \"single article\" are both traceable, I lean toward marking support as pass but flagging the numeric discrepancy separately.\n\nGoing item by item now with pass/fail/can't-tell: the \"not confined to the Chinese branch\" inference checks out since the cited USA third-hop entry (YAZAKI COMPONENT TECHNOLOGY S.R.L.) does show elevated Xinjiang-origin factors, so that's a pass. I'm also noting a data quality oddity — the draft calls XIAOGAN a second-hop member without listing a country, but the underlying record actually shows JPN, which needs checking against the stated conditions.\n\nThe forward-looking condition about no harness or component passing through XIAOGAN seems fine. The weighting claim about ownership exposure being the single largest-weighted-but-unscored input checks out, tied at 17 with country_resilience and tariff, and it's the only unscored one. The causal claim that being the only accepted match makes it the only ranked entry holds up, as does the statement that no second source can be named from the roster.\n\nI'm flagging a potential gap: the draft never mentions that the 67.26 score was computed with the ownership_exposure weight dropped or renormalized, meaning the score only reflects 83% of the full weight vector and could shift if ownership were actually scored — though it does note the award is conditional due to the null ownership value.\n\nGiven the disclosed coverage of 5 of 6 and \"adequate\" confidence, I'd treat this renormalization gap as minor rather than a failure, though a reviewer might reasonably push back on presenting 67.26 as if it were a complete score. Since the brief itself doesn't specify weights, I'll pass this on the omission check but note the renormalization issue and suggest adding entities like 滨日/Tunisia. The verdict of \"recommend_with_conditions\" lines up consistently with the draft's \"award with conditions\" framing. Checking number fidelity, the frozen 70 and the \"single article\" reference both trace cleanly, so that passes too, though I'll note the weightedCount inconsistency. Overall I don't see a genuine failure across any of the six checks — everything passes, just with some notes attached.\n\nSince the instructions say to state plainly when every item passes, I'll do that, along with the non-blocking notes. Checking the headline match, the draft correctly avoids claiming any match strength since matchStrength is null, so there's no overreach there. On compliance risk, factorsScored is empty but the entity does carry Basel AML and CPI relevance — the draft properly discloses that these country-derived indicators were excluded from the deduction, which is exactly right. The psaCount and distinctSourceCount figures aren't needed for this analysis. I'm ready to finalize my answer.",
-            "signature": "CAIS7GIKjgEIERgCKkCxpn/vtQq8U1+CDaKf83z7LmaKWFY1PAOcHWQv1keQ/xZc0rdL8/2EQuaWqUBs0z9h3TiR1KFFmt1ue19XhszhMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiQ5NTZhNzE4ZC0wYTJiLTQ1MzEtODM2NC1hNjljZDkzMmU3Y2KoAaXp3NQGEgw/QrWQB+//IL5MTQwaDNEHg+jt2S8dW6GbXSIw1Y5DOR5eXs8Oxd6NYHEaQGTyAxf9NQscNT1As8sMdHoWUXTPHbjOhqA+VbXfy3NpKophFjSKsRN7oUhHBm5MXpa65gM5kew9Lgn+64oxAy3HaKSqmE5wQv+g9D2YqInbdthFIu0q+ZwdPHFbrTQofBFFDpiRkyzDqiXsFkMEY7cFWoQoSqQMc278jmCuIQrmaT0KUggmCW/vIihGECtZ9xwnzQCgTy5RjROmI/s46tavzWwN81tiUpoe+MOhraHBLAHlIomGJF3nYQhhb4mltMRbVNhKXLXFFs01KwCP9OeOZAzxY4pfL29rMpD4AhpbnpQ2I7ZZpS7XZxhmLJ9u3LAS2hqhT1qg7rtw94Ftg/w28MY5dYa5MMM67HddPkUa1pH/DHq+7aJ5HL2DnkdBiJ7AA2B+185t2i0IIHyq3ELP7Ks9Z8xL8q3Cd85DNgJzHFH0XOxS0v3mWeUcSzfLfr6X9S1kfTSHn+1IXkNrRgn1t9J76GIUmHsfVd2bpKY0T7YMnmnHKD9bgYW6CfGDPBKeZrrVWZbTI2VH/CMf05TMmjm6emb+GBFra3Z7v/bV3PLpbdlwT//v7Z9TTN7z8tB4bqpDl6LPWekTkwinRGizxEc3BQwatZxYCEWYi9lM13qKeNOGhf36KMY0Twl2UHHHXeee+r7brnBoHejereZywWvMiPoayaqnomDa2zuW51uYEflUuoN2isuU1gteknb0p4gqYq2oX/Ap/9a0JHcLqyYqwMyDrIhNrheuViEs57Nu21Qqm3jrVC3q297DJ+1oIjb1BsDrzWFcuRdjLiJyAZ1zxs8lmQa7ip+sRhvzI7GB23fNcOpoxr2Of1SDfyml7c7kKHoMcBtT1/T7YUlomkoIEJtWIhGVKORC6J4D45cbTx0l4zl0EnaxrWeQKaRHzC8GaVIa5FJ7xPbvOiJl4tbIIBBOjQixNSTMOMsJpdnMY1Kp1p2NoOWq6V1/c2wikEF5u0F+GuiQm2zeEaqYeV5diU121ca2bQfMLUtzDycxCMPxekCsAczN20q/g+GCwy02JZnX6MTJ6wWwwKydMnajd6TT+/rIx7Ws508/GmWfdFemTlnSJYPiXhk7nrQVXBcxixKp8KAMUy/aOzeuvQJadRNpc/KWh+RMRuFi86d/D7XwHo5V/GaVlfy8GKwA8MrxNK2LezuDLH3I67jS8rj31k9KA8v4fe9cwq69OcTVJdQwjtruFYijUCZpc6dJ9YWJEFNZd9y4jzXPlK8retMUyJUBjZpTLHum7OBRk6/hugPzw82MGqJJBtSiptENo4WiR9/hKEIYqIPcstzmK7Ks8ctArf/6D+Ez1T8RDVt8EhHmWDQ4C1uijPzBIF/smzSwQfcbv9hgaC21EYv3iKQaHw40c7DMbWc4n8CQWGvgBbKtsv83azBtlC6smhHuSs1cmKUB4mRpIG1UkeDyIKLCzNvHbUO4hNBN4Ntnqf+cnU1CApxQ/ttdpSfuO5/++oChQ88tL5YfAXerI1nLWxExHvtabUrdGEKhn+fGHdAy6znCXfbD32mcJUpZ6fWuMbhFsSBRsvnW9qYUfJ9m1y7oqLeC4uGwCscTEUcOhVNx1AntYxPyfoLTo5OKcvEaA4eFpZXVzklUwSehpKsLcE4LhzeGcnL2bk9pAVvpvyyng88eaNRYTiD4Vw9/ONJwoI4rBJFhSrefCIDjsqgK40edpWjBjM6HATdXrNaYiYpqE4jFYOFgfXOytntOSnUisdncv+v1o50PgDK4B94o4kvgHvvunJBV/2/dgnwqZvNB8p1jXTbynpIECYSjNp8z/P/QE/L02WGns9ji56fjN+osej73XbnIwAKU0Mo+pNV+DFMnxLUVoP/Yi2LUOGsDgLWQfubngdSWj0DPUbVK7IA2epsPURxaeUiSwtcAf5TmWsdilT9+8z7jOWFdRWvP3GRcBRKC2OMW3zKbBw24Yj+BpkK/wuuoKmEiUKHKewUytkAfGtkFH0Revmnx3xOO72jF5fgb1XA7aaQPV67ttVbSdQLgvY4xcR7xN1ZCrYIfqXW0ZyDXK5GmsvraOgzhOFzGgf8kROUg+vnk/Rvi74l4Y1I2D+pixZ3ZCm3NjytDCZ/FoOZW43DUS0wblIi6ySlOXmBr7FxtUcGq/Vt8gGU/go6cEHkPF0TYlTCeIJYcqt5Lv1JceIoEfCJhYV1zOr7f2j9p8YxtirMY28nduDeg5K5ouLshb3AGujm5sp5G1/NgayZ5s8oIzOAAig0IREWygghvyTC2XAfU+8Wea2CFPpnQNZEwBwSQVrmFtH7mxQ+Z7+6M+Dyu9Ygu+ETMJ6JTWRoNiWlk93aMdB83LLseN0n1VN6yG/F69Z4/Mz1TU7RT+/8jsVPkotXMgUBGa+w/wHAMazaXaVKR/FQlm0mGmowBkNoHWlOmXVKA6Nnl5+AS5gICYEJx3mbk4PN64aAI77nwpyylIFiBtTMvi2bmHKTdUYvFKc/i37yIzdLOXWx3uHvwyqTMohNaH035cAWeqfWImKkLxwCeOTA+yhR55WTyYttgJpwzKhPELuQdVMotKG1DgnOUAgqmmvvJ0WPZwDFMLf/W+7ug2qjdHdrGJ8CkFAEi7xl+VLQtkNoO9mY2SewFqwz4SwgxxlP/eIL7Zq3MQP+GYNCyb4y+M6UxyOOHd93l6fHvkrxQA1o1HcKVyaWIqcj3T7pk5Z1qBW0RbvmHfUl2e7wwtgNvW3KWa5rmaHZvA260j2k0apP9PhD2DpP4dTQEjFGRpvup+Ku5C8v3scHgQvtC0LDxxm0Glj65ueH8i9r40FihHvmRl7+vsvkql8r5P08BZ+fxltxx+rpem+K78xwxL/RVQu+K5JlZvCsEhoh2ihuKemerrzJ4brhMoHlV2b0leZfwEDrMs33DBXKWEh5TUvRxKhiz0Als1t2eb6WY/kQ2PirRFm8VhTodRO+rtzSzNZDIzbOiyik0+sGg67ZGpsjj0vCxdZenhGLDL7mSt7cLOPQU5V6DsmmlMHbOGjEPaXaCHqb86M2HWBqkHWvxfV123cHKvNY0zJS3KNQo/Q53S/9ZTbaGhuHNoIP3KVPYAici6XrquB2cQZ+HQuP3NNSh086D0kNM633hmD41IEwOdwgRrdAJhXY6ZxVqaS7/yJDKpQj8ymxRwR15KjhJJ6f3GZ6kQpdr01SAmMCd944oJqhPxfeRzvfl5LQe2U/n57puU7YKoi6Gu5h+aKegnr/hTVC+M3rcf8HzSRWLEZym5EYtOYvmGoiHIiLLdapGkhcS6pNsMY+22P9O+1LDYlvNzw7+KMsJwJyZXyEBppOrpLlXWPvp79j81cBcnECNFtrs0I0G4UuDZgJf2XGR3TZthbDTvXpR782CkqEKAEmCWunIJfgoHuoFHSk1JawpRI1xQLGDP3H2w0v4J6Fly4l07rK/12mta3iyeXj4DgWI2ZC8iIfmPpx9eQ6cs6E+/Rwou9KPscKeM5kqgits7TYI9eHzqDOzjeBkcOzI+Z6yeIxpiLP/+HCBjXBs9WoPlY790AQ2aA68BLwwDU7TpYT5TVyUXLGoe01+/1c5Z/DQB3XN5rxv/2BAvwifOoN2kzQf2zJGFl81wu7ylTJ7v55ACuQ0fsyhsVdS8cyfKxZZFye/ziK03H0GCKEw60GB7y6m1HRliq6PidX695zGKVyAk60WBtp0BuifsXIwHaWm75Ruq0mrDyxBdRkHLgLAmjcgYpSufvUfACaEvlToyuRHYzzYtwBpg/5gH7x/0oF2a2MpAG9E7dSC20poSXM3/31Pl/HljUwpe7exZFq4777uWUNoXm1eJ6L6dheqmeKkqevu8HE3mfO21Zznp6eSgeXlsQMNzIXD253najlYgwhsXaR2RC8Hypg8plT3IHoWMoUOYJSQNA4azSpk69C6ZlFqxtk8u5LTdBBJlo6R/qIzimuyP7LHC8SzJ2CtHCHlk8AgVZwTkDgYhNKp8ZJ4wzoTbpSkCS0c4zmnf4jAMgnXvZcwlmYFIMiAN3GhV3ypbbnjfqYV8EELLnxetK4Y+1Q1dFqacj+WLyYP/8tf9fpSVTAltdDVtsKCHOgELzEIAVagBnIbqsr+TN8dSD/vaSq7iG1NsxOmugBJvXrWS2HschKmwjhTuAw6UK2IEJNa6FYvacRLm65MJQuNnfB9W0xszq44P8oQ5jCzP3XsnUdJrhkjQEbTovrmoXpXsUY1iRt65DIn0gupz5iRogs4apK5aYPnNYxJCcUvRkAqd8IevC1wxgSX2xc+ZgttK8uxo+rmEHnyHH3e2PHDx22Bi9AGddp6isGvnM2koc7Ua2m252lMMzKZWuVkBJHmGgcvQ9E7qvm5v2fB0ggjUemcNjGKkBeaLlFyh7CudchBThNDfFbkP3Mqz9ZsiL2aoYS5YuwHt2o+Afxk5RFKK7poTgUJTARxpvjeM97wV8Iay4Z7tQZigv/zHe1z44gEj3MiAf6fL922ieYmcIX2L4ObQU0PP7CIjnIEJatsCJ14SO4HCmO4J7f9sxWS01iOIJm8I0ugYiW8drVkJ5LEeb9i0hcWMWx78A1kNTClvNh+HfLVWxoabPZryQUgBmIsQtpvR5Q3CuMmlFNHwd9cjiBJuwAFHvHqY1PjO4p/rAV+JtAiU9UE6q9mLPcf97I/h6jIKR/c/NcnCvPDLSCxiUqYn+oMpjQib4/nv+xt+x4MgSgrRBjORR3A/xY2L9sGOHeQMahRyXcnGFcdrUn7OOjplDCyM/02c9khnBcSgbw6hkhWVr8v8ku20y2KvOnPJxN4SaOv8TZvZOhhE9W83sTONGeF/BXXizd/I/Lt3GlzCKPcuP18GG3QaQX9eMENhkPkKz0yduwcrNELQfjZPtGKYVJaZIv1NP6EQWKtECQRDLqg/c06f4YMHLcea+zqHDfeW280w32rPwSu/xdrsvvc+ledETwTvf7MeWDjN1SP9IVJrJ8FEFT0ZJVLe7OKe+h2cs9HDHBMwiEyGEhret1sijQv3xDGEIfbUdCZUqMYR+74rZQb0RsU7yscQ7xwlVLF42KZprx6jDzsq6pIbymRFwOJ8xK5LYciwu+AsE7vCNlFW0RE7wF97dCfMYw2eIPGulrZM7k3eUqLUJsJxSJgv3rQ3amDCbsxh6k30kQHGSfhvNSjKZySrUPC1JrY7w7FttMzYNV5OKPdiYRQoa05yFOC3kbs052ZUp3QCgeZRrjhvFZxvTM53+mXUf1kXJPFcmAgFL5usTxS9tuNDOF5nYzlJasEm+LwRlmKQL40pcxmiR9wrJ3Ju7oRbNp/6lwx4Z+9+OojJ1C43jpLiUehfYbkVGyR69dcPTFbpqcU5cLFkjo9nFUBDw4YyMFVV2UwMhg5J/S5w1e1ws/wRBfpV9bP/9KGC0TTOdmc3TP9SfEln+Me+qWk5yfcIPFgzi8JRRTB45BPIfaFu5VNL3fLxaNCooiJ+1yMQwxAJA0unWKx4BOVddCjySDuK3KgwG33gPvw0w6HpjH8ivXURaMemTb6iu1n7HIzldpqhDDCBdXw1KAjL1fl4UDSiLA1qaBB+Dqm21JJ/hedUQaLkFN44pfj5Pu3dtO7ems+/RK2td8Sd3TAbUasIhSYeP9a3onyCxBllLzikWYBJNJxFKXEK4ROfd7bj0HrPUS3Ex/sb+sM67HgWSEFx6kN3nRlynxHzVwTg3x5/IZq6fc9RC6WFjomH3Gd/zfFLM9UBNe5W30/ehK0zdWAmVWRndaELrUONokPtxp1WhA5J7yqU2hGS49M6RtxfF2vS3kkr5kRNwU02todY7XxlxZmfFapmh0yCDtHs4RjOPqmT3X2fYBIpuMtK7L/o4jXda5n0WM5wNWz2maR2tMkjAcFYGFvLcWG0+JP3D/oqSqz4e0lAN+9HmVq0TY3QGpkQ8XZfOqIDQhq2fM7DngSYiLZebwnHfidATZVTUAbaDvWCrXSF8rE2HF+iUMgORFuNAp2xwbwmn+CQMntnxfTinwg/7xkaMrZBlznSQuh2EEr1oPMJb/wIc90nedjo4arMOZljcDk1YPBdcFC0kKOxpX03O+uAZZot6HGU+pB6Wuv02y47skq6j39aF42hNiGbHwcbYfl9FukbsdylOFFlbuX2lNcaaOhL9uOquPbciiZNqIOfsxeQ9/UKv4o2BWCrAAVfhLajTH/a2gfuYTT9lCseRb991DvivJV3kNyy3+WTmsekcvgEp+3fBklqigRiqECUsKXstcYjpqMlOGjfZURMTL4sEGufm0+TP+z26idDdycloinHG4TunvdSVHBORY7bEA3r9jbcQBXNHFu8ZJ372KumNPWBpnoxonzQbQCrLyh8wiBOYLdQFpbALBALWN6jlZ/17UPRSpmQ4LMIPgQPzTxCO6Ps6+OkyA/sJ1lrQdvcK5e+v1Nv7+Lz3JqX+ZdET49CYbDEPv0D6y0eDyJhRPTmYBHvvOuivr5MYZqf4SmJ9DjxZ24Z3wkJHSKQRpm7SyDvYmEAhFxl3h4sTvsvoIj/EBe4RIS6ikRuRQPqsuFzHs2sy8iJHIri/0p5s9A/xKERR8OmLmOUg/lBhvKS54V5RuFYjezILIIS7snepXUx+vEiBN1nnkvkcSAfOHPizaEAwGKZKOW8ZoCGLlTdibIuXQM8qcDy9Qscje7Rakps/g+9Ng6t4z8BPGxrncYSrhL/hDWsyYsB9bnmXxW8CrVxnWgXCYvuW+PWR4VDv7mdJymW6Sx5oIn1gHoMkDfilXPfS7RvyaN2jyOjc2nUjFofdWmMSclDwuyUQlZRtxXVn/UrKqlPrZsKej/3n2GGJDMGQj+3eztnxXDBcveAsvnlwKQHSyeUloNguLQRpy0sDu/MqGuU2MKJCIWOIOzSh60aBF6HtmGzAjCPoy8EdE1zIolI5YUvz/Yi9n2iwiRyrLU4FsqCQus9nQ/FV9hVLvA6lGJDUqcyUJFpwTo/Z7igyz84P4k7Czm7Jz967dOz6R63OtzBJCtmLttwCwU6ycU3i6w+/8h7vrqa53Mfb6Hg7ilIFw7y2UBZlcn9KwVw+EvL27VKyjG85hzJDOYgMNQCDUHHBBiOZgPv+eR7vwHeFwn6DaP17SNGI97cbs8xEce/7YIMeuUyLUPHytv63fIukP71SKmpUL1nlAMtEf3L5MeXbo5ENGkgzXJ0U3n4HPxdg4waeJXZCU2w6Mt12czpi4IOH88y9V1Y52oiTiDgXdQAeSp4n+RpXSGDz59VCG4eu/rxjPY0xoTsd2wFLaXcj5jIEBU2edguES5lmTLq+Pqp1lDu67vJimNPmCt61tzDwirNW3fZZSzYoSblqAN7Y9qBXXJAygs0xk7/EhY54hYApUsraQnH5VlvidTX2CD/13arOJoEbX/vy8xbQeD1tz+HH0+MAK9CbQENxm8qfio5+zgXO27q5BBvtQVCc/qsDLFK7XncXnctYlWuJWmFa+uEWdo1vKXNNiSs2/L7AtrD/288gd4yNZGOwn0pZqxmVPfav89O2MEyO1nvaDfoW2UhuBqzxMxpHzNYtA1J/D09SnjlSIiyN0B9Iq4KF11eZsfJUgY2T+bK2lW5PlSBx2bN0jilkr/71iEnDTCdObsFsraX0ISXwm7ghGV23x7/jQkVge4HvKZz42egDFBk65kShALm57WyJJz6AShAjQu2EWnQuWTMYvnwqaMXMiNyaokzkO7+FBtBRVHUdzJWT9e0rx/UNCZMtBgmB3lJS7A9rgzdZ4hevV1iWpLKbhm9W+KbuGLALkHZyWV1gCWg12fr/JTzm6ELhznFaUFn/WGpckcgMhwQmX+IGFpgAI7HwFSJHY+yAwlSCrurNurK8lHCzITLGNlObWdIX+hbOy4BW9nvp8+7BQjZCq6iwZGtU8aBQUHu4kBRydqk+NJncmGSxJiV9sbtMb1h0FvC5VA2drCIb5F6W0cFQWUAhdzo7Vq+Fn0LB5fAEIo2GTcH+5GWLhVYf72OUxoO27/bqvQnYv3Naq1iek2ZWKhA8L1yg/vgJDzZi7uabRE6z++2ZWs+NfNSwWFGsk0qXCYLRAWAUKRKVMXb77xFcR4onlyfxJ6MY9UGYMGf5Ujh38LOzDiJt0YquNrEDkDrhfwartwvQxleXcXBQXlXWKFfBn8we8Eqo3faTT0jQ4jqTjcBeJOzCiC5eJrPICcMX9DE7K+lkRLYbWOEe0gNCYE+6Q8EM+8GP6gh/l+F9KLyyeMvuweDpwXSYRp/d3PyISM6wK8PkoKKMF/Pv88uiWQ4bsSKIGsp2nduIkws7+sYAGQCAZvZzsmj4STI434DivtbcSGy9+pqUEvCPu7Bh9NxtsPc+vVOZxPugzZuSiiIfMvaCDRz6IHVL/+xwFtd+OUUOGy0JyJApN/ibEDQUnZiCF2Yw19OCFwt3VFGP0iFvNBqENsrhurdEkiewQBY0ZUIWDdBrTf4SLl5Z9U5Gzgciuli0/fBE76/ediSQiikHBp+KrEV+hV3jMXzB577SxGbdQCC1+FdUip6/YpbZxpLPOtw766MLKgaQouRQ2DaOLUoJ9oXwZKID9Rt0BEnuSpWHSHyqAe2ZAm6YhQ0KJ9ZlcBq+DY427FkUknPOen3tA8c2+TD19KbcVBe6LE3AwvMeZLgFTZP7bLTtUsgtbZ6Wz7DD51o2c+xqWzAHjlPV9WeKUl/aFeYla/6AF0SLp4XUZ95TOiY8CE+i01Gvdw16rzSAtMR6egYneWlSBxAuaexZaG9LBbcLhdbFPpy5Z3Cqr/q9ROx44sQ/bkHgLHX6wQxg0ggIcs+56rub0AUw5VWf/KIchBtLYtlFDplsIFURI9gsR02AcJvHpQjE7/VmB67oEgwZWpdbUhpMdo4rLrqunH8NxkQO1Zt4sEnFawuUDXrprBLzBig1NaYgMY8XOKX1x4oIWrkpWkHCNKUgb0HWC1tmEpHeAmpFYa2PX6FAPENEheMC+vZ71oAJCgBlRhy/iWw6SaMOA5+oW+ge0i59cStnOQqSxukNhXb4THsHGL8AzBGKNx/csvUajOY7p7sAw1IPRm6JoiLarU6ZBcMBVwTly4T4MlGBgCbRhli0y9mO6f87rlTL0BvHP3dyBeMy3kee4T+aLnzI0nr71N2jYvxE+sMY9SapUEe6/delGoumrAzDue7A4TQ0KvysC7V5NZzm4D/EsK8cPX/nIHVZQp7kL54ScO51J9Erq1L5l+bDquC01JYAKKfA2RmYarECYYaa5IRox+UU8jPdrfJERxWFQL+9+8u6mT4dueFWttr4lrsl3rruyrgpLqydNpp6dfn7wY8LxWG8lBTYEvMHHoAJXGP0QFpUVw91CNhxixD1oiFAfBjCpXvUWqpmKFimPDDnPaWZ+60P8tRAuvSO1S02dcFeoYapXFYjJBP0qD5cq4AmMnGZ9VeUHDkyh1LwlVnxSjwZM69KXL/wkWmhAn1jimDIjxD3SmLsdPHKc/4djGgfuawBb3ALQi/BJNA40mnauFXq/ayhkHuUWwH9b9Rn2wdWsM9Yxj+j0PRF0UScd2BtuIGi/MD7Ea40yFb13TPAdRkhKSaeWOdP02qAan3ixPyEUAVf1AZicqlSPxfiEEz8dNRW7BtLZx1EmViCOmzUTa/mcKXxD1V84X1Yt/L3oOYj9zj/niKghApMZkH19gdasutV1coBmeDo5lp0omOCRren1jzwPrBsOVjoM4nATHk0MsJ7/ypcHlB3Z5Yl1HuaT4IiqGuwPi91Th4wTTdAf7N/VHzCEaP6vQsUmqInW3YXs7tDoUikGi4SnwHruDnICs/4hp3x85qcRRKnaoXIFg/mYEqLAmt5hGQD4dpCH6NKe0/i0zIauwltnNp8Sc4Yp44AdXaX7h+7VsZcd0HBXd89eSupirbgRQEU2Hm4+sUcF6YSf+9DFAPYbSW9KcqIqpLOcWArJBDFPO6WbxVMZBGJgIq/Mes4CNA05JnNJdkJDCfyb7q4byrqVBsM61VKTraGQoqGcAokSghCxQbZILu6NK36vHyfgo9lAn66oGNq1XlvL/McSVOaGCAMjtdAraVjzHuexJpM+CivAxg6v6SL5PcNgvXpC9DEpbYws1UPgJKYzigipaIueX9ImpQwml+MX32ZwydL2Cyk1vfYhl6u8DadxfRV5ZWkyC+lsMZ0cfrSCjz2vsnxkp30b+HKkBeFBIE6shXM8tWd7AyGMKeM07n2uNtjkWSBvByTMqZagKk70OWIwX/3m177Y3fvhxS+XQhcbNqxfl9whd662bVE7+xvFijDish0sJp/IRM09WaTUvrACH4m2qMGu8zaghNXUszMsS3PjN+SQa1Hv4AjUt02s6oG3y8+wZksrWA/yzjdry3amzcTExCYHrDdEtDRo7pYFQs3D8PDCuY4mihfbjXpOkNI74xq/qOsy0Hh0MAZgV6Eg05TBheuzYUZB05oT+3h+cZ6lHjKYtu9nmINJ0VHNRDhbIF4EfoGU/sGPdnRCLcQRijQOGM7/0DrTEJo7W8FpLVXg/TVTjLXKR8U7soWop44tiCruQw6vnmgz6ofogHCq4fsp0OxENSK4QqwFbZLWGT0xdipBB+JWwkPImHuR9RtKueoj2uoMLVo8vgFON9oxRvpPOtUE18WgC0yAlc33R6BpcQol141tNXJ7hHYyTvvXtdIHblm2sQk+MD1Ljwx9lAJoCZZigmfwAY40FfcrnBYF29sN0Y/O638CTXJdAWona716PzXSZ5p80UJiqKArQzvZW/0hafWbUbj+gqYVEbvZY3JmtApjaLMHEFloozBUWu0cjxKNRGIwx19kEODShlLxR51HVOYhS99g/SsRHDD0NPI+PnDjpoF+9rEE3FBUficn45EUBBKkWM92/y2Pd6E8rclb57aBrF2SFbLRNxOefFxBI8ehHl2IkRaICTUv8aOtGTinAj03f4OkwSlJIf2RnZ+ZrfPsd7HoMBgvneM0Ol5Bdax6H8nO/jWZkbhECFsaha7RnQzefqm4sa7mHllBD8eU2cwGmpHLlEGc5cpJrPMDwzsZ+Z+s646rz8LWd51TRd0OcZe/uM9/8RJ9mxfrMe/Tkhw4b+6dSpjp3nueXbgA68gAFUIb8XdRSFniHvDiLj/Wce+SwOmjhGUq0hslD+0yQxhf4WNpsL1oWhRbrJqMGexKHOxLxuC1wOSx6mNrRelHCG6GLoAvqzRVMD+ZDwoK0Pxxy3kcyZVrKCoG0tur0zlum0/XkQcAz3AVfU79NtH7xBThXrdW5yuLQ9OV7bJia31MCkj1AghciqsH1Cu/6usEHnqUIi1SpGPMDbPATUPMKi7cihgMJo121RJSKbXZgq0+V0zXjUBhlt4a5JemTu5rTlA0HuRKHfY51JChN0w/FhoqayqiaDZGZa22m6uH7UHZg8DTYTfPbLNsq+Ju1I8dpB7B6kuWIjlXuqXiHjZXryXbFgaupzFseOWCQEgZ4GK3nCEE0UTZZzA8U1pqedja92X1XV3tGqPN5SUASBnPCTjOyCQOr0/i9GDsmeQmEiZ4PgTmag5y/R7xugPxoH6HROczHRZ6zr/MdqaFliIrWqyDVIA+BFrM418VamjuVyFYC+PaNsMUYokg8evReKDqiUo+K+0ANmLo/Yv5KhfaIfAtqRFhPIFQxjFvjT1XVdjX8eUajb1WBtSwCl8HBvNVQ7eokWXspDnkJuFGhfJwWWyBRUkROFn3HRkCCOtk+0ujcWxi1QF9UreBLjpgGvljXIhC73SPJV2XPrx4O2vA7JnM8hFooSTqBFkbgv5TP/xpz29WzMm+S5xWK13S34fTbKyKtHCLsaicTHbx9ebTqmLwqih4iU35gCbZNLEVlM97J1K3zuZg7rqV9EvFrPYX9Ibbk3YPRTlT4SodjRk46lmApcGhz+5mH5IgMTlaj+dafjopE+/rK/AkszIh8y1sXltScFKr3JMkigK1zdvde5IkpHS2fmCEIB4kgo/Ot1KaMS8bux+mJZiik/zrFzmFBO9W47RoVcJrDTeJh3ccj8oEjpNCwmVtJXGW82GIqX9p01PuVogOzxS0SzpemcEitpAfpvNEJS1ZurvvTuymH/1bNwQdadG2puNnc67xsQYM1ilrmsHDeXumovcdgaqz70EgO+aVzes81uSwtuqvmI3vcJEYMAUnaE+7HPI5mvBsvxlRdKu6v218g3TP+t9gK0SbIWSRfFVZmdRH7D+F1wRoC3FQpI0MlfIwGqVf7IpI4FIufcrS39JXyeSopMnCOdV+KajBvVuIVx4BVuwbXm2s47gtPYq96ZJ2uG1gGIvCP87NrEOrF4yw2te7Pt27c0cFvBgHOPFxiLJH09BtHKX5gbzpP9y0zfPz6S20Unn1XlTvw6Gdl9rEMOH4SpMblmlHUbVbvOo4fILua4oyrH5F32DfMzTi4MslsekeVKap/3o1gUDR5tkrsDCyY6VgK/YKEwQqQj9+XVE76UUN3vhXbCWy5EYwPW0OxCAC0ol4O9d+rMSkUH4xIwdaml0CaFySwRK8cdCtNUVBjEPzkykhnZmPvjcp29jt8L/WO+hNr77EeKUDsqiyGiE/ShmJu38BCdHncYq5axfMZRgs8W7GLhz/GS+ionEOTKor2ooQV+lzdotWfYYardcXtGorHZUQFjczeCZZKDZr7ah39I0Nu375qUr1o5QrlQBe5DrbYw+Nk3mBvdDn6wB6E1MYgOz7A+EAnWBfQdzi75RiZztP6hWgkmP1y9lbwDnIr0s1E97RhIGBGVH/ZnbUr/TS5sdCnzdJcHNIwOtxEjOnvYjL/35TUDKjwZ9oJdJw3HjdIv7GKyPjsRn7WxHBu6V7yYyW8DBtJoV4g9E/IehwsGgSE88Ko1Sx63DP0OioqYZC5U+BEo19PM1hq2/u6nMztosptXWnqaUXtmEjtXfTb0WfCbYhHC63NTcSCZ6YbPZ/PJIdxGSXVNRAyqaMApaiy15L5z1tjcRbYhPOnlHQO2f/8smH5WN3eg2sdq86nspWPYfDbOxta+Ae3Ppo+LPsIYNDHcvEaEpim9rkEWThI1TYmsts4ha6+82quGunC06KvazkB6xP9cyDY76FlM83PlmMNCMf0x2kUlhnhJa2n/v4Bnb8oKh+EIn4EGVgegKs99Zorr7ixkFjTWgdlQDa5kSaNUoXoEi2jNuH27PDNviitSi4Qb5ge5gK+ieAxsgSeq/sOvXyUlcGsDfnfHoGO0/RjUHi3sQXzdf0hb2asoPZDU36MYRJu/aQjeCjZlxU1VazrizePVDB4K7xXj1qdHvgno1gcNln5FkC3IbvlWq5IYFJau2UsF4j90DuD/s3feQlIThstFWbP+qk4Fbhdgd08AL5Cn06H1iv7APHJTjU5ZvhTbvNLbjO+c8jS35T3uIu9qYgY11YQNdQhcy7a10R5Av3i2iMF8axvkWh7xMNYWkz9xrrw3jL3JNv9FZ6b+QMCAgYRRyEH5B9f8hSTba4X54ZNq9Go6iUtcKk3vkBUIP98guTFsYcuukYyuqyWP4r+eIJbvUsvrxj1E3sByL/0PlfdRzDVC5D2RgJ6pQmZE0Rhlf0q85kNb1b0p1uY6IC5ILN9kb539GQZt9phwDzgBvHgnXqiSWOs8hdMeSTO8PTYyA2nJF8HQQ+x2IY9TaxcuynEaN9vb7t3DELJWO41a1yiwuw6WPLBdxp6YlyNyGgXunkw+muZQRuZIyYsBvYEGrx/+vJe837uBuhdJ2DywADp6+c0w5dKoo+liVTEbqMcSAykJyjQDJI4qy9bupz9IHYM24MOZ381KxPAGeqbI4OjcF9IzMRg8OxMQJeici/pYzfI7FIeTfI98UpD7Ag+0/ZGTvqs1w10QsTsVRijxM5BmwBqwbHSrbat10efDNat7iC2aBvbFGXEjzIiAJJk1lv61wSmOv0FgHiniF03jbRpWLLqH8BqUHfC+7O32UeMBOdlmQJBppW8b7VznM4/MZXlw5+VfHwJO3s8LLmm6qWo4wJ45zlD+LtTnsSSPYz1x6lxtuBoUHD5okh6f00Ib9aaRijomnusCwM7OKnVZ06+RQ+SkYmgMCkjsksHwRv6pUQl3k3wog9jMXwXg2iVZA2pZcNcjKvg3DwFns/osdCqj06QTe48b4aCfHb/IYG1mL6ke8Pe83Ub7Bubs3OH6AslweB+qu/3uIXSNlvQ+DPWA75z2mKopsbDHhqMA40I2WDtokHoHz1nXKyXpy55fJXZvUBkJXQN0XzvowDMKbSA2jmLDG7B36SkJdRDoGO1z/MViiCAo79JmHOL3K7meI4+gITTcYH4EPVW8NoCbU1lxD43Er7GH6a4P03SWvO1V/TYuSW5T4hE07dX6oQIcokePIw01zQjGCkUcd0q4Gda327DLTu9Fic5lFq/1nm7Hpdot5VlIGaXRQgUzTC2boNF0qCUHd9Ip88TbCKG7Ox8sup9xAkuizRL+71uUr1g96puX1Pvw7YBnxdcIuR6ppsRVTqyPI7axFN1RRAyIh2s0X67kizdH7KDGzCzm/pFfPrG+O6+gq507gNYbc8MtsGOIjwAobGjqE7zsLkkVGkk3m0T1B4tuPE12vK4Se5LLIuMsZ+OoSquiv73HgwaQsRc2RLrXfcaortOQs9IoQJ7590kzIjf/0THmZJDIpUHTPuAP3rSJ3mwraVZvkbgNNc0g2I/E720DAXr5TMnT+TFvFx7CgTd5fd2qcoKcpgmVg7Syw6lqbFvTzsjxIdqWcT8bYAf+G7UrZiJSEzX89dcmijC9WcFa8LPJ3j9xxk1DaqjJV4elaCs9ODY7Q4vUBcE0KSFgKlSUwxwgo1VYJwLWv5PT9uKovJVENl0hak4hOF4kfxBXBe5L6hC6yCDGgZJgHgmchIZqq3oRMm4SOiwWZFYn3DCuKDoL0qfBOkzM7eUuDcsHRpWD9FpGgJ/aTFD6hhFaWlOjwcbOYO9B+JiQF6HLFldCRi3D6S8UA1RgeOKXF6diyVKWlRuEkLnM2s4m9cWLBHOav/K472zC4cgYIO8UmxQkuKXZw2+rMHSgCULUCUNQnX8/ciOZF79BFy8ayC+cVbC9z+50HD3g7Cqco5ZGQGDIcND8ZJjepfaqI1rq8+j9fcj5G6MzqAG7cal2qjsuR3H7F/5r1Dng4XcYnPG8GGFgzLDb+UmsBjoJz2//AeIbV19salXZkaIrz9zjMie4rV+WIq3mL06AjOyWcJobxhdpHzV0K8rzd2iP11GoYTHM51nYBcyDOznNdPyt/yG327T6EJnqytbk2b+2Q2FsCG9z0bNTjhUGNOaewEhkXYxLhrWWsfi9YfjIL7gqjWosx76xdb4on2N2TIIuiqVxTuW517Z1JS3XicbXYG39H2BjXNZLI8DCTJ9YHZA7i7GcuQCyZPkub91oEeQvhW3O3+yITtQL3uXj68Pay5Z6mYDY69FMWn216TanAyqCjHDchu9XU9qkGl+OphUWOvcSHhv6wp3sy2ln+7QLdgjBKRUH/GLcyW+AuydKF2mUDjpx6lrEe7k4dPExMjFuyv4bQeOeoERC9o6wYgM9Ua67dyd+u0TaBoUfI4UWO/KaFoe4gyqasXfhqBCg2dBkunCizKDvFFiaMXmU3HznwOglfVD+SnEUW7woOr3yzQ9BPcCPkYrKbAdV7ooFZZvfApPpFw1nlYuKSvFZ7ghxNdYbFSBmz21X3E4Tn1PojDY/LaTHMgA8b9lv+4TKWg1RR/YoVDKlmm/qiJVRY0VAmb1oVsodyHe5rIarHgL+YdptRRR5g5XJ+gFQ+U33T05pkUdXtNKMna91okJjVczWblxUYqSWA1dsqb3JtMkKVFXEy3ZPTzuj7g56tTSUSFTcU7T76VLB7QOIgOjptAvE1TWvviNcOBCDrMGR7saottv4uqd+GoWhtgCeWI5LTjCs3wedaWEkNxRjcSO+MKRce111He/CHJZkeqMfAlyYcXjkDxhmuzqHX8fKemm22DpnX5nCr2P7FdUKMmVYrTuSsFEmE99HEOX3HAz7+kVCK5EEB1SMyUTO+U8kApZ63DTQdFiEP2qYx4bEvoTdrJlu/vOnEfMx2iJQ4r2M+oUIAaom2DTMUzWQvZtBSuoUD7EjaIurPJLJ8kMO6AL3Os5/svv6V6BVb+qE/zvNis4IIAhm0t3RRoeAr7h73TOc5GYQpoFk6t3/z3QlfAPL3Hl5FoeE8v1iXXzhUzvvVEC+nnrQAS+Bng94dM2KMaJzQP5e+5iEgK7gXrOsxzD8RFUV678i7ImorImWMYdyKqq7N42YaoFFOVC3ptS2pEM3mDqlZ9DLBTl8fzBbzQYAC/Zs5gTDJpKbMsIgoH1VGAlrOQtMMf8Lq6+aOW5RGEGzko0WBTeICiGunDEj2l9C+bco5NfIiuFgkTHdwiK2I0C4Y26dUxM75CQTvJZeQnn07WtWrmBXlasjZsAZ3Ug17fhmJcI9VQs8HXApq/C/R0PqYYwgw3IGfiMzT+kc2aSRannlAisZwCBKp0ypJTnDRtYKpJ+IC7AnnB1VI1aVEmg7LbVMvusVoiSdFDBHwEU9uwi1q9u+ZbjXdpP/d3PTkzWO0clpYMuxNEIJPX8modbEsEJlfNObLUmJn5x2DeMUad9GLFg8hmT88jSoTvMV1CVKae7GAE="
+            "thinking": "I should double check the reachable count - it's 5,047 with 50 explored, and I need to cite the correct enrichment ID for that. Yazaki is the only shortlisted supplier, ranked 1 with a recommend-with-conditions verdict and no disqualifying badges, so I'll structure the report around identity, compliance, ownership, country, tariff, media, limits, headline, rationale, conditions, and open questions.\n\nFor identity, I'm matching the Yazaki roster row to its Japanese entity with the LEI and source count cited to the entityId. Compliance risk is 100 citing that criterion value, and ownership exposure is null due to 18 unresolved owner edges, with the family tree truncated at 50 of 5,047 reachable nodes - I'm noting the high-risk subsidiaries like the Chongqing SOE-owned entity, the Xiaogan forced labor flag, and the Xinjiang subtier exposure, each with their own entity citations. Country risk comes in at 72.5 with an LPI of 3.9 but missing WGI data, tariff risk is 50 tied to HS code 8544.30 and the Section 232 flag, and media risk is 70 based on six weighted articles including one moderate hit.\n\nNow for proximity, the registered address is over 10,000 km from the P3 Lansing site, and coverage sits at \"5 of 6\" which I'm treating as adequate. For the headline score, the exact value is 67.25903614457832 - rather than round it awkwardly, I think it's safer to just describe Yazaki as the sole ranked supplier rather than cite a truncated number. I also need to name each excluded supplier with its no_match reason in the limits section, and flag open questions around the unresolved ownership and truncated family tree, since the assessment verdict itself was recommend_with_conditions with a passed evaluator check.",
+            "signature": "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"
           },
           {
+            "type": "tool_use",
+            "id": "toolu_01Ab1WCeHCGfc1ncc9qTq4Sv",
+            "name": "submit_recommendation",
+            "input": {
+              "picks": [
+                {
+                  "supplierId": "a4ea162a-1cbb-54e3-a646-36e332386843",
+                  "role": "award",
+                  "rank": 1
+                }
+              ],
+              "sentences": [
+                {
+                  "section": "headline",
+                  "text": "Award wire harnesses and electrical distribution to Yazaki, the only supplier ranked on this category's shortlist, subject to the ownership and family conditions below.",
+                  "citations": [
+                    {
+                      "shortlist": {
+                        "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
+                        "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "section": "identity",
+                  "text": "The Yazaki roster row — index 12, registered at 17F Mita Kokusai Building, Minato-ku, Tokyo, JPN — was matched to a company record and the match was accepted, settled by agents.",
+                  "citations": [
+                    {
+                      "matchId": "b9bf0205-dc71-5a7d-a29e-6e52a5a1b34a"
+                    }
+                  ]
+                },
+                {
+                  "section": "identity",
+                  "text": "The accepted match resolves to the Japanese company entity labelled 矢崎总业株式会社 in Minato-ku, Tokyo, postcode 108-8333, carrying LEI 35380087YNQB9R822X46 and a distinct source count of 13, and it is recorded as neither sanctioned, PEP nor closed.",
+                  "citations": [
+                    {
+                      "entityId": "CX3012yTGIhgMxcZG6hgnA"
+                    }
+                  ]
+                },
+                {
+                  "section": "compliance",
+                  "text": "Compliance risk scores 100, the top of the band, because the scored-factor list is empty and no disqualifying factor is recorded against the matched entity.",
+                  "citations": [
+                    {
+                      "criterionValueId": "1bd00c4e-01db-5103-91d1-8f01673eb9c8"
+                    }
+                  ]
+                },
+                {
+                  "section": "compliance",
+                  "text": "That perfect score is narrower than it looks: the Basel AML and CPI signals attached to the entity were excluded from the deduction as country-derived rather than company-specific.",
+                  "citations": [
+                    {
+                      "criterionValueId": "1bd00c4e-01db-5103-91d1-8f01673eb9c8"
+                    }
+                  ]
+                },
+                {
+                  "section": "ownership",
+                  "text": "Ownership exposure could not be scored at all: the graph records 18 owner edges but the returned window did not include them, which the criterion itself flags as not looking far enough rather than as an absent owner.",
+                  "citations": [
+                    {
+                      "criterionValueId": "b88ed0de-cb2f-50d5-a879-16d7756c87b1"
+                    }
+                  ]
+                },
+                {
+                  "section": "ownership",
+                  "text": "The downward family traversal is likewise incomplete, having explored 50 of 5047 reachable companies before truncating.",
+                  "citations": [
+                    {
+                      "enrichmentId": "5ccba7fa-716a-52cf-a17a-f1d5b51bb746"
+                    }
+                  ]
+                },
+                {
+                  "section": "ownership",
+                  "text": "Within the part of the family that was explored, 重庆矢崎仪表有限公司 in China carries state-ownership factors at high level, including owned_by_chinese_soe.",
+                  "citations": [
+                    {
+                      "entityId": "MI9EBDEvhFO_BhEt2HM5DQ"
+                    }
+                  ]
+                },
+                {
+                  "section": "ownership",
+                  "text": "XIAOGAN YAZAKI AUTO PARTS CO., LTD carries a high-level forced-labour subtier factor sourced to Sheffield Hallam University reporting, alongside elevated ILAB child- and forced-labour export factors.",
+                  "citations": [
+                    {
+                      "entityId": "ssRv0fzea7pcW0r_8IgTug"
+                    }
+                  ]
+                },
+                {
+                  "section": "ownership",
+                  "text": "YAZAKI COMPONENT TECHNOLOGY S.R.L. carries an elevated Xinjiang forced-labour subtier origin factor, and ООО \"ЯЗАКИ ВОЛГА\" carries elevated ILAB labour and BIS high-priority-item factors.",
+                  "citations": [
+                    {
+                      "entityId": "EgtoJPbPWhG-kWVwCeEo1w"
+                    },
+                    {
+                      "entityId": "SBjLcgfpRjvY7atsCgs01Q"
+                    }
+                  ]
+                },
+                {
+                  "section": "country",
+                  "text": "Country resilience scores 72.5 for Japan, but it rests on the 2022 Logistics Performance Index alone at 3.9, with all five World Governance Indicator dimensions missing from the inputs.",
+                  "citations": [
+                    {
+                      "criterionValueId": "2df446af-b7d8-5e4b-8837-c35814a77a58"
+                    }
+                  ]
+                },
+                {
+                  "section": "tariff",
+                  "text": "Tariff exposure scores 50 on an MFN rate of 5% for HS 8544.30 imported into the USA from Japan, and the Section 232 autos-and-parts flag (+25%) is attached to the category without being priced into the score.",
+                  "citations": [
+                    {
+                      "criterionValueId": "53bf7e49-fd8d-598b-bb8e-5a96a5f7c3c2"
+                    }
+                  ]
+                },
+                {
+                  "section": "tariff",
+                  "text": "The flag is not a rate because USMCA-qualifying parts are exempt on importer self-certification and Japan negotiated its own reduced rate, so whether it applies depends on facts this app does not hold.",
+                  "citations": [
+                    {
+                      "criterionValueId": "53bf7e49-fd8d-598b-bb8e-5a96a5f7c3c2"
+                    }
+                  ]
+                },
+                {
+                  "section": "media",
+                  "text": "Media signal scores 70 from a single article, moderate-flagged, giving a weighted count of 6 with no seriously flagged coverage.",
+                  "citations": [
+                    {
+                      "criterionValueId": "6f68628d-d2c8-59c7-9872-62ac4205d8ca"
+                    }
+                  ]
+                },
+                {
+                  "section": "limits",
+                  "text": "Proximity scores 0: the registered Tokyo address is 10209 km from the nearest plant, P3 in Lansing, Michigan, and that address is a head office rather than a factory.",
+                  "citations": [
+                    {
+                      "criterionValueId": "87f27081-64a4-55ce-ab73-e72bea597df3"
+                    }
+                  ]
+                },
+                {
+                  "section": "limits",
+                  "text": "Lear, Aptiv, Sumitomo Electric, Draexlmaier and Samvardhana Motherson were all excluded from the shortlist for no_match, so none of them is eligible to be a pick.",
+                  "citations": [
+                    {
+                      "shortlist": {
+                        "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
+                        "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "section": "limits",
+                  "text": "That leaves a shortlist of one, with Yazaki's coverage recorded as 5 of 6 criteria and data confidence as adequate, and no disqualifying badge lit.",
+                  "citations": [
+                    {
+                      "shortlist": {
+                        "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
+                        "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "section": "rationale",
+                  "text": "Yazaki is ranked first and is the sole ranked supplier, and its own Assessment concluded recommend_with_conditions with the evaluator outcome passed, so an award rather than a develop role is warranted.",
+                  "citations": [
+                    {
+                      "shortlist": {
+                        "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
+                        "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
+                      }
+                    },
+                    {
+                      "matchId": "b9bf0205-dc71-5a7d-a29e-6e52a5a1b34a"
+                    }
+                  ]
+                },
+                {
+                  "section": "rationale",
+                  "text": "The score is carried by a clean compliance value of 100 on the matched entity and an adequate country value of 72.5, not by anything the roster asserts about manufacturing footprint.",
+                  "citations": [
+                    {
+                      "criterionValueId": "1bd00c4e-01db-5103-91d1-8f01673eb9c8"
+                    },
+                    {
+                      "criterionValueId": "2df446af-b7d8-5e4b-8837-c35814a77a58"
+                    }
+                  ]
+                },
+                {
+                  "section": "rationale",
+                  "text": "No second source is named because every other bidder in this category failed to match and is excluded, and a supplier without an accepted match cannot be a pick.",
+                  "citations": [
+                    {
+                      "shortlist": {
+                        "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
+                        "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "section": "rationale",
+                  "text": "The award is nonetheless weaker than a rank of one suggests, because the missing ownership criterion and the truncated family traversal mean the two places where harness supply chains usually fail — subtier labour and state ownership — are only partly seen.",
+                  "citations": [
+                    {
+                      "criterionValueId": "b88ed0de-cb2f-50d5-a879-16d7756c87b1"
+                    },
+                    {
+                      "enrichmentId": "5ccba7fa-716a-52cf-a17a-f1d5b51bb746"
+                    }
+                  ]
+                },
+                {
+                  "section": "conditions",
+                  "text": "Award is conditional on resolving the 18 unretrieved owner edges so that ownership exposure can be scored rather than left unknown.",
+                  "pickSupplierId": "a4ea162a-1cbb-54e3-a646-36e332386843",
+                  "citations": [
+                    {
+                      "criterionValueId": "b88ed0de-cb2f-50d5-a879-16d7756c87b1"
+                    }
+                  ]
+                },
+                {
+                  "section": "conditions",
+                  "text": "Award is conditional on extending the family traversal beyond the 50 companies explored out of 5047 reachable, since the enrichment is recorded as truncated.",
+                  "pickSupplierId": "a4ea162a-1cbb-54e3-a646-36e332386843",
+                  "citations": [
+                    {
+                      "enrichmentId": "5ccba7fa-716a-52cf-a17a-f1d5b51bb746"
+                    }
+                  ]
+                },
+                {
+                  "section": "conditions",
+                  "text": "Award is conditional on Yazaki evidencing that no harness content for this programme is sourced through XIAOGAN YAZAKI AUTO PARTS CO., LTD or YAZAKI COMPONENT TECHNOLOGY S.R.L., which carry forced-labour subtier factors.",
+                  "pickSupplierId": "a4ea162a-1cbb-54e3-a646-36e332386843",
+                  "citations": [
+                    {
+                      "entityId": "ssRv0fzea7pcW0r_8IgTug"
+                    },
+                    {
+                      "entityId": "EgtoJPbPWhG-kWVwCeEo1w"
+                    }
+                  ]
+                },
+                {
+                  "section": "conditions",
+                  "text": "Award is conditional on the importer establishing whether the Section 232 autos-and-parts flag on HS 8544.30 applies or is displaced by USMCA qualification or the Japan rate, because the tariff value of 50 reflects only the 5% MFN line.",
+                  "pickSupplierId": "a4ea162a-1cbb-54e3-a646-36e332386843",
+                  "citations": [
+                    {
+                      "criterionValueId": "53bf7e49-fd8d-598b-bb8e-5a96a5f7c3c2"
+                    }
+                  ]
+                },
+                {
+                  "section": "open_questions",
+                  "text": "Yazaki's ownership exposure remains unscored and is the single largest unresolved item on this award.",
+                  "citations": [
+                    {
+                      "criterionValueId": "b88ed0de-cb2f-50d5-a879-16d7756c87b1"
+                    }
+                  ]
+                },
+                {
+                  "section": "open_questions",
+                  "text": "It is unresolved whether the state-ownership factors recorded on 重庆矢崎仪表有限公司 reach upward into the matched parent or are confined to that Chinese joint venture.",
+                  "citations": [
+                    {
+                      "entityId": "MI9EBDEvhFO_BhEt2HM5DQ"
+                    },
+                    {
+                      "entityId": "CX3012yTGIhgMxcZG6hgnA"
+                    }
+                  ]
+                },
+                {
+                  "section": "open_questions",
+                  "text": "滨日综合能源服务（天津）有限公司 within the explored family carries chinese_core_soe and owned_by_regulatory_action_entity at high level, and its relevance to harness supply has not been established.",
+                  "citations": [
+                    {
+                      "entityId": "SlK0jqAxG6UUXDfS1tkTbA"
+                    }
+                  ]
+                },
+                {
+                  "section": "open_questions",
+                  "text": "Country resilience is being read off logistics performance alone while the governance dimensions are absent, so the 72.5 should not be treated as a governance judgement.",
+                  "citations": [
+                    {
+                      "criterionValueId": "2df446af-b7d8-5e4b-8837-c35814a77a58"
+                    }
+                  ]
+                },
+                {
+                  "section": "open_questions",
+                  "text": "Whether any of Lear, Aptiv, Sumitomo Electric, Draexlmaier or Samvardhana Motherson can be brought to an accepted match before Round 3 is open, and until then this category has no second source.",
+                  "citations": [
+                    {
+                      "shortlist": {
+                        "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
+                        "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "caller": {
+              "type": "direct"
+            }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 10157,
+          "cache_read_input_tokens": 12007,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 10157,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 5411,
+              "cache_read_input_tokens": 12007,
+              "cache_creation_input_tokens": 10157,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 10157,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "type": "message"
+            }
+          ],
+          "output_tokens": 5411,
+          "output_tokens_details": {
+            "thinking_tokens": 1115
+          },
+          "service_tier": "standard",
+          "inference_geo": "global"
+        }
+      }
+    },
+    {
+      "n": 9,
+      "wireHash": "5e443bb4f72e09cf3f66640db64475b63f4fd02c86e1135310c073aac8bc417f",
+      "bodyHash": "1a546eb3e5b047d560994da84c6cf63ec83bcb51e2d9879370147dcad0bd0c9f",
+      "loop": "recommend",
+      "roundN": 2,
+      "response": {
+        "model": "claude-opus-5",
+        "id": "msg_011CefLN7ZjVE1xTjV2FXx2S",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
             "type": "text",
-            "text": "## Verification against the frozen record\n\nI pulled the shortlist, Yazaki's supplier record and criterion rawInputs, the family walk, the brief and the category. Findings per rubric item:\n\n**support — pass.** Every cited row carries its sentence. Match/entity/LEI (`b9bf0205…` → `CX3012yTGIhgMxcZG6hgnA`, LEI 35380087YNQB9R822X46, accepted, settledBy \"agents\"), compliance rawInputs (`factorsScored: []`, `countryDerivedExcluded: [basel_aml, cpi_score]`, anchor line \"`_subtier` badges and never deducts\"), ownership `unknownReason` (18 owner edges, window did not reach them, `relationshipsTruncated: true`), country rawInputs (LPI 3.9/2022 sole indicator, five WGI in `indicatorsMissing`), tariff rawInputs (5% MFN, 8544.30, JPN→USA, s232 flag with verbatim `whyNotARate`), proximity rawInputs (10,209 km, P3 Lansing MI), and the three family entities (`MI9EBDEvhFO…` hop 1 CHN with `owned_by_chinese_soe`/`psa_owned_by_chinese_soe` high; `ssRv0fzea7pcW0r_8IgTug` hop 2 with the high Sheffield Hallam sub-tier factor plus elevated ILAB factors; `EgtoJPbPWhG-kWVwCeEo1w` hop 3, country USA, `forced_labor_xinjiang_origin_subtier` elevated) all check out. One note, non-blocking: the media row's `weightedCount` is 6, which does not follow from `moderate: 1` under the stated anchor formula; the draft's \"derives from a single article flagged moderate\" restates the rawInputs faithfully but the row is internally inconsistent — worth a hedge if the lead wants it airtight.\n\n**strength — pass.** No claim outruns the record: compliance 100 is explicitly confined to the matched legal entity, the \"not confined to the Chinese branch\" inference rests on the recorded USA country field of a hop-3 member, and the truncated walk is called a floor rather than a full picture. `matchStrength` is null and the draft makes no strength claim.\n\n**number fidelity — pass.** 67.25903614457832, 100, 72.5, 70, 0, 50, 18, 10,209, 5%, 8544.30, \"5 of 6\", \"adequate\" all trace to frozen inputs or cited rows. I recomputed the score from the weight vector with the null criterion dropped (5,582.5 / 83) = 67.259…, matching exactly.\n\n**caveats — pass.** All mandatory lines present: proximity measured from a registered address that is not a factory; the s232 flag carried as a flag with the \"facts this app does not have\" reason; WGI dimensions missing behind 72.5; ownership null as \"did not look far enough,\" not an absent owner; sub-tier badges never deduct; family walk truncated; and the `published_with_objections` outcome carried into open questions.\n\n**eligibility — pass.** The single pick has an accepted match; the other five are excluded `no_match` in the shortlist and are named as ineligible rather than ranked. No cross-category claim — the tariff sentences use this category's own flag and HS line, not the 1b522556/96c09ae3 rows.\n\n**omission — pass.** Nothing in the brief is ignored. Two optional additions the lead may want, neither of which I'd hold as a defect: (1) the family walk also shows `滨日综合能源服务（天津）有限公司` (hop 2) with `chinese_core_soe` and `owned_by_regulatory_action_entity` at high, and YAZAKI AUTOMOTIVE PRODUCTS TUNISIA (hop 3) with elevated ILAB and BIS factors — more high-level exposure than the three entities named; (2) the 67.26 is computed over 83 of 100 weight points because the null ownership criterion was dropped, so the figure would move once the condition-1 re-score lands.\n\nEvery item passes."
+            "text": "The recommendation is recorded.\n\n**Pick:** Yazaki — award, rank 1 (the only supplier with an accepted match in HAR).\n\n**How the three objections were answered:**\n- The LEI `35380087YNQB9R822X46` and the distinct source count of 13 now sit in a sentence that cites the entity row `CX3012yTGIhgMxcZG6hgnA`, which is where both values are stored.\n- The traversal figures (50 explored of 5047 reachable) now sit in sentences citing the family enrichment row `5ccba7fa-716a-52cf-a17a-f1d5b51bb746`, and are written as stored rather than as a fragment.\n- No count of my own appears anywhere: risk-carrying family members are named individually and cited by their own entity ids, and the excluded bidders are named rather than tallied.\n\n**Substance:** the rank-1 score rests on a compliance value of 100 that explicitly excludes country-derived signals, and on a country value of 72.5 built from LPI alone with all five WGI dimensions missing. Ownership exposure is unscored because 18 owner edges were never retrieved, and the downward family view is truncated — with high-level state-ownership and forced-labour subtier factors already visible in the small explored portion. Those are carried as conditions on the award and as open questions, not smoothed over."
           }
         ],
         "stop_reason": "end_turn",
         "stop_sequence": null,
         "stop_details": null,
         "usage": {
-          "input_tokens": 21628,
-          "cache_creation_input_tokens": 0,
-          "cache_read_input_tokens": 0,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 9960,
+          "cache_read_input_tokens": 22164,
           "cache_creation": {
-            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 9960,
             "ephemeral_1h_input_tokens": 0
           },
           "iterations": [
             {
-              "input_tokens": 21628,
-              "output_tokens": 6094,
-              "cache_read_input_tokens": 0,
-              "cache_creation_input_tokens": 0,
+              "input_tokens": 2,
+              "output_tokens": 442,
+              "cache_read_input_tokens": 22164,
+              "cache_creation_input_tokens": 9960,
               "cache_creation": {
-                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 9960,
                 "ephemeral_1h_input_tokens": 0
               },
               "type": "message"
             }
           ],
-          "output_tokens": 6094,
+          "output_tokens": 442,
           "output_tokens_details": {
-            "thinking_tokens": 4706
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global"
+        }
+      }
+    },
+    {
+      "n": 10,
+      "wireHash": "d28c62cd794f1cea825cc5fcff38cae1440999b1e631f5cec5d94c752593a4e7",
+      "bodyHash": "a89bc21f5b82fd58ce82be04c4d0861fe614382193fe3153bf1b8a16770ec3f4",
+      "loop": "recommend",
+      "roundN": 2,
+      "response": {
+        "model": "claude-opus-5",
+        "id": "msg_011CefLNpT7nTcXHL8WgduFf",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I'll pull the underlying evidence before judging."
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01BAjo217Y2VoHu2CVp9os13",
+            "name": "get_recommendation_brief",
+            "input": {
+              "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
+              "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_019cFbURidQhKcRQ7ju15fX3",
+            "name": "get_supplier",
+            "input": {
+              "supplierId": "a4ea162a-1cbb-54e3-a646-36e332386843"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 11798,
+          "cache_read_input_tokens": 0,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 11798,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 221,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 11798,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 11798,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "type": "message"
+            }
+          ],
+          "output_tokens": 221,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global"
+        }
+      }
+    },
+    {
+      "n": 11,
+      "wireHash": "b2297b3970d38375ff2b6f5e7bd05f57fa3ab40db82fef48955a743f096085f3",
+      "bodyHash": "d6389cc193a487108db75f3f76e73d33e0e7a5c3dda19c57a3053cd92ff38a02",
+      "loop": "recommend",
+      "roundN": 2,
+      "response": {
+        "model": "claude-opus-5",
+        "id": "msg_011CefLPHRqU69L2FAvVnoja",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "Now I'm checking the family and shortlist.",
+            "signature": "CAISkAIKjgEIERgCKkB4l+8ugp2ZdtLMiTM4LGeUVz6AlG8T6YLdcGyE/ysb4ruZirbViFR36nj2nKWpbAYBfbKdwp/IZWsfx4hP48bpMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiRjNjQ3ZWRhMS0zYTdmLTQyMTUtYjYzMC03M2YxNmE4YjdmZWKoAayu4tQGEgwVMtdG3TlPUAaAYRcaDC5iRTbqOLb8auWlMSIwy1Ampa4dVJP6mQ9ATU8wGzxOprsSC7LIsm7Mf+0fCXyngIlqrMarVhsan3Z0Uql2Ki/mnFSw7HEUTBVtSHwejTMsrWp2GJiNTNuXHJrUlEu3QVjR1aJnALU++u1K/kqc3hgB"
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01GkTaLkZ4Uc5eXZb6Pe7tSj",
+            "name": "get_supplier_family",
+            "input": {
+              "supplierId": "a4ea162a-1cbb-54e3-a646-36e332386843"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01AbJcxxihxsxB7JCEexkLPS",
+            "name": "get_shortlist",
+            "input": {
+              "programId": "ba97b16c-4b1a-5ba6-b2ba-3403874ac2ca",
+              "categoryId": "c987efd1-b668-5fef-b33b-e1e278ca76c8"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 3726,
+          "cache_read_input_tokens": 11798,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 3726,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 216,
+              "cache_read_input_tokens": 11798,
+              "cache_creation_input_tokens": 3726,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 3726,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "type": "message"
+            }
+          ],
+          "output_tokens": 216,
+          "output_tokens_details": {
+            "thinking_tokens": 12
+          },
+          "service_tier": "standard",
+          "inference_geo": "global"
+        }
+      }
+    },
+    {
+      "n": 12,
+      "wireHash": "95013362c19626bd31bf58b160582cee5ff15666a4cbc40bf3d39e724c1e0256",
+      "bodyHash": "cc504f301ff9cc9e1606c8c9aae49a3927d11973746cb1f4d637a56437b81b6f",
+      "loop": "recommend",
+      "roundN": 2,
+      "response": {
+        "model": "claude-opus-5",
+        "id": "msg_011CefLPhD5FPwzJCAMKuKoR",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "I'm checking each claim against the source data: identity match confirmed by roster row and address, entity details for 矢崎总业株式会社 verified including location, postcode, LEI, and source count, and compliance score of 100 confirmed with no disqualifying factors and clean country/AML checks.\n\nI'm also verifying ownership edges, family exploration scope, and the risk signals for subsidiaries — 重庆矢崎仪表 with Chinese SOE ownership, XIAOGAN YAZAKI with forced labor and ILAB flags, and the Romanian and Russian subsidiaries with elevated forced labor and BIS high-priority-item factors, all matching the draft. Country score, LPI, and WGI gaps line up too, as does the tariff section with its Section 232 caveat.\n\nNow I'm scrutinizing the media score of 70 — the article count and moderate classification seem inconsistent with the weighted count of 6, so I need to check whether the draft explains this discrepancy.\n\nI'm also checking the proximity score of 0, verifying the distance figure and nearest plant location, and questioning whether calling the registered address a \"head office\" is a fair characterization versus what the source anchor actually states — it's a minor stretch but likely defensible. The exclusion criteria for no-match cases, coverage adequacy, and disqualifying flags all check out, and I'm moving into confirming that the rationale properly reflects how the composite score was derived.\n\nNow I'm reviewing the compliance and country component scores with their respective weights to verify the 67.26 total checks out, then scanning open questions around specific entity records — checking country assignments like ITA, JPN, CHN, and USA are correctly reflected or appropriately omitted in the draft — and considering whether any material facts from the source records were left out of the summary.\n\nThe draft appears comprehensive, covering entity risks, family relationships, and exclusion criteria, though I notice the Tunisia entity's BIS designation isn't explicitly called out despite the draft flagging truncation generally. I'm also noting the odd ITA/USA country data discrepancy and confirming no improper cross-category claims were made about Draexlmaier and Lear.\n\nChecking whether any omissions are material — proximity, media score, and other flagged factors all seem addressed, so I'd pass on that front. Verifying strength of specific claims: the source count, agent settlement, sole ranking, and compliance score reasoning all check out against the record, though the generalization about subtier labor and state ownership as common failure points goes slightly beyond record-specific claims — borderline but not disqualifying on its own.\n\nThe \"head office rather than factory\" characterization is an inference from the address rather than a direct record statement, so mildly noteworthy. Reviewing the ownership section — the phrasing correctly matches how the criterion itself frames insufficient reach versus a missing owner, the null scoring is accurate, and the unretrieved owner edges count is right. All the disclosed caveats — tariff, proximity, country resilience, compliance exclusion, truncated family, match settlement — appear properly flagged.\n\nI still need to confirm the mandatory caveat set is complete: tariff flag, proximity registered-vs-factory note, unknown criterion coverage, and truncated traversal — all four are present. Then checking number fidelity against every cited figure in the draft, I verify each one traces back correctly to the source data.\n\nEligibility looks right too — only Yazaki was selected as a match, with no improper cross-category claims, even though Draexlmaier and Lear span multiple categories without being claimed. I also verify each citation supports its sentence, including the shortlist-of-one claim, the Chongqing Yazaki state-ownership attribution, the truncated-exploration note, and the open question about whether state ownership extends up into the matched parent entity, which ties to the parent's psaCount and risk fields.\n\nI confirm the Volga Yazaki entity's labor and BIS citations check out, and that both the Xiaogan and YCT entities correctly carry their respective forced-labor subtier factors from the Sheffield Hallam and Xinjiang references.\n\nLooking at compliance, the subtier badges aren't deducted for the parent, which is fine since the draft only discusses country-derived exclusions. The media signal also checks out—one moderate-flagged article with a weighted count of 6 and zero serious flags matches the frozen row, so it's traceable even though I'd naively expect moderate×1 to equal 1 rather than 6.\n\nChecking the remaining claims: \"from a single article\" matches articleCount 1, \"only supplier ranked on this shortlist\" matches visibleCount 1, and the recommend_with_conditions verdict justifies favoring an award over a development role. Coverage 5 of 6 supports \"adequate\" confidence, and the entity address in Minato-ku with postcode 108-8333 is stated accurately without conflating it with the roster address. So I'm inclined to pass all six checks, perhaps flagging the \"head office\" wording as a minor stylistic concern but not an outright failure.\n\nThe country anomalies across the family record (Xiaogan Yazaki as JPN, the Italian subsidiary listed as USA, etc.) don't appear misstated in the draft—it just frames them as forced-labour risk factors without getting the geography wrong itself. So overall I'm settling on a pass across the board.\n\nThe \"head office rather than a factory\" framing is an inference from the roster (17th floor of an office building, Tokyo HQ) rather than something directly stated, but it's plausible and low-stakes, so failing over it would be too harsh for the payoff. Same goes for the generic claim about the two typical failure points in harness supply chains—it goes beyond the record but isn't consequential enough to warrant a fail; I'll flag it as a note rather than a blocker.",
+            "signature": "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"
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_014CWNTdXuPKrpXCiX7LRKAp",
+            "name": "submit_evaluation",
+            "input": {
+              "items": [
+                {
+                  "item": "support",
+                  "verdict": "pass",
+                  "reasoning": "Every citation checked carries its sentence: matchId (accepted, settled by agents), entityId CX3012 (label, postcode, LEI, distinctSourceCount 13, not sanctioned/PEP/closed), each criterionValueId's rawInputs, enrichmentId 5ccba7fa (explored 50 / reachable 5047 / truncated), and the family member entityIds MI9EB, ssRv0, Egto, SBjLc, SlK0j all bear the named factors at the stated levels."
+                },
+                {
+                  "item": "strength",
+                  "verdict": "pass",
+                  "reasoning": "Claims stay inside the record; the two soft phrases — the registered Tokyo address described as 'a head office rather than a factory' and 'the two places where harness supply chains usually fail' — are framing consistent with the proximity anchor line and the unscored/truncated ownership evidence, not assertions about the supplier that the rows contradict."
+                },
+                {
+                  "item": "number_fidelity",
+                  "verdict": "pass",
+                  "reasoning": "All figures trace: 100 / 72.5 / 70 / 50 / 0 criterion values, LPI 3.9 (2022), MFN 5% on HS 8544.30, +25% Section 232 label, 18 owner edges, 50 of 5047 explored, 10209 km to P3 Lansing, weighted count 6 with articleCount 1 and serious 0, coverage 5 of 6, roster index 12, source count 13."
+                },
+                {
+                  "item": "caveats",
+                  "verdict": "pass",
+                  "reasoning": "The mandatory lines are all present: the Section 232 whyNotARate text, the proximity 'registered address, not a factory' limit, the null ownership_exposure with its 'did not look far enough' reason, the truncated family traversal, the missing five WGI dimensions behind 72.5, and the country-derived basel_aml/cpi exclusion behind the perfect compliance score."
+                },
+                {
+                  "item": "eligibility",
+                  "verdict": "pass",
+                  "reasoning": "The sole pick, Yazaki, holds matchStatus accepted (match b9bf0205) and rank 1 in this category's shortlistOrder; the other five bidders are named only as no_match exclusions, and no claim is imported from category 1b522556 or 96c09ae3."
+                },
+                {
+                  "item": "omission",
+                  "verdict": "pass",
+                  "reasoning": "Nothing material in the brief is left unaddressed — the shortlist of one, all six criterion values including the null and the zero, the verdict recommend_with_conditions/passed, the exclusions and the family's SOE and forced-labour findings are all carried into the draft or its conditions and open questions."
+                }
+              ],
+              "summary": "I re-derived every cited row against the frozen inputs, the supplier record, the shortlist and the family enrichment. The draft is accurate on identity (index 12, accepted match settled by agents, entity CX3012 with LEI 35380087YNQB9R822X46 and 13 distinct sources), on all six criterion values, and on the family evidence it names (重庆矢崎仪表有限公司 owned_by_chinese_soe high; XIAOGAN Sheffield Hallam subtier high; YAZAKI COMPONENT TECHNOLOGY xinjiang subtier elevated; ЯЗАКИ ВОЛГА ILAB and BIS elevated; 滨日综合能源服务 chinese_core_soe high). The award is properly hedged: the null ownership_exposure with its 18 unretrieved owner edges, the 50-of-5047 truncated traversal, the LPI-only 72.5, the country-derived exclusions behind the 100, the registered-address proximity limit and the unpriced Section 232 flag are each disclosed and turned into conditions. Eligibility is clean — one accepted match, rank 1, five no_match exclusions and no cross-category borrowing. All six items pass; no objection to publish."
+            },
+            "caller": {
+              "type": "direct"
+            }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 10030,
+          "cache_read_input_tokens": 15524,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 10030,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 5042,
+              "cache_read_input_tokens": 15524,
+              "cache_creation_input_tokens": 10030,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 10030,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "type": "message"
+            }
+          ],
+          "output_tokens": 5042,
+          "output_tokens_details": {
+            "thinking_tokens": 3687
+          },
+          "service_tier": "standard",
+          "inference_geo": "global"
+        }
+      }
+    },
+    {
+      "n": 13,
+      "wireHash": "e6e32b1fc7c4175883bef65767ecdd5f29308e794ab05696649ddc8e829f3a09",
+      "bodyHash": "1f94d2f25649019661ca278f4e6e3c0c7f61507a74b5d3393750c1c7988c3cab",
+      "loop": "recommend",
+      "roundN": 2,
+      "response": {
+        "model": "claude-opus-5",
+        "id": "msg_011CefLUinTumZA7nSeSudxc",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Review submitted — all six rubric items pass, no dissent.\n\nWhat I verified against the frozen inputs and tools:\n\n- **Identity/eligibility**: Yazaki is the only bidder with an accepted match (`b9bf0205`, settled by agents) and the only ranked supplier (rank 1, score 67.259). The other five appear only as `no_match` exclusions, exactly as the shortlist records. No cross-category claim.\n- **Numbers**: every figure traces to a cited row — compliance 100 (empty `factorsScored`), country 72.5 from LPI 3.9 (2022), media 70 from 1 moderate article with `weightedCount` 6, tariff 50 on 5% MFN for HS 8544.30 JPN→USA, proximity 0 at 10209 km to P3 Lansing, 18 owner edges, 50 of 5047 explored, coverage 5 of 6.\n- **Family claims**: each named member's factors check out at the stated levels, including the Sheffield Hallam subtier factor on XIAOGAN and the Xinjiang subtier factor on YAZAKI COMPONENT TECHNOLOGY.\n- **Caveats**: the Section 232 `whyNotARate` text, the registered-address proximity limit, the unscored ownership criterion with its \"did not look far enough\" reason, the truncated traversal, the missing WGI dimensions, and the country-derived exclusion behind the perfect compliance score are all disclosed and converted into award conditions.\n\nTwo phrases are softer than the record (\"head office rather than a factory\"; \"where harness supply chains usually fail\"), but both sit within what the anchor lines and the truncation evidence support, so I did not treat them as failures."
+          }
+        ],
+        "stop_reason": "end_turn",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 6369,
+          "cache_read_input_tokens": 25554,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 6369,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 568,
+              "cache_read_input_tokens": 25554,
+              "cache_creation_input_tokens": 6369,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 6369,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "type": "message"
+            }
+          ],
+          "output_tokens": 568,
+          "output_tokens_details": {
+            "thinking_tokens": 0
           },
           "service_tier": "standard",
           "inference_geo": "global"

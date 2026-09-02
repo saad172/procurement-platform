@@ -112,10 +112,59 @@ export const DEEP_TRAVERSAL_MAX_PAGES = Math.ceil(
  * runaway loop is not something a human should be able to wave through, so
  * these are not raisable from the UI, unlike the run budget.
  *
- * PROVISIONAL.
+ * ## Re-fit on 2026-09-02, from measurement rather than from argument
+ *
+ * The first table was provisional and every number in it was too small. What it
+ * was measured against: the development database (71 resolve, 65 enrich, 60
+ * assess, 4 recommend Jobs) and the committed fixtures.
+ *
+ * | Job kind | worst tool calls | worst tokens | worst billed events | old cap | new cap |
+ * |---|---|---|---|---|---|
+ * | resolve | **90** (`resolve/not-found`, 2026-08-31) · 72 (re-recorded) · 57 on dev | 354,917 | **113** (Gestamp) | 60 · 400,000 | 180 · 1,100,000 |
+ * | assess | **66** on dev · 24 on the fixture | 770,047 | 33 | 40 · 450,000 | 130 · 2,300,000 |
+ * | recommend | **79** on dev · 16 on the fixture | 1,148,502 | 41 | 60 · 900,000 | 160 · 3,500,000 |
+ * | enrich | runs no model | — | 11 | 25 | 25, unchanged |
+ * | fetch_entity | runs no model | — | 1 | 2 | 2, unchanged |
+ * | traverse | runs no model | — | 8 (`DEEP_TRAVERSAL_MAX_PAGES` × 2) | 20 | 20, unchanged |
+ * | discover | never run | never run | never run | 40 · 300,000 | unchanged, still PROVISIONAL |
+ *
+ * Tokens are the ceiling's own definition — input + cache_creation + output,
+ * Job-wide, cache reads excluded (`tokensOf` in `run-loop.ts`) — summed per
+ * `job_id` over `usage_event`; tool calls are `trace_tool_call` rows per Job.
+ *
+ * **Four of the numbers were below what a healthy Job had already spent.**
+ * assess ran to 66 tool calls against a ceiling of 40 and recommend to 79
+ * against 60, and neither fired only because the ceiling used to bound one
+ * `runLoop()` call rather than the Job (finding 117). The Job-wide count landed
+ * afterwards, which turned provisional numbers into latent bugs — and the
+ * twelve-row re-run of 2026-09-02 proved it on a live Job: **Gestamp spent 113
+ * billed upstream events**, so under the old 60 it would have been `terminated`
+ * part-way through the Round that settled it.
+ *
+ * **One ceiling, two counters.** `tool_call_cap` bounds model `tool_use` blocks
+ * in `run-loop.ts` *and* upstream dispatches in `upstream/call.ts` — and the
+ * upstream one counts every `usage_event` row with `cache_hit = false`, which
+ * includes the model's own turns. So Gestamp's 113 is 85 live Sayari calls plus
+ * 28 model turns, and a resolve Job that made 34 model turns had 26 upstream
+ * calls left of 60. Both readings are covered here: 180 is 2× the 90 model tool
+ * calls of `resolve/not-found` and comfortably over 113.
+ *
+ * **The token figures are conservative on purpose.** They are the pre-caching
+ * runs, where every repeated prefix was billed as fresh input. With prompt
+ * caching on (finding 124), the same work counts far fewer capped tokens —
+ * today's worst resolve Job spent 108,063 against the 354,917 that fits this
+ * table — because a cache read is excluded from the count by design. Fitting to
+ * the cached figures would leave no room for a Job whose cache misses.
+ *
+ * `discover` is the one row still provisional: no `discover` Job has ever run,
+ * so there is nothing to fit it to and inventing a number would be the thing
+ * this re-fit exists to stop.
+ *
+ * **Re-measured by:** finding 150's queries, over `usage_event` and
+ * `trace_tool_call` grouped by `job.kind`.
  */
 export const JOB_CAPS = {
-  resolve: { toolCalls: 60, tokens: 400_000 },
+  resolve: { toolCalls: 180, tokens: 1_100_000 },
   enrich: { toolCalls: 25, tokens: 0 },
   /**
    * One company, one `getEntity`. The ceiling is 2 rather than 1 only because a
@@ -123,8 +172,9 @@ export const JOB_CAPS = {
    */
   fetch_entity: { toolCalls: 2, tokens: 0 },
   traverse: { toolCalls: 20, tokens: 0 },
-  assess: { toolCalls: 40, tokens: 450_000 },
-  recommend: { toolCalls: 60, tokens: 900_000 },
+  assess: { toolCalls: 130, tokens: 2_300_000 },
+  recommend: { toolCalls: 160, tokens: 3_500_000 },
+  /** PROVISIONAL — no `discover` Job has run, so there is nothing to fit to. */
   discover: { toolCalls: 40, tokens: 300_000 },
   dossier: { toolCalls: 100, tokens: 0 },
 } as const;

@@ -13,6 +13,7 @@ import {
 } from '@/jobs/runs';
 import { runWorker } from '@/worker/poll';
 import {
+  JOB_CAPS,
   MAX_FREE_RETRIES_PER_ROUND,
   MAX_ROUNDS,
   MODEL_PRICE_USD_PER_MTOK,
@@ -177,8 +178,23 @@ describe.skipIf(!up)(`runs and jobs (needs: ${START_TEST_DB_HINT})`, () => {
         subjectId: programId,
       });
       const job = await db.query.job.findFirst({ where: eq(t.job.id, id) });
-      expect(job!.toolCallCap).toBe(60);
-      expect(job!.tokenCap).toBe(900_000);
+      /**
+       * Read from `JOB_CAPS` rather than restated.
+       *
+       * The claim is that `enqueueJob` copies **this kind's** ceilings onto the
+       * row, not that they are any particular pair of numbers — and a restated
+       * pair is a second copy of a constant that is re-fit from measurement, so
+       * it goes stale on the day the measurement lands rather than on the day
+       * the behaviour breaks. The `not.toEqual` below is what keeps this from
+       * being a test that cannot fail: a dispatch that hard-coded one kind's
+       * caps for every kind would still be caught.
+       */
+      expect(job!.toolCallCap).toBe(JOB_CAPS.recommend.toolCalls);
+      expect(job!.tokenCap).toBe(JOB_CAPS.recommend.tokens);
+      expect([job!.toolCallCap, job!.tokenCap]).not.toEqual([
+        JOB_CAPS.resolve.toolCalls,
+        JOB_CAPS.resolve.tokens,
+      ]);
     });
 
     it('marks a Dossier’s Trace as `timeline`, which cannot drive a replay', async () => {

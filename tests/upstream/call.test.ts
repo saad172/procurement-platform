@@ -172,6 +172,45 @@ describe.skipIf(!up)(`call() (needs: ${START_TEST_DB_HINT})`, () => {
     });
   });
 
+  /**
+   * **A live projection and a cached projection must be the same object.**
+   *
+   * `jsonb` stores object keys sorted by length then bytewise, so the row
+   * Postgres hands back is not the object that went in. Projecting the
+   * in-memory body on a live call and the round-tripped one on a cache hit
+   * therefore produced two different serialisations of one body — and a tool
+   * result *is* that serialisation, so a fixture recorded on a cold cache could
+   * never replay from the bodies it recorded. `resolve/agree-r1` missed at turn
+   * 5 on one entity's four identifiers and two risk factors.
+   *
+   * The body below is chosen so `jsonb` is guaranteed to move it: `zebra` is
+   * longer than `ox`, and a record is projected in the order its keys arrive.
+   * Comparing `toEqual` would pass under the bug, because the two objects hold
+   * the same values — the comparison has to be over the **serialised** form,
+   * which is what the model is shown.
+   */
+  it('projects a live call and a cache hit into the same bytes, not merely the same values', async () => {
+    const unsorted = {
+      id: 'x',
+      extra: 'y',
+      record: { zebra: 1, ox: 2 },
+      list: [{ value: 'v', type: 't', label: 'l' }],
+    };
+    const passthrough = z.object({
+      id: z.string(),
+      extra: z.string(),
+      record: z.record(z.string(), z.number()),
+      list: z.array(z.unknown()),
+    });
+
+    const live = await call(makeEndpoint(passthrough, unsorted), { q: 'order' }, ctx);
+    const cached = await call(makeEndpoint(passthrough, unsorted), { q: 'order' }, ctx);
+
+    expect(live.cacheHit).toBe(false);
+    expect(cached.cacheHit).toBe(true);
+    expect(JSON.stringify(live.data)).toBe(JSON.stringify(cached.data));
+  });
+
   describe('a credential-less wrapper cannot fall through to a live call', () => {
     it('throws naming source, endpoint, hash and the params it looked for', async () => {
       const keyless: UpstreamContext = { db, runId };
