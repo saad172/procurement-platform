@@ -442,7 +442,12 @@ export function precisionOf(
 export async function enrichFamily(
   ctx: EnrichContext,
   args: { entityId: string },
-): Promise<{ enrichmentId: string; members: FamilyMemberRisk[]; truncated: boolean }> {
+): Promise<{
+  enrichmentId: string;
+  members: FamilyMemberRisk[];
+  truncated: boolean;
+  reachable: number | null;
+}> {
   const result = await ctx.upstream.sayari.ownership({
     id: args.entityId,
     limit: FAMILY_TRAVERSAL_LIMIT,
@@ -474,7 +479,33 @@ export async function enrichFamily(
     });
   }
 
-  const truncated = paths.length >= FAMILY_TRAVERSAL_LIMIT;
+  /**
+   * **Coverage is read off the envelope, not inferred from the page.**
+   *
+   * `partial_results` is the API's own statement that it stopped short of
+   * searching the subgraph, and `next` its statement that more paths exist;
+   * filling the window is our guess at the same thing, and all three are kept
+   * because a walk that filled its window is capped whether or not the envelope
+   * says so. This is what makes the badge's *explored to the cap* true rather
+   * than assumed — `reachable_count` had been null on every row this app has
+   * ever written, so the *n of m* clause had never rendered at all.
+   */
+  const envelope = result.data;
+  const apiPartial = envelope.partial_results === true;
+  const truncated = apiPartial || envelope.next === true || paths.length >= FAMILY_TRAVERSAL_LIMIT;
+
+  /**
+   * **The same rule the Deep Traversal uses** (`traverse.ts`): the reachable
+   * set is the API's own `explored_count`, and only where it says it finished.
+   * Where it returned partial results the figure bounds nothing, and *unknown*
+   * is the only honest value.
+   *
+   * It is a count of **nodes the traversal visited**, not of companies in the
+   * family — 5,047 against a Yazaki family of seventeen — so the badge names
+   * the unit rather than presenting it as a family size
+   * (`describeFamilyExposure`).
+   */
+  const reachableCount = apiPartial ? null : (envelope.explored_count ?? null);
 
   /**
    * **The row write is shared with the Deep Traversal** (`family-members.ts`).
@@ -483,18 +514,17 @@ export async function enrichFamily(
    * table, distinguished by `discovered_by_job` — so both reads had exactly one
    * thing to say about a member, and only one of them should say it. What stays
    * here is what is particular to the automatic read: one call at `limit: 50`,
-   * `truncated` from that limit, and `reachableCount` null because this
-   * endpoint's envelope is not consulted for a reachable set.
+   * and its own envelope's account of how far that call got.
    */
   const members = await writeFamilyMembers(ctx.db, {
     rootEntityId: args.entityId,
     enrichmentId,
     members: [...byId.values()],
-    coverage: { truncated, exploredCount: byId.size, reachableCount: null },
+    coverage: { truncated, exploredCount: byId.size, reachableCount },
     discoveredByJob: null,
   });
 
-  return { enrichmentId, members, truncated };
+  return { enrichmentId, members, truncated, reachable: reachableCount };
 }
 
 // ── Owner edges ──────────────────────────────────────────────────────────────

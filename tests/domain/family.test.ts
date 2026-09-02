@@ -30,7 +30,7 @@ describe('the three badge states, and why the first two are not one state', () =
     // Six of twelve sampled families returned zero members, including several
     // that certainly have subsidiaries. An empty ownership graph is an
     // unexplored family, not a clean one.
-    const exposure = computeFamilyExposure([], { explored: 0, reachable: null });
+    const exposure = computeFamilyExposure([], { explored: 0, reachable: null, partial: false });
     expect(exposure.state).toBe('not_covered');
     expect(describeFamilyExposure(exposure)).toMatch(/not the same as a clean family/);
   });
@@ -39,6 +39,7 @@ describe('the three badge states, and why the first two are not one state', () =
     const exposure = computeFamilyExposure([member('a'), member('b')], {
       explored: 2,
       reachable: null,
+      partial: false,
     });
     expect(exposure.state).toBe('no_exposure_found');
   });
@@ -47,10 +48,10 @@ describe('the three badge states, and why the first two are not one state', () =
     // Collapsing them would report an empty ownership graph in the same ink as
     // a genuinely clean family.
     const notCovered = describeFamilyExposure(
-      computeFamilyExposure([], { explored: 0, reachable: null }),
+      computeFamilyExposure([], { explored: 0, reachable: null, partial: false }),
     );
     const clean = describeFamilyExposure(
-      computeFamilyExposure([member('a')], { explored: 1, reachable: null }),
+      computeFamilyExposure([member('a')], { explored: 1, reachable: null, partial: false }),
     );
     expect(notCovered).not.toEqual(clean);
     expect(notCovered).toMatch(/Not covered/);
@@ -64,7 +65,7 @@ describe('the three badge states, and why the first two are not one state', () =
         member('morocco', { forced_labor_something_direct: { level: 'elevated' } }),
         member('clean'),
       ],
-      { explored: 17, reachable: 2275 },
+      { explored: 17, reachable: 2275, partial: true },
     );
     expect(exposure.state).toBe('exposure_found');
     if (exposure.state === 'exposure_found') {
@@ -76,12 +77,20 @@ describe('the three badge states, and why the first two are not one state', () =
     }
   });
 
-  it('phrases a truncated read as "n of m explored", because an absent member proves nothing', () => {
+  it('names the unit of the reachable set, because it counts nodes and not companies', () => {
+    /**
+     * `explored_count` is how many nodes the traversal visited — 5,047 on the
+     * Yazaki ownership call, against a family of seventeen. Written as *"17 of
+     * 5,047 explored"* the badge reports a family of five thousand companies,
+     * which is the same shape of quietly-wrong figure as the *"28 of 100
+     * explored"* a doubled family once produced: proportionate, plausible, and
+     * about something else.
+     */
     const exposure = computeFamilyExposure(
       [member('a', { forced_labor_x_direct: { level: 'high' } })],
-      { explored: 17, reachable: 2275 },
+      { explored: 17, reachable: 5047, partial: false },
     );
-    expect(describeFamilyExposure(exposure)).toMatch(/17 of 2,275 explored/);
+    expect(describeFamilyExposure(exposure)).toMatch(/17 of 5,047 nodes explored/);
   });
 
   /**
@@ -128,7 +137,7 @@ describe('the three badge states, and why the first two are not one state', () =
   it('excludes country-derived factors, as the Compliance criterion does', () => {
     const exposure = computeFamilyExposure(
       [member('a', { cpi_score: { level: 'high', metadata: { country: ['MEX'] } } })],
-      { explored: 1, reachable: null },
+      { explored: 1, reachable: null, partial: false },
     );
     // A country's corruption index is not a family member's own exposure.
     expect(exposure.state).toBe('no_exposure_found');

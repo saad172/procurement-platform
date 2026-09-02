@@ -402,7 +402,10 @@ function finalizeEnrichResult(
   // Reads from `family_member` rows on demand.
   const exposure = computeFamilyExposure(fanOut.family.members, {
     explored: fanOut.family.members.length,
-    reachable: fanOut.family.truncated ? null : fanOut.family.members.length,
+    // Both facts as the envelope reported them: how many nodes the traversal
+    // visited where it says it finished, and whether it stopped short.
+    reachable: fanOut.family.reachable,
+    partial: fanOut.family.truncated,
   });
 
   return {
