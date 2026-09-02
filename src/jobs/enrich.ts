@@ -307,7 +307,7 @@ export async function enrichLei(
 export async function enrichTariff(
   ctx: EnrichContext,
   args: { hsCode: string },
-): Promise<{ enrichmentId: string; mfnRatePct: number | null }> {
+): Promise<{ enrichmentId: string; mfnRatePct: number | null; lineFound: boolean }> {
   const result = await ctx.upstream.usitc.tariff({ hsCode: args.hsCode });
   const enrichmentId = await recordEnrichment(ctx, {
     source: 'usitc',
@@ -341,7 +341,13 @@ export async function enrichTariff(
     matchedHtsno: line?.htsno ?? null,
     matchedBy,
   });
-  return { enrichmentId, mfnRatePct };
+  /**
+   * Whether the search matched an HS line at all, which is a different fact
+   * from whether that line carried a parseable general rate — and it is the one
+   * the data-confidence checklist needs: a call that matched nothing returned
+   * no answer about this Category, however successfully it completed.
+   */
+  return { enrichmentId, mfnRatePct, lineFound: line != null };
 }
 
 /**

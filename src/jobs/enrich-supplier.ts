@@ -36,6 +36,13 @@ import {
 export type EnrichResult = {
   supplierId: string;
   enrichmentsWritten: string[];
+  /**
+   * The sources that **answered**, which is the data-confidence checklist —
+   * reported beside the calls we made, because *"six enrichments written"* and
+   * *"five of six sources have anything to say about this Supplier"* are
+   * different facts and the band is computed from the second.
+   */
+  presentEnrichments: string[];
   criterionValuesWritten: number;
   familyMembers: number;
   skipped: string | undefined;
@@ -118,6 +125,8 @@ async function loadResolvedProfile(
       result: {
         supplierId: supplier.id,
         enrichmentsWritten: [],
+        // No Profile, so no source was asked and none answered.
+        presentEnrichments: [],
         criterionValuesWritten: values,
         familyMembers: 0,
         skipped: `match is ${match?.status ?? 'absent'}, so there is no profile to enrich`,
@@ -170,6 +179,16 @@ export function siteCountryOf(
 
 type FanOutResult = {
   written: string[];
+  /**
+   * The sources that **answered**, in `EXPECTED_ENRICHMENTS` order — as against
+   * `written`, which is every dated call we made whatever came back.
+   *
+   * This is what the data-confidence checklist counts, so the difference is not
+   * bookkeeping: a source listed as present because we *asked* it reports
+   * coverage the Supplier does not have, and data confidence exists precisely
+   * to gate what may be called clean.
+   */
+  returned: string[];
   family: Awaited<ReturnType<typeof enrichFamily>>;
   tariffByCategory: Map<string, { hsCode: string; mfnRatePct: number | null }>;
   lat: number | null;
@@ -185,17 +204,26 @@ async function fanOutEnrichments(
   const { db } = ctx;
   const { match, profileRow, supplier, categories, siteCountry } = profile;
   const written: string[] = [];
+  // In `EXPECTED_ENRICHMENTS` order, so the checklist reads the same way twice.
+  const returned: string[] = [];
 
   // ── 1. Negative news, on the RESOLVED LEGAL NAME ─────────────────────────
+  // Zero articles is not a clean result, and it IS an answer: the coverage
+  // precondition in `mediaSignal` is what stops an empty set reading as
+  // spotless, not the absence of this source from the checklist.
   const news = await enrichNegativeNews(ctx, {
     entityId: match.entityId,
     resolvedLegalName: profileRow.label,
   });
   written.push(news.enrichmentId);
+  returned.push('sayari_negative_news');
 
   // ── 2. The Corporate family — one call, on the standard path ─────────────
+  // Present even when the graph returned nobody: *not covered* is the family
+  // badge's answer, and the fetch joins the checklist either way (SPEC §8.2).
   const family = await enrichFamily(ctx, { entityId: match.entityId });
   written.push(family.enrichmentId);
+  returned.push('sayari_ownership_family');
 
   // ── 3. Country indicators, shared across every Supplier in the country ───
   // Fetched for the country the Match settled on (SPEC §9.4), so the World Bank
@@ -203,16 +231,22 @@ async function fanOutEnrichments(
   if (siteCountry) {
     const country = await enrichCountry(ctx, { country: siteCountry });
     written.push(...country.enrichmentIds);
+    // Six calls that all came back empty are six calls and no indicators.
+    if (country.indicatorsReturned > 0) returned.push('world_bank');
   }
 
   // ── 4. GLEIF, where there is an LEI to join on ───────────────────────────
   if (profileRow.lei) {
     const lei = await enrichLei(ctx, { entityId: match.entityId, lei: profileRow.lei });
-    if (lei) written.push(lei.enrichmentId);
+    if (lei) {
+      written.push(lei.enrichmentId);
+      returned.push('gleif');
+    }
   }
 
   // ── 5. Tariffs, per Category's default HS line ───────────────────────────
   const tariffByCategory = new Map<string, { hsCode: string; mfnRatePct: number | null }>();
+  let anyTariffLine = false;
   for (const { categoryId } of categories) {
     const line = await db.query.categoryHsLine.findFirst({
       where: and(eq(t.categoryHsLine.categoryId, categoryId), eq(t.categoryHsLine.isDefault, true)),
@@ -220,8 +254,10 @@ async function fanOutEnrichments(
     if (!line) continue;
     const tariff = await enrichTariff(ctx, { hsCode: line.hsCode });
     written.push(tariff.enrichmentId);
+    anyTariffLine ||= tariff.lineFound;
     tariffByCategory.set(categoryId, { hsCode: line.hsCode, mfnRatePct: tariff.mfnRatePct });
   }
+  if (anyTariffLine) returned.push('usitc');
 
   // ── 6. Geocoding — ONLY where Sayari has no coordinate of its own ────────
   let lat = profileRow.lat;
@@ -237,8 +273,19 @@ async function fanOutEnrichments(
     lon = geocode.lon;
     coordinatePrecision = geocode.precision;
   }
+  /**
+   * **The checklist item is a located site, and either provider locates it.**
+   *
+   * The geocoder is called *only* where Sayari has no coordinate of its own
+   * (SPEC §7.1), so making the item mean "Nominatim answered" would mark a
+   * Supplier short of coverage precisely because we already knew where it is —
+   * and would put `strong` out of reach for every well-covered Profile in the
+   * roster. What Proximity needs is a coordinate; this says whether there is
+   * one.
+   */
+  if (lat != null) returned.push('nominatim');
 
-  return { written, family, tariffByCategory, lat, lon, coordinatePrecision };
+  return { written, returned, family, tariffByCategory, lat, lon, coordinatePrecision };
 }
 
 /**
@@ -312,7 +359,7 @@ async function assembleScoringInput(
 ): Promise<SupplierScoringInput> {
   const { db } = ctx;
   const { supplier, match, profileRow, siteCountry, countrySource } = profile;
-  const { lat, lon, coordinatePrecision, tariffByCategory } = fanOut;
+  const { lat, lon, coordinatePrecision } = fanOut;
 
   const plants = await loadPlants(db, args.programId);
   const nearest = nearestPlant(lat != null && lon != null ? { lat, lon } : undefined, plants);
@@ -334,14 +381,23 @@ async function assembleScoringInput(
 
   const newsRows = await latestNewsItems(db, match.entityId);
 
-  const presentEnrichments = [
-    'sayari_negative_news',
-    'sayari_ownership_family',
-    ...(siteCountry ? ['world_bank'] : []),
-    ...(profileRow.lei ? ['gleif'] : []),
-    ...(tariffByCategory.size > 0 ? ['usitc'] : []),
-    ...(coordinatePrecision ? ['nominatim'] : []),
-  ];
+  /**
+   * **What answered, not what was asked** — the checklist gates the
+   * data-confidence band, and a band is a claim about coverage.
+   *
+   * Every line here used to be a precondition rather than a result: `gleif`
+   * whenever the Profile carried an LEI, even where the join returned no
+   * record; `world_bank` for any country, even where all six indicator calls
+   * came back empty; and `usitc` for any Category, even where the search
+   * matched no HS line. Three of the six could be present on a Supplier no
+   * external source had said anything about.
+   *
+   * The geospatial item is the one that stayed a precondition, deliberately:
+   * it asks whether the site is located rather than which provider located it,
+   * because the geocoder is skipped exactly when Sayari's own coordinate made
+   * it unnecessary. See `fanOutEnrichments`.
+   */
+  const presentEnrichments = fanOut.returned;
 
   return {
     supplierId: supplier.id,
@@ -411,6 +467,7 @@ function finalizeEnrichResult(
   return {
     supplierId: supplier.id,
     enrichmentsWritten: fanOut.written,
+    presentEnrichments: fanOut.returned,
     criterionValuesWritten,
     familyMembers: fanOut.family.members.length,
     skipped:
