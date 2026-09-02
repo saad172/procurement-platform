@@ -104,6 +104,9 @@ describe('job_round holds one row per Round boundary', () => {
 });
 
 async function scratchJob(db: TestDb): Promise<{ jobId: string }> {
+  // Its own Program, dropped and re-made each time, so these two tests neither
+  // see each other's rows nor accumulate any across runs.
+  await testSql()`DELETE FROM program WHERE name = 'checkpoint fixture'`;
   const [program] = await testSql()`
     INSERT INTO program (name, importing_country, vehicle_class, sourcing_horizon)
     VALUES ('checkpoint fixture', 'USA', 'BEV', 'FY2027')
