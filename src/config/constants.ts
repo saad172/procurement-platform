@@ -114,48 +114,53 @@ export const DEEP_TRAVERSAL_MAX_PAGES = Math.ceil(
  *
  * ## Re-fit on 2026-09-02, from measurement rather than from argument
  *
- * The first table was provisional and every number in it was too small. What
- * it was measured against, on the development database (59 resolve, 62 enrich,
- * 60 assess, 4 recommend Jobs) and on the committed fixtures:
+ * The first table was provisional and every number in it was too small. What it
+ * was measured against: the development database (71 resolve, 65 enrich, 60
+ * assess, 4 recommend Jobs) and the committed fixtures.
  *
- * | Job kind | worst tool calls | worst tokens | old cap | new cap |
- * |---|---|---|---|---|
- * | resolve | **90** (`resolve/not-found`), 57 on dev | 354,917 | 60 · 400,000 | 180 · 1,100,000 |
- * | assess | **66** on dev, 37 on the fixture | 770,047 | 40 · 450,000 | 130 · 2,300,000 |
- * | recommend | **79** on dev, 11 on the fixture | 1,148,502 | 60 · 900,000 | 160 · 3,500,000 |
- * | enrich | 11 upstream calls | — | 25 | 25, unchanged |
- * | fetch_entity | 1 | — | 2 | 2, unchanged |
- * | traverse | 8 (`DEEP_TRAVERSAL_MAX_PAGES` × 2) | — | 20 | 20, unchanged |
- * | discover | never run | never run | 40 · 300,000 | unchanged, still PROVISIONAL |
+ * | Job kind | worst tool calls | worst tokens | worst billed events | old cap | new cap |
+ * |---|---|---|---|---|---|
+ * | resolve | **90** (`resolve/not-found`, 2026-08-31) · 72 (re-recorded) · 57 on dev | 354,917 | **113** (Gestamp) | 60 · 400,000 | 180 · 1,100,000 |
+ * | assess | **66** on dev · 24 on the fixture | 770,047 | 33 | 40 · 450,000 | 130 · 2,300,000 |
+ * | recommend | **79** on dev · 16 on the fixture | 1,148,502 | 41 | 60 · 900,000 | 160 · 3,500,000 |
+ * | enrich | runs no model | — | 11 | 25 | 25, unchanged |
+ * | fetch_entity | runs no model | — | 1 | 2 | 2, unchanged |
+ * | traverse | runs no model | — | 8 (`DEEP_TRAVERSAL_MAX_PAGES` × 2) | 20 | 20, unchanged |
+ * | discover | never run | never run | never run | 40 · 300,000 | unchanged, still PROVISIONAL |
  *
  * Tokens are the ceiling's own definition — input + cache_creation + output,
  * Job-wide, cache reads excluded (`tokensOf` in `run-loop.ts`) — summed per
- * `job_id` over `usage_event`, and tool calls are `trace_tool_call` rows per
- * Job. **Three of the six numbers were below what a healthy Job had already
- * spent**: assess ran to 66 tool calls against a ceiling of 40 and recommend to
- * 79 against 60, and neither fired only because the ceiling used to bound one
+ * `job_id` over `usage_event`; tool calls are `trace_tool_call` rows per Job.
+ *
+ * **Four of the numbers were below what a healthy Job had already spent.**
+ * assess ran to 66 tool calls against a ceiling of 40 and recommend to 79
+ * against 60, and neither fired only because the ceiling used to bound one
  * `runLoop()` call rather than the Job (finding 117). The Job-wide count landed
- * afterwards, which turned three provisional numbers into three latent bugs.
- *
- * **The measurements are conservative twice over.** They come from runs made
- * before prompt caching was switched on (finding 124), so every repeated prefix
- * was billed as fresh input; with caching the same work counts *fewer* capped
- * tokens, because a cache read is excluded by design.
- *
- * `discover` is the one row still provisional: no `discover` Job has ever run
- * on the development database, so there is nothing to fit it to and inventing a
- * number would be the thing this re-fit exists to stop.
+ * afterwards, which turned provisional numbers into latent bugs — and the
+ * twelve-row re-run of 2026-09-02 proved it on a live Job: **Gestamp spent 113
+ * billed upstream events**, so under the old 60 it would have been `terminated`
+ * part-way through the Round that settled it.
  *
  * **One ceiling, two counters.** `tool_call_cap` bounds model `tool_use` blocks
  * in `run-loop.ts` *and* upstream dispatches in `upstream/call.ts` — and the
  * upstream one counts every `usage_event` row with `cache_hit = false`, which
- * includes the model's own turns. So a resolve Job that made 34 model turns had
- * 26 upstream calls left of 60. The worst Job measured 57 of those combined
- * events against the old 60. Both readings are covered here: 180 is 2× the 90
- * model tool calls of `resolve/not-found` and comfortably over its ~86 combined
- * events.
+ * includes the model's own turns. So Gestamp's 113 is 85 live Sayari calls plus
+ * 28 model turns, and a resolve Job that made 34 model turns had 26 upstream
+ * calls left of 60. Both readings are covered here: 180 is 2× the 90 model tool
+ * calls of `resolve/not-found` and comfortably over 113.
  *
- * **Re-measured by:** the queries in finding 150, over `usage_event` and
+ * **The token figures are conservative on purpose.** They are the pre-caching
+ * runs, where every repeated prefix was billed as fresh input. With prompt
+ * caching on (finding 124), the same work counts far fewer capped tokens —
+ * today's worst resolve Job spent 108,063 against the 354,917 that fits this
+ * table — because a cache read is excluded from the count by design. Fitting to
+ * the cached figures would leave no room for a Job whose cache misses.
+ *
+ * `discover` is the one row still provisional: no `discover` Job has ever run,
+ * so there is nothing to fit it to and inventing a number would be the thing
+ * this re-fit exists to stop.
+ *
+ * **Re-measured by:** finding 150's queries, over `usage_event` and
  * `trace_tool_call` grouped by `job.kind`.
  */
 export const JOB_CAPS = {

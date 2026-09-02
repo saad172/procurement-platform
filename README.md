@@ -113,6 +113,29 @@ recording a recording; each one resets the test database first
 `assess` is recorded by replaying `resolve`, and `recommend` by replaying
 `assess`, so a stale resolve fixture reddens everything downstream of it.
 
+What the committed set holds, as recorded on 2026-09-02 with prompt caching on
+— the dollar figures are computed from the committed price constant, not from a
+bill:
+
+| Fixture | Turns | Tool calls | What it recorded | Cost |
+|---|---|---|---|---|
+| `resolve/rules-r0` | 0 | 0 | the gate settling American Axle alone (2026-09-02, on the dead key) | $0.00 |
+| `resolve/agree-r1` | 13 | 21 | both agents naming `CX3012yTGIhgMxcZG6hgnA` at Round 1 | $0.49 |
+| `resolve/not-found` | 41 | 72 | **`needs_review` with 34 Candidates** — the arranged unfindable row is now parked rather than refused | $1.14 |
+| `resolve/sanctioned` | 11 | 15 | `accepted`, `sanctioned: true` from the graph | $0.42 |
+| `assess/published-with-objections` | 18 | 24 | a `number_fidelity` objection **answered**: 2 Rounds, `passed` | $1.87 |
+| `recommend/one-category` | 13 | 16 | `passed`, one `award` at rank 1 | $1.17 |
+| `chat/one-turn` | 4 | 0 | 2 widgets and 1 confirm proposal, no `job` row | $0.06 |
+| `enrich/yazaki`, `traverse/yazaki`, `record/one-source` | 0 | — | upstream bodies only; no model runs in any of them | $0.00 |
+
+Two names are now approximate, and both are kept rather than quietly corrected:
+`resolve/not-found` records a `needs_review`, and
+`assess/published-with-objections` records a converged `passed`. Re-rolling a
+recording until its name came true is
+[finding 79](docs/BUILD-NOTES.md) — arranging an outcome rather than writing it
+down — so the tests assert the **legal set** and the doc comments say which way
+the day went.
+
 Record with `MODEL_REQUEST_DUMP_DIR=/tmp/dumps` set and `fixtures:rehash` can
 rebuild the hashes offline. Without it, a change to how a request is hashed costs
 a full pipeline re-run — about forty-five minutes
@@ -127,20 +150,18 @@ pnpm test       # vitest run  (pnpm test:watch to iterate)
 pnpm format     # prettier --write
 ```
 
-> **The suite is red, and every red test is a recording that has not been made.**
-> On `integration` at `da8e2ab`, 862 tests run and **17 fail**; on the
-> `evaluator-verdict` branch (PR #7) 884 run and **26 fail** — those 17 plus 9 of
-> its own. Nothing under `src/` is failing on any branch. The Anthropic key
-> available to this build returned **HTTP 401** on 2026-09-02, so
-> `resolve/agree-r1` could not be re-recorded after the Match gate changed what a
-> Candidate summary says; four replay tests miss it directly and the rest never
-> get a settled Match, because `tests/support/pipeline.ts` seeds through it. The
-> nine on PR #7 are the assess, recommend and chat fixtures drifting on prompts
-> and payloads that genuinely changed.
-> **[`docs/BUILD-NOTES.md` finding 148](docs/BUILD-NOTES.md) names every red test,
-> its fixture and its turn**, and states what was not recorded, not run and not
-> built that day, and why. Recording order once a key works: resolve → assess →
-> recommend → chat.
+> **The suite is green: 885 tests, 87 files, 0 failures**, measured on
+> 2026-09-02 on a database created minutes earlier. It was red at 26 the same
+> morning, and every one of those was a replay waiting on a recording that the
+> day's **HTTP 401** made impossible. A working key arrived, the six model
+> fixtures were re-recorded in the order below, and the red went away without a
+> line of `src/` changing to make it — except one bug the recording *found*,
+> which is [finding 149](docs/BUILD-NOTES.md): a live call and a cache hit
+> projected one Sayari body into two different objects, so a fixture recorded on
+> a cold cache could not replay from the bodies it had just recorded.
+> **[Finding 148](docs/BUILD-NOTES.md)** is the record of what was owed, with a
+> postscript saying what each recording did. Recording order:
+> resolve → assess → recommend → chat.
 
 Two checks spend real Sayari credits and so are scripts rather than tests:
 
@@ -181,10 +202,11 @@ over **confirmed rows only**, listing the rest as outstanding, so nothing can
 flatter the loop until a person has said a row is true. All fifty rows read
 `confirmed: true` on the owner's instruction of 2026-09-02 (*"make the best
 assumptions for now"*): **a confirmation by assumption is still a confirmation,
-and still a judgement.** Today it reads **42 accepted right · 4 accepted a Twin ·
-4 accepted wrong**, on a database where twelve of the seventeen rules-settled
-rows have not yet been re-run under the tightened gate
-([finding 146](docs/BUILD-NOTES.md)).
+and still a judgement.** After the twelve remaining rules-settled rows were
+re-run under the tightened gate on 2026-09-02 it reads **44 accepted right ·
+4 accepted a Twin · 2 accepted wrong** — up from 42 · 4 · 4, because Mahle moved
+off `MAHLE BEHR` onto `马勒有限公司` and Samvardhana Motherson off `ADSYS` onto
+`Samvardhana Motherson International Ltd.` ([finding 146](docs/BUILD-NOTES.md)).
 
 One check spends nothing but needs the app running, because what it checks is
 the app running:
@@ -194,7 +216,7 @@ pnpm dev          # in one terminal
 pnpm smoke:pages  # in another — fetches all thirteen pages
 ```
 
-**Nothing in the suite renders a page.** Eighty-four test files cover the domain,
+**Nothing in the suite renders a page.** Eighty-seven test files cover the domain,
 the jobs, the tools and the two clients; exactly one reaches `src/app` at all —
 `tests/app/confirm-route.test.ts`, which posts to the chat confirm route because
 [finding 128](docs/BUILD-NOTES.md) is a fault in the route and nowhere else — and
