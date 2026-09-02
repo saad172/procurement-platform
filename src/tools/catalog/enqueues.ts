@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod/v4';
 import * as t from '@/db/schema';
 import {
@@ -31,12 +31,48 @@ import { defineTool, type Estimate, type ToolContext } from '../define';
  * Where it cannot know, `spends` carries a range or null **with a stated
  * reason**, never a fabricated point estimate.
  */
+/**
+ * Is **this entity's** `entity.getEntity` body already cached?
+ *
+ * **Keyed the way the call path keys it.** `call()` hashes
+ * `{endpoint, params-after-defaults}` into `params_hash`, and `readCache()`
+ * matches `(source, endpoint, params_hash)` (`src/upstream/call.ts`,
+ * `src/upstream/hash.ts`). The `params` column holds exactly the canonical
+ * params that hash was taken over (`src/db/schema/upstream.ts`), and for
+ * `entity.getEntity` the only one that varies per entity is `id` — the other
+ * eleven are `GET_ENTITY_LIMITS`, one fixed set applied to every call. So
+ * `(source, endpoint, params->>'id')` selects the rows the hash selects.
+ *
+ * **Why the stored params and not `hashParams()` itself.** Re-deriving the key
+ * needs `sayariGetEntity.defaults`, which lives in `src/upstream/endpoints.ts`
+ * — a module that imports `@sayari/sdk`, the one import no file under
+ * `src/tools/**` may make (chokepoint 1). Copying the eleven numbers down here
+ * would manufacture precisely the estimator/caller disagreement that reusing
+ * the helper exists to prevent, so this reads the params the caller stored
+ * rather than re-deriving them.
+ *
+ * The gap that leaves, said rather than hidden: changing a default is a
+ * *deliberate* cache miss (`src/upstream/hash.ts`), and until this entity is
+ * re-fetched under the new key an old row still answers here. That over-reports
+ * one entity as cached; it fabricates no figure, and it is still local rows
+ * only.
+ *
+ * Before this, the `where` clause matched `endpoint` alone — so one stored
+ * `getEntity` body anywhere in the database made **every** enrichment proposal
+ * say *"cached — no credits, no wait"*, whichever entity it was about.
+ */
 async function cachedUpstreamFor(ctx: ToolContext, entityId: string | null): Promise<boolean> {
   if (!entityId) return false;
   const rows = await ctx.db
     .select({ id: t.upstreamResponse.id })
     .from(t.upstreamResponse)
-    .where(eq(t.upstreamResponse.endpoint, 'entity.getEntity'))
+    .where(
+      and(
+        eq(t.upstreamResponse.source, 'sayari'),
+        eq(t.upstreamResponse.endpoint, 'entity.getEntity'),
+        sql`${t.upstreamResponse.params}->>'id' = ${entityId}`,
+      ),
+    )
     .limit(1);
   return rows.length > 0;
 }
