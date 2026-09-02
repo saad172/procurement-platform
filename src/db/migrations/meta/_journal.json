@@ -64,6 +64,13 @@
       "when": 1788374747762,
       "tag": "0008_needy_ogun",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788377393126,
+      "tag": "0009_colorful_gauntlet",
+      "breakpoints": true
     }
   ]
 }
