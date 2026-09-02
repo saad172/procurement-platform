@@ -12,28 +12,38 @@ import { resetDerived } from '../support/reset';
 import { JOB_CAPS } from '@/config/constants';
 
 /**
- * `resolve/rules-r0` (SPEC §6.3, finding 106's "auto-accept gate was right
- * about identity") — a Match settled by the gate ALONE: plain code, zero
- * Rounds, zero model turns.
+ * `resolve/rules-r0` (SPEC §6.3) — a Match settled by the gate **alone**: plain
+ * code, zero Rounds, zero model turns.
  *
- * Recorded live from roster row 1, "Bosch" (`src/db/seed-data/roster.ts:34`),
- * against the dev database on 2026-09-02: `entity.getEntity` × 5, one
- * `resolution.resolutionPost`, one `gleif.byId`, every one a cache hit
- * (`ms = 0`), so recording spent no Sayari credits. `loadTurnRows`
- * (`src/fixtures/record.ts`) needed a one-line extension to accept a
- * zero-turn `resolve` Job — see its own comment.
+ * ## The row moved from Bosch to American Axle, and that is the finding
  *
- * **Not Syntegon.** The roster comment on `ROSTER` predicts Sayari's
- * *name-only* top hit is the divested Syntegon. The batch pre-pass this build
- * actually sends carries the roster's address and country alongside the name
- * (`src/jobs/resolve-job.ts`), which ranks the real German company first — the
- * five candidates this recording returned are all named "Bosch" in some form,
- * and none of them is Syntegon. This test asserts what was actually measured,
- * not the older name-only prediction.
+ * This fixture used to be recorded from roster row 1, "Bosch", which finding 14
+ * reported clearing the gate at zero tokens. It no longer does, and nothing
+ * about Bosch changed: the gate now refuses a clean winner when **another
+ * Candidate failed nothing either**, and Sayari carries a second record simply
+ * labelled `ROBERT BOSCH` — no country, no city, no LEI, no status — which
+ * fails no Discriminator because there is nothing on it to fail one. Its eight
+ * verdicts are four passes and four `can't tell`s. That is a rival the code
+ * cannot tell apart from `ROBERT BOSCH GMBH`, and settling between them is the
+ * agents' job.
+ *
+ * `American Axle & Manufacturing` is the row where the gate's own change is the
+ * point. It used to settle by rules on `American Axle & Manufacturing
+ * (Thailand) Co., Ltd.` — which passed all eight because the country, locality
+ * and street rungs each quantified over *any* of the record's addresses and the
+ * Thai subsidiary files its parent's Detroit plant among them. Anchoring all
+ * three rungs on one address, and reading GLEIF's `jurisdiction` (`TH`) rather
+ * than only its city (`DETROIT`, the parent's), moves the settlement to
+ * `AMERICAN AXLE & MANUFACTURING INC` — the legal entity at the roster address.
+ *
+ * Recorded live against the test database on 2026-09-02, from the state
+ * `resetDerived()` rebuilds (finding 85): one `resolution.resolutionPost`, five
+ * `entity.getEntity`, four `lei-records.byId`, and no model call at all.
  */
 
 const FIXTURE = 'resolve/rules-r0';
-const ACCEPTED_ENTITY_ID = 'vo4mAQFjLR-65BNY5iuM2g';
+const ACCEPTED_ENTITY_ID = 'cAmnI92Pnaemjk7pVLfysw';
+const ROSTER_NAME = 'American Axle & Manufacturing';
 
 describe('resolve/rules-r0 replays', () => {
   it('settles by rules alone, in zero Rounds and zero model turns', async () => {
@@ -44,7 +54,7 @@ describe('resolve/rules-r0 replays', () => {
     await resetDerived(db);
 
     const supplier = await db.query.supplier.findFirst({
-      where: eq(t.supplier.rosterName, 'Bosch'),
+      where: eq(t.supplier.rosterName, ROSTER_NAME),
     });
     if (!supplier) return;
 
@@ -100,12 +110,27 @@ describe('resolve/rules-r0 replays', () => {
     expect(attempt?.rungsUsed as string[]).toEqual(['R1']);
     expect(attempt?.settledBy).toBe('rules');
 
-    // Several "Bosch" decoys were considered — every candidate's label carries
-    // the brand token, which is what makes them decoys rather than noise —
-    // and exactly one was accepted.
+    // Five candidates, every one of them an American Axle company — the
+    // Thai subsidiary, the Mexican one, the holding company, the Delaware
+    // shell named for the founder, and the operating parent. They are
+    // decoys rather than noise precisely because they are all the same
+    // family, which is what the gate now has to see through.
     const candidates = attempt?.candidates ?? [];
     expect(candidates.length).toBeGreaterThan(1);
-    expect(candidates.every((c) => /bosch/i.test(c.entity.label))).toBe(true);
+
+    /**
+     * **The subsidiary was rejected, and by the two checks this step added.**
+     *
+     * It is on the same list, it carries the parent's Detroit plant among its
+     * addresses, and under the previous rules it was the row that settled.
+     */
+    const thailand = candidates.find((c) => /thailand/i.test(c.entity.label));
+    expect(thailand, 'the Thai subsidiary should still be a recorded Candidate').toBeTruthy();
+    const thaiVerdicts = new Map(thailand!.verdicts.map((v) => [v.discriminator, v]));
+    expect(thaiVerdicts.get('lei_witness')!.verdict).toBe('fail');
+    expect(thaiVerdicts.get('lei_witness')!.reasoning).toMatch(/Thailand/);
+    expect(thaiVerdicts.get('name_cover')!.verdict).toBe('unavailable');
+    expect(thaiVerdicts.get('name_cover')!.reasoning).toMatch(/\(Thailand\)/);
 
     const accepted = candidates.find((c) => c.entityId === ACCEPTED_ENTITY_ID);
     const rejected = candidates.filter((c) => c.entityId !== ACCEPTED_ENTITY_ID);
