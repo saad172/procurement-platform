@@ -238,7 +238,7 @@ function projectSupplierCard(loaded: NonNullable<Awaited<ReturnType<typeof loadS
 const getSupplierFamily = defineTool({
   name: 'get_supplier_family',
   description:
-    "A supplier's corporate family: the companies reachable downward through ownership, what risk they carry, and how much of the family was explored.",
+    "A supplier's corporate family: the companies reachable downward through ownership, what risk they carry, and how much of the family was explored. Cite the enrichmentId for the explored and truncated figures, and a member's own entityId for what that member carries.",
   input: z.object({ supplierId: z.string() }),
   surfaces: ['chat', 'job', 'mcp'],
   effect: 'read',
@@ -256,95 +256,32 @@ const getSupplierFamily = defineTool({
         ],
       };
     }
-    const members = await ctx.db
-      .select({
-        memberEntityId: t.familyMember.memberEntityId,
-        hopDepth: t.familyMember.hopDepth,
-        truncated: t.familyMember.truncated,
-        exploredCount: t.familyMember.exploredCount,
-        reachableCount: t.familyMember.reachableCount,
-        discoveredByJob: t.familyMember.discoveredByJob,
-        label: t.entity.label,
-        country: t.entity.country,
-        sanctioned: t.entity.sanctioned,
-        risk: t.entity.risk,
-      })
-      .from(t.familyMember)
-      .innerJoin(t.entity, eq(t.entity.id, t.familyMember.memberEntityId))
-      .where(eq(t.familyMember.rootEntityId, match.entityId))
-      /**
-       * **A query that feeds a prompt needs a total order.**
-       *
-       * Without this the fifty family members came back in whatever order
-       * Postgres found them — stable within one database, different in another,
-       * and the family list is truncated at fifty so a different order is a
-       * different *set*. It surfaced as an assess replay missing on turn 3, and
-       * the diff showed two entirely different Chinese subsidiaries at the top.
-       *
-       * By hop depth first, because that is the order a person reads a family
-       * in: the immediate subsidiaries, then what sits behind them. `entityId`
-       * breaks the tie, since it is the only field guaranteed unique.
-       */
-      .orderBy(asc(t.familyMember.hopDepth), asc(t.familyMember.memberEntityId));
 
-    /**
-     * A **projection**, not the stored rows.
-     *
-     * SPEC §15.2 calls a page read a *thin wrapper over the query each page
-     * already runs for SSR*, and a page renders a member's name, country and
-     * risk badge — never the raw traversal path. Returning the rows wholesale
-     * put ~870,000 tokens into one model turn and fired the assess Job's
-     * token ceiling. The cap did its job; the read was the bug.
-     */
+    const members = await loadFamilyMembers(ctx, match.entityId);
+    const { widgetMembers, modelMembers } = projectFamilyMembers(members);
     const envelope = {
       entityId: match.entityId,
+      /**
+       * **The id the coverage figures can be cited through** (finding 106).
+       *
+       * The family walk is an Enrichment — a dated call — and `explored` and
+       * `truncated` are facts about *it*, carried on its `family_member` rows.
+       * The tool told the model *"explored: 45"* and handed it no id that fact
+       * could resolve to, so the one citation on offer was the member's
+       * `entityId`, and an `entity` row carries no explored count to answer to
+       * it. The number check refused the sentence, correctly, for a figure the
+       * model had read off this very payload.
+       */
+      enrichmentId: members[0]?.enrichmentId ?? null,
       // What the traversal reported it covered, not how many rows we hold.
       // Counting rows answers a different question, and it was the wrong
       // answer whenever a Profile had been enriched twice: Bosch's family
       // was stored 100 times for 50 members, so this reported 100 to the
       // model.
       explored: members[0]?.exploredCount ?? members.length,
+      reachable: members[0]?.reachableCount ?? null,
       truncated: members.some((m) => m.truncated),
     };
-    /**
-     * Factor names, levels **and the `country` marker**, which is what the
-     * widget needs to exclude a country-derived factor the way the page does.
-     * `parseRiskObject` (`@/domain/scoring/risk-factors`) is the one reader
-     * of the raw `risk` JSONB column — the same function `entity-page.ts`
-     * and `score.ts` use — so `country` here means exactly what
-     * `isCountryDerived()` checks it against on the page. A widget that
-     * named the three country-derived factors by string instead (`cpi_score`,
-     * `basel_aml`, `eu_high_risk_third`) would be a second, driftable copy of
-     * the identification `scoring/risk-factors.ts` already rejected in
-     * favour of this marker.
-     */
-    const widgetMembers = members.map((m) => ({
-      entityId: m.memberEntityId,
-      label: m.label,
-      country: m.country,
-      hopDepth: m.hopDepth,
-      sanctioned: m.sanctioned,
-      riskFactors: parseRiskObject(m.risk).map((f) => ({
-        name: f.name,
-        level: f.level ?? null,
-        country: f.country,
-      })),
-    }));
-    /**
-     * **The model reads no `country` per FACTOR** — the member's own
-     * `country` (its registered address) is unaffected and stays. Adding the
-     * factor-level marker to the model's copy would change every later
-     * turn's request hash for any replay recorded before this field existed,
-     * the same class of drift finding 100 describes, at a tool result
-     * instead of a prompt. `isCountryDerived` is for the widget's own
-     * rendering; the model already gets a Compliance risk figure with the
-     * country-derived factors already excluded (`domain/scoring/
-     * criteria.ts`), so it never needed this marker.
-     */
-    const modelMembers = widgetMembers.map(({ riskFactors, ...member }) => ({
-      ...member,
-      riskFactors: riskFactors.map(({ name, level }) => ({ name, level })),
-    }));
 
     return {
       ok: true,
@@ -356,6 +293,99 @@ const getSupplierFamily = defineTool({
     };
   },
 });
+
+/** The stored family, in the one order a prompt can rely on. */
+async function loadFamilyMembers(ctx: ToolContext, rootEntityId: string) {
+  return ctx.db
+    .select({
+      memberEntityId: t.familyMember.memberEntityId,
+      // Per member as well as on the envelope: a re-enrichment updates the
+      // rows it re-read, so two members can belong to two different walks.
+      enrichmentId: t.familyMember.enrichmentId,
+      hopDepth: t.familyMember.hopDepth,
+      truncated: t.familyMember.truncated,
+      exploredCount: t.familyMember.exploredCount,
+      reachableCount: t.familyMember.reachableCount,
+      discoveredByJob: t.familyMember.discoveredByJob,
+      label: t.entity.label,
+      country: t.entity.country,
+      sanctioned: t.entity.sanctioned,
+      risk: t.entity.risk,
+    })
+    .from(t.familyMember)
+    .innerJoin(t.entity, eq(t.entity.id, t.familyMember.memberEntityId))
+    .where(eq(t.familyMember.rootEntityId, rootEntityId))
+    /**
+     * **A query that feeds a prompt needs a total order.**
+     *
+     * Without this the fifty family members came back in whatever order
+     * Postgres found them — stable within one database, different in another,
+     * and the family list is truncated at fifty so a different order is a
+     * different *set*. It surfaced as an assess replay missing on turn 3, and
+     * the diff showed two entirely different Chinese subsidiaries at the top.
+     *
+     * By hop depth first, because that is the order a person reads a family
+     * in: the immediate subsidiaries, then what sits behind them. `entityId`
+     * breaks the tie, since it is the only field guaranteed unique.
+     */
+    .orderBy(asc(t.familyMember.hopDepth), asc(t.familyMember.memberEntityId));
+}
+
+/**
+ * A **projection**, not the stored rows.
+ *
+ * SPEC §15.2 calls a page read a *thin wrapper over the query each page
+ * already runs for SSR*, and a page renders a member's name, country and
+ * risk badge — never the raw traversal path. Returning the rows wholesale
+ * put ~870,000 tokens into one model turn and fired the assess Job's
+ * token ceiling. The cap did its job; the read was the bug.
+ */
+function projectFamilyMembers(members: Awaited<ReturnType<typeof loadFamilyMembers>>) {
+  /**
+   * Factor names, levels **and the `country` marker**, which is what the
+   * widget needs to exclude a country-derived factor the way the page does.
+   * `parseRiskObject` (`@/domain/scoring/risk-factors`) is the one reader
+   * of the raw `risk` JSONB column — the same function `entity-page.ts`
+   * and `score.ts` use — so `country` here means exactly what
+   * `isCountryDerived()` checks it against on the page. A widget that
+   * named the three country-derived factors by string instead (`cpi_score`,
+   * `basel_aml`, `eu_high_risk_third`) would be a second, driftable copy of
+   * the identification `scoring/risk-factors.ts` already rejected in
+   * favour of this marker.
+   */
+  const widgetMembers = members.map((m) => ({
+    entityId: m.memberEntityId,
+    // The member's own walk, so a sentence about one member cites the
+    // Enrichment that reached it rather than the envelope's.
+    enrichmentId: m.enrichmentId,
+    label: m.label,
+    country: m.country,
+    hopDepth: m.hopDepth,
+    sanctioned: m.sanctioned,
+    riskFactors: parseRiskObject(m.risk).map((f) => ({
+      name: f.name,
+      level: f.level ?? null,
+      country: f.country,
+    })),
+  }));
+  /**
+   * **The model reads no `country` per FACTOR** — the member's own
+   * `country` (its registered address) is unaffected and stays. Adding the
+   * factor-level marker to the model's copy would change every later
+   * turn's request hash for any replay recorded before this field existed,
+   * the same class of drift finding 100 describes, at a tool result
+   * instead of a prompt. `isCountryDerived` is for the widget's own
+   * rendering; the model already gets a Compliance risk figure with the
+   * country-derived factors already excluded (`domain/scoring/
+   * criteria.ts`), so it never needed this marker.
+   */
+  const modelMembers = widgetMembers.map(({ riskFactors, ...member }) => ({
+    ...member,
+    riskFactors: riskFactors.map(({ name, level }) => ({ name, level })),
+  }));
+
+  return { widgetMembers, modelMembers };
+}
 
 export const getEntity = defineTool({
   name: 'get_entity',

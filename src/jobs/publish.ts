@@ -61,14 +61,12 @@ export async function resolveCitations(
     } else if (citation.enrichmentId) {
       // Every id below is a uuid column, so a malformed value THROWS rather
       // than missing — see the shortlist branch for why that matters.
-      resolved.set(
-        key,
-        isDatabaseId(citation.enrichmentId)
-          ? await first(
-              db.select().from(t.enrichment).where(eq(t.enrichment.id, citation.enrichmentId)),
-            )
-          : undefined,
-      );
+      const enrichment = isDatabaseId(citation.enrichmentId)
+        ? await first(
+            db.select().from(t.enrichment).where(eq(t.enrichment.id, citation.enrichmentId)),
+          )
+        : undefined;
+      resolved.set(key, enrichment ? await withFamilyCoverage(db, enrichment) : undefined);
     } else if (citation.criterionValueId) {
       resolved.set(
         key,
@@ -134,6 +132,44 @@ export async function resolveCitations(
 
 async function first<T>(query: Promise<T[]>): Promise<T | undefined> {
   return (await query)[0];
+}
+
+/**
+ * A Corporate family Enrichment carries its coverage on its `family_member`
+ * rows, not on its own row — so a citation to it resolves to a row that does
+ * not hold the figures the tool showed the model.
+ *
+ * The `enrichment` table is a registry of dated calls: source, subject,
+ * request params, `fetched_at`. Everything a family walk *found* is one join
+ * away, including the two numbers `get_supplier_family` prints — *explored*
+ * and *truncated*. A sentence saying *"the downward family was explored to 45
+ * members without truncation"* cites this Enrichment because that is what the
+ * claim is about, and the number check then looked at a row with no 45 on it
+ * and named the figure as unmatched (finding 106).
+ *
+ * Attached here rather than in `candidatesFrom`, because what a citation
+ * resolves to is this function's answer: the checks and the insert must agree
+ * about what the model pointed at.
+ */
+async function withFamilyCoverage(
+  db: Database,
+  enrichment: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  if (enrichment.source !== 'sayari_ownership_family') return enrichment;
+
+  const coverage = await db
+    .select({
+      explored: t.familyMember.exploredCount,
+      reachable: t.familyMember.reachableCount,
+      truncated: t.familyMember.truncated,
+    })
+    .from(t.familyMember)
+    .where(eq(t.familyMember.enrichmentId, enrichment.id as string))
+    .limit(1);
+
+  // No rows is *not covered* — the ownership graph returned nobody — and that
+  // is a real state with a real figure: nothing explored.
+  return { ...enrichment, ...(coverage[0] ?? { explored: 0, reachable: null, truncated: false }) };
 }
 
 export type PublishAssessment = {
