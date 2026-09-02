@@ -14,7 +14,8 @@ import { toRunnableTools } from '@/model/tool-adapter';
 import * as recommendPrompts from '@/model/prompts/recommend';
 import { getRegistry, type ToolContext, type ToolDefinition } from '@/tools';
 import type { ModelContext } from '@/model/types';
-import { buildEvidence, buildFrozenInputs, parseObjections } from './assess';
+import { buildEvidence, buildFrozenInputs } from './assess';
+import { evaluateWithVerdict } from './evaluation';
 import { publishVersion } from './publish';
 import { roundCheckpoint } from './round-checkpoint';
 import { readSubmission } from './submission';
@@ -151,14 +152,9 @@ async function loadRecommendContext(
     ? JSON.stringify(briefResult.data, null, 2)
     : '(the brief could not be built)';
 
-  const leadTools = [
-    registry.byName.get('get_shortlist')!,
-    registry.byName.get('get_supplier')!,
-    registry.byName.get('get_supplier_family')!,
-    registry.byName.get('get_recommendation_brief')!,
-    registry.byName.get('get_category')!,
-    registry.byName.get('submit_recommendation')!,
-  ];
+  // Derived per role, so the lead's list and the evaluator's cannot drift apart
+  // — the evaluator reads what the lead read, and writes a verdict instead.
+  const leadTools = registry.forNarrativeRole('recommend', 'proposer');
 
   return { db, deps, args, program, category, brief, leadTools, frozenInputs, supplierIds };
 }
@@ -237,78 +233,73 @@ async function validateRecommendDraft(
   });
 }
 
+/**
+ * The evaluator turn.
+ *
+ * Stateless, and it sees EXACTLY what the lead saw — the analyst brief, the
+ * frozen inputs, the draft and the rubric. Judging an argument against evidence
+ * the arguer never had produces objections nobody can act on.
+ */
 async function runRecommendEvaluate(
   ctx: RecommendRoundContext,
   roundArgs: { roundN: number; draft: RecommendDraft },
 ): Promise<EvaluationResult> {
   const { roundN, draft } = roundArgs;
-  // Stateless, and sees EXACTLY what the lead saw — the analyst brief, the
-  // frozen inputs, the draft and the rubric. Judging an argument against
-  // evidence the arguer never had produces objections nobody can act on.
-  const result = await runLoop(
-    {
-      loop: 'recommend',
-      system: recommendPrompts.evaluatorSystem,
-      /**
-       * **The evaluator reads what the lead read.**
-       *
-       * It had no tools at all — asked to judge whether a Recommendation's
-       * claims are supported, with no way to look at a single row. The
-       * assess evaluator had the same fault in milder form and said so
-       * across three Rounds; see `assess.ts` for the objection it raised.
-       *
-       * It still cannot **write**: no `submit_recommendation`. The
-       * asymmetry that matters is that one proposes and the other judges,
-       * not that one can see and the other cannot.
-       */
-      tools: toRunnableTools(
-        ctx.leadTools.filter((tool) => tool.name !== 'submit_recommendation'),
-        ctx.deps.toolCtx,
-      ),
-      messages: [
-        {
-          role: 'user',
-          content: [
-            recommendPrompts.buildFirstUserMessage({
-              programName: ctx.program?.name ?? '(unnamed program)',
-              categoryName: `${ctx.category.code} — ${ctx.category.name}`,
-              roundN,
-              brief: ctx.brief,
-              frozenInputs: JSON.stringify(ctx.frozenInputs, null, 2),
-            }),
-            '',
-            'THE DRAFT TO REVIEW',
-            JSON.stringify(draft, null, 2),
-          ].join('\n'),
-        },
-      ],
-      caps: JOB_CAPS.recommend,
-      roundN,
-    },
-    ctx.deps.modelCtx,
-  );
+  const registry = getRegistry();
+  const tools = registry.forNarrativeRole('recommend', 'evaluator');
 
-  // A terminated evaluator produces no rubric, and no rubric parses as no
-  // objections — which is a pass. It is a stop, and it is raised as one.
-  raiseIfStopped(result);
+  return evaluateWithVerdict(async () => {
+    const result = await runLoop(
+      {
+        loop: 'recommend',
+        system: recommendPrompts.evaluatorSystem,
+        /**
+         * **The evaluator reads what the lead read.**
+         *
+         * It had no tools at all — asked to judge whether a Recommendation's
+         * claims are supported, with no way to look at a single row. The
+         * assess evaluator had the same fault in milder form and said so
+         * across three Rounds; see `assess.ts` for the objection it raised.
+         *
+         * The one difference from the lead's list is the write:
+         * `submit_evaluation` in place of `submit_recommendation`. One
+         * proposes and the other judges; it is not that one can see and the
+         * other cannot.
+         */
+        tools: toRunnableTools(tools, ctx.deps.toolCtx),
+        messages: [
+          {
+            role: 'user',
+            content: [
+              recommendPrompts.buildFirstUserMessage({
+                programName: ctx.program?.name ?? '(unnamed program)',
+                categoryName: `${ctx.category.code} — ${ctx.category.name}`,
+                roundN,
+                brief: ctx.brief,
+                frozenInputs: JSON.stringify(ctx.frozenInputs, null, 2),
+              }),
+              '',
+              'THE DRAFT TO REVIEW',
+              JSON.stringify(draft, null, 2),
+              '',
+              'Call submit_evaluation once, with a verdict for every rubric item.',
+            ].join('\n'),
+          },
+        ],
+        caps: JOB_CAPS.recommend,
+        roundN,
+        // The evaluator's turns carry their tool digest too (SPEC §15.7) — see
+        // the assess loop for what a Trace without one could not have shown.
+        toolDigest: registry.digest(tools),
+      },
+      ctx.deps.modelCtx,
+    );
 
-  const text = textOf(result);
-  const objections = parseObjections(text);
-  return objections.length === 0
-    ? { kind: 'pass', rubric: { raw: text }, text }
-    : { kind: 'objections', objections, rubric: { raw: text }, text };
-}
-
-function textOf(result: Awaited<ReturnType<typeof runLoop>>): string {
-  if (result.status !== 'done') return `the evaluator loop ended as ${result.status}`;
-  const message = result.finalMessage as
-    | { content?: { type: string; text?: string }[] }
-    | undefined;
-  return (message?.content ?? [])
-    .filter((block) => block.type === 'text')
-    .map((block) => block.text ?? '')
-    .join('\n')
-    .trim();
+    // The evaluator's stops are the Job's stops too — a ceiling or a budget
+    // pause is raised rather than retried. See the assess loop.
+    raiseIfStopped(result);
+    return result;
+  });
 }
 
 /** Registers both agentic Job kinds with the worker. */

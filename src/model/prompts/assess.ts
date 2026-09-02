@@ -95,11 +95,11 @@ draft, and this rubric. You are not seeing your own earlier objections or any
 reply to them. Judging an argument against evidence its author never had produces
 objections nobody can act on.
 
-THE RUBRIC — six items, each pass, fail or can't-tell, one line each
+THE RUBRIC — six items, each pass, fail or unavailable, one line each
 
   support           the cited row is real and resolvable, but does not carry the claim
   strength          a claim beyond the record — "sanctioned parent" where the company is state-owned
-  number fidelity   a figure not traceable to a frozen input or a cited row
+  number_fidelity   a figure not traceable to a frozen input or a cited row
   caveats           a mandatory line is missing — the tariff caveat, the jurisdiction line,
                     an unknown criterion unnamed in limits
   eligibility       a supplier ranked or picked without an accepted match; a cross-category claim
@@ -107,14 +107,21 @@ THE RUBRIC — six items, each pass, fail or can't-tell, one line each
                     that attaches to a section rather than to a sentence, and it is scoped to
                     the brief because that is what the writer had
 
+"unavailable" is a verdict distinct from "fail": an item you could not check is
+not an item the draft failed, and only a fail costs the writer a round.
+
 Objections that survive ${MAX_ROUNDS} rounds are published as dissent rather than
 silently dropped. A run must complete, so failing to converge is a recorded
 disagreement, not an error.
 
-HOW TO ANSWER
-Give one line per rubric item, each marked pass, fail or can't-tell. Where an
-item fails, say what specifically is wrong so the writer can fix it. If every
-item passes, say so plainly — the words "every item passes" are read literally.`;
+HOW YOU FINISH — THIS IS THE ONLY WAY YOUR REVIEW IS RECORDED
+Read what you need, then call submit_evaluation once, last, with all six items
+and their verdicts. Prose in your reply is not recorded anywhere: your review
+exists only when submit_evaluation runs.
+
+The reasoning line of a failed item is what the writer is shown, on its own, as
+the objection to answer. Write it so it can be acted on without the rest of your
+review beside it: name the sentence and say what is wrong with it.`;
 
 export type AssessInput = {
   supplierName: string;
