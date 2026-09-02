@@ -1,3 +1,5 @@
+import { toAlpha3 } from '@/domain/iso3166';
+
 /**
  * Address agreement, as a **three-rung ladder** (SPEC §6.2).
  *
@@ -75,6 +77,16 @@ export type CandidateAddress = {
   city: string | null;
   postcode: string | null;
   country: string | null;
+  /**
+   * The whole address as one line, where the record carries one — Sayari's
+   * `properties.value`, present on all 1,843 address entries measured in the
+   * local corpus.
+   *
+   * The street rung needs it. `city` and `postcode` say *which town*; only the
+   * line says *which building*, and without it the street rung had nothing of
+   * its own to compare and mirrored the locality instead.
+   */
+  line?: string | null;
 };
 
 export type AddressComparison = {
@@ -88,9 +100,14 @@ export type AddressComparison = {
     candidateCountry: string | null;
     candidateCity: string | null;
     candidatePostcode: string | null;
+    /** The anchored address's own line, which the street rung read. */
+    candidateLine: string | null;
     postcodeMatched: boolean;
+    /** The roster's street-level tokens the anchored address also carries. */
     streetTokensMatched: string[];
-    /** How many addresses were considered, and which one agreed. */
+    /** Every street-level token the roster line offered, matched or not. */
+    rosterStreetTokens: string[];
+    /** How many addresses were considered, and which one all three rungs read. */
     addressesConsidered: number;
     matchedAddressIndex: number | null;
   };
@@ -129,20 +146,74 @@ const STREET_STOPWORDS = new Set([
 ]);
 
 /**
- * Compares one Candidate's structured address against the roster's free text.
+ * Whether text was written and nothing survived normalisation.
  *
- * `unavailable` where the Candidate has nothing to compare — which is a
- * distinct verdict from `fail`, and matters because a Sayari record with no
- * structured city is not evidence that the city is wrong.
+ * `normaliseAddress` deletes every character outside `[a-z0-9]`, so a CJK,
+ * Cyrillic, Arabic or Thai string reduces to the empty string — indistinguishable,
+ * to every check downstream, from a field the record never filled in. The two
+ * are **not** the same thing, and the difference decides a verdict: a comparison
+ * against a script this build cannot read is `unavailable`, because absent
+ * evidence is not contrary evidence. It is `fail` only when both sides are
+ * legible and disagree.
  */
+export function isUnreadableScript(text: string | null | undefined): boolean {
+  return Boolean(text && text.trim().length > 0 && tokens(text).length === 0);
+}
+
 /**
- * Compares the roster line against **every** address the candidate carries, and
- * reports the best agreement found.
+ * Strips a leading country prefix from a postcode: `D-70376` → `70376`,
+ * `PIN-110044` → `110044`, `D 7000` → `7000`.
  *
- * The ladder is per address; the verdict is over the set. A company registered
- * in nineteen places is in all nineteen, so finding the roster's city among
- * them is agreement — and *not* finding it in the arbitrary first one is not
- * disagreement.
+ * Measured on the roster's own rows: the real MAHLE GmbH records file
+ * `D-70376` where the Mahle roster line reads `70376`, so the postcode signal
+ * — the one the ladder calls strong in its own right — was thrown away on the
+ * correct company and kept on a subsidiary that happened to file a bare number.
+ *
+ * Only a run of one to three letters followed by a separator is stripped, and
+ * only when digits remain, so `SW1A 1AA`, `AL7 1TW` and `NA70469` are left
+ * exactly as they arrived.
+ */
+export function normalisePostcode(value: string): string {
+  const match = /^\s*[A-Za-z]{1,3}[-\s]\s*(.+)$/.exec(value.trim());
+  const remainder = match?.[1]?.trim();
+  return remainder && /\d/.test(remainder) ? remainder : value.trim();
+}
+
+/**
+ * Strips a trailing postal-district number from a city: `Stuttgart 50` →
+ * `Stuttgart`.
+ *
+ * The old German postal districts are still in the register data, and
+ * `containsWholeWord` needs its needle contiguous — so `Stuttgart 50` did not
+ * match a roster line reading `Stuttgart`, and the locality rung failed the
+ * right company for carrying more precision than the roster did.
+ */
+export function normaliseCityName(value: string): string {
+  const match = /^(.*[A-Za-z].*?)\s+\d{1,3}$/.exec(value.trim());
+  return match?.[1]?.trim() ?? value.trim();
+}
+
+/**
+ * Compares the roster line against every address the candidate carries and
+ * **anchors on one of them** — the best-matching — reporting all three rungs
+ * from that single address.
+ *
+ * ## Why one address rather than the best of each rung
+ *
+ * This function used to score every rung over the whole set and keep the
+ * maximum of each independently. That is what a subsidiary needs to pass: it
+ * files its parent's headquarters alongside its own works, so the country rung
+ * agreed on one address, the locality rung on another, and nothing ever asked
+ * whether they were the same place. Measured on the roster: `American Axle &
+ * Manufacturing (Thailand) Co., Ltd.` passed country, locality *and* street
+ * against a Detroit roster row, because one of its three recorded addresses is
+ * `1 DAUCH DRIVE, DETROIT` — the parent's.
+ *
+ * Finding 12 is untouched by this. A company registered in nineteen places is
+ * in all nineteen, and the roster's city being the twelfth is still agreement.
+ * What changed is that the *whole verdict* now comes from the twelfth, so what
+ * the three rungs describe is one building rather than a company-shaped union
+ * of buildings.
  */
 export function compareAddresses(args: {
   rosterAddress: string | null;
@@ -156,13 +227,17 @@ export function compareAddresses(args: {
       candidateCountry: null,
       candidateCity: null,
       candidatePostcode: null,
+      candidateLine: null,
     });
   }
 
+  // Country first and heaviest: an address in the wrong country is the wrong
+  // building whatever else agrees. `unavailable` outranks `fail` for the same
+  // reason it does everywhere else here.
   const rank = (c: AddressComparison) =>
-    (c.country === 'pass' ? 4 : c.country === 'unavailable' ? 1 : 0) +
-    (c.locality === 'pass' ? 2 : 0) +
-    (c.street === 'pass' ? 1 : 0);
+    (c.country === 'pass' ? 8 : c.country === 'unavailable' ? 2 : 0) +
+    (c.locality === 'pass' ? 4 : c.locality === 'unavailable' ? 1 : 0) +
+    (c.street === 'pass' ? 2 : 0);
 
   let best: AddressComparison | undefined;
   let bestIndex = 0;
@@ -173,6 +248,7 @@ export function compareAddresses(args: {
       candidateCountry: address.country,
       candidateCity: address.city,
       candidatePostcode: address.postcode,
+      candidateLine: address.line ?? null,
     });
     if (!best || rank(comparison) > rank(best)) {
       best = comparison;
@@ -185,21 +261,28 @@ export function compareAddresses(args: {
     evidence: {
       ...best!.evidence,
       addressesConsidered: args.addresses.length,
-      matchedAddressIndex: best!.locality === 'pass' ? bestIndex : null,
+      // The address every rung above read, agreeing or not — so a reader can
+      // ask which building was compared rather than inferring it.
+      matchedAddressIndex: bestIndex,
     },
   };
 }
 
-/** Compares one address. `compareAddresses` is what callers should use. */
+/** Compares ONE address, whole. `compareAddresses` is what callers should use. */
 export function compareAddress(args: {
   rosterAddress: string | null;
   rosterCountry: string | null;
   candidateCountry: string | null;
   candidateCity: string | null;
   candidatePostcode: string | null;
+  candidateLine?: string | null;
 }): AddressComparison {
   const roster = args.rosterAddress ?? '';
   const rosterTokens = tokens(roster);
+
+  const city = args.candidateCity ? normaliseCityName(args.candidateCity) : null;
+  const postcode = args.candidatePostcode ? normalisePostcode(args.candidatePostcode) : null;
+  const line = args.candidateLine ?? null;
 
   // ── Rung 1: country ──────────────────────────────────────────────────────
   const country: LadderVerdict =
@@ -210,34 +293,50 @@ export function compareAddress(args: {
         : 'fail';
 
   // ── Rung 2: locality — the city name, or the postcode as its own signal ──
-  const cityMatched = args.candidateCity ? containsWholeWord(roster, args.candidateCity) : false;
-  const postcodeMatched = args.candidatePostcode
-    ? containsWholeWord(roster, args.candidatePostcode)
-    : false;
-  const locality: LadderVerdict =
-    !args.candidateCity && !args.candidatePostcode
-      ? 'unavailable'
-      : cityMatched || postcodeMatched
-        ? 'pass'
-        : 'fail';
+  const cityMatched = city ? containsWholeWord(roster, city) : false;
+  const postcodeMatched = postcode ? containsWholeWord(roster, postcode) : false;
+  // Nothing on one side to compare, or nothing legible on it: a record whose
+  // city is written in a script this build strips to nothing is not a record
+  // asserting a different city.
+  const nothingComparable =
+    (!city && !postcode) ||
+    rosterTokens.length === 0 ||
+    (tokens(city ?? '').length === 0 && tokens(postcode ?? '').length === 0);
+  const locality: LadderVerdict = nothingComparable
+    ? 'unavailable'
+    : cityMatched || postcodeMatched
+      ? 'pass'
+      : 'fail';
 
   // ── Rung 3: street ───────────────────────────────────────────────────────
-  // Everything in the roster line that is neither the city, the postcode, nor a
-  // generic street word. A shared house number and street name is a strong
-  // signal — and, on its own, a misleading one.
-  const cityTokens = new Set(args.candidateCity ? tokens(args.candidateCity) : []);
-  const postcodeTokens = new Set(args.candidatePostcode ? tokens(args.candidatePostcode) : []);
-  const streetTokens = rosterTokens.filter(
-    (token) => !cityTokens.has(token) && !postcodeTokens.has(token) && !STREET_STOPWORDS.has(token),
+  //
+  // **Real tokens on both sides**, which this rung did not have until the
+  // address line was carried alongside the city and the postcode. It used to
+  // return whatever the locality returned, and say "street-level tokens agree"
+  // when it passed — a sentence about a comparison that never happened.
+  //
+  // Both sides are the same subtraction: everything that is not the anchored
+  // address's own city, its postcode, or a generic street word. What is left is
+  // the house number and the street name, which is the only thing this rung was
+  // ever meant to be about.
+  const cityTokens = new Set(tokens(city ?? ''));
+  const postcodeTokens = new Set(tokens(postcode ?? ''));
+  const streetward = (token: string) =>
+    !cityTokens.has(token) && !postcodeTokens.has(token) && !STREET_STOPWORDS.has(token);
+
+  const rosterStreetTokens = rosterTokens.filter(streetward);
+  const addressStreetTokens = tokens(line ?? '').filter(streetward);
+  const streetTokensMatched = rosterStreetTokens.filter((token) =>
+    addressStreetTokens.includes(token),
   );
-  // Street inherits `unavailable` from the rung below it. Absent evidence is
-  // not contrary evidence: with no structured city or postcode there is nothing
-  // for street agreement to be true OR false against, and reporting `fail`
-  // would let a missing field read as a mismatch.
+
+  // `unavailable` where either side offers no street-level token at all —
+  // absent evidence is not contrary evidence, and a record with no address line
+  // is not a record claiming a different street.
   const street: LadderVerdict =
-    streetTokens.length === 0 || locality === 'unavailable'
+    rosterStreetTokens.length === 0 || addressStreetTokens.length === 0
       ? 'unavailable'
-      : locality === 'pass'
+      : streetTokensMatched.length > 0
         ? 'pass'
         : 'fail';
 
@@ -251,46 +350,30 @@ export function compareAddress(args: {
       candidateCountry: args.candidateCountry,
       candidateCity: args.candidateCity,
       candidatePostcode: args.candidatePostcode,
+      candidateLine: line,
       postcodeMatched,
-      streetTokensMatched: streetTokens,
+      streetTokensMatched,
+      rosterStreetTokens,
       addressesConsidered: 1,
-      matchedAddressIndex: locality === 'pass' ? 0 : null,
+      matchedAddressIndex: 0,
     },
   };
 }
 
-/** The roster is ISO3; Sayari returns ISO3 too, but a name sometimes arrives. */
-const COUNTRY_ALIASES: Record<string, string> = {
-  germany: 'DEU',
-  deutschland: 'DEU',
-  japan: 'JPN',
-  'united states': 'USA',
-  usa: 'USA',
-  us: 'USA',
-  france: 'FRA',
-  spain: 'ESP',
-  canada: 'CAN',
-  china: 'CHN',
-  mexico: 'MEX',
-  india: 'IND',
-  'united kingdom': 'GBR',
-  'korea republic of': 'KOR',
-  'south korea': 'KOR',
-  'republic of korea': 'KOR',
-};
-
 /**
- * ISO3 where the value already is one, or is a known alias; `null` where it
- * cannot be told apart from an arbitrary string.
+ * ISO3 where the value is a current country code or a name the ISO table
+ * places; `null` where it cannot be told apart from an arbitrary string.
  *
- * The single normaliser both `sameCountry()` (below) and the site-country
- * derivation (`src/jobs/enrich-supplier.ts`, finding 107) reuse, so a roster
- * spelling either both agree is ISO3 or neither does.
+ * The single normaliser `sameCountry()` (below), the settled-country derivation
+ * (`src/domain/match/settle-match.ts`) and the LEI witness all reuse, so a
+ * roster spelling either they all agree is ISO3 or none of them does. It used
+ * to carry a seventeen-entry alias table of its own; that table is now
+ * `src/domain/iso3166.ts`, complete, because the LEI witness needs GLEIF's
+ * jurisdiction placed and `name_cover` needs country words recognised, and
+ * three private copies of the same knowledge is how they drift.
  */
 export function normaliseCountryToIso3(value: string): string | null {
-  const trimmed = value.trim();
-  if (/^[A-Za-z]{3}$/.test(trimmed)) return trimmed.toUpperCase();
-  return COUNTRY_ALIASES[normaliseAddress(trimmed)] ?? null;
+  return toAlpha3(value) ?? null;
 }
 
 export function sameCountry(a: string, b: string): boolean {

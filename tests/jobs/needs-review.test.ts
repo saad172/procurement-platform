@@ -95,7 +95,8 @@ describe('resolveSupplier when the agents never converge', () => {
             evaluatorVerdicts: runDiscriminators(ROSTER, facts[1]!),
             objection: 'The two independent reads disagreed.',
             rungsUsed: ['R1', 'R2'],
-            entityIdsSeen: CANDIDATES.map((c) => c.id),
+            // Each id carries the rung whose own result returned it.
+            entityIdsSeen: CANDIDATES.map((c) => ({ entityId: c.id, rung: 'R2' })),
           };
         },
       },

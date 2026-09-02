@@ -9,7 +9,7 @@ import { createUpstream } from '@/upstream';
 import { openRun } from '@/jobs/runs';
 import { prepassCandidateIds, resolveSupplier } from '@/jobs/resolve';
 import { runDiscriminators } from '@/domain/match/discriminators';
-import { toCandidateFacts } from '@/jobs/resolve';
+import { toCandidateFacts, toGleifWitness } from '@/jobs/resolve';
 
 /**
  * The deterministic half of the resolve loop, against the real Sayari graph.
@@ -83,12 +83,7 @@ async function main(): Promise<void> {
     if (facts.lei) {
       try {
         const g = await upstream.gleif.joinLei({ lei: facts.lei });
-        const e = g.data.data?.attributes?.entity;
-        facts.gleif = {
-          legalName: e?.legalName?.name ?? null,
-          city: e?.legalAddress?.city ?? null,
-          country: e?.legalAddress?.country ?? null,
-        };
+        facts.gleif = toGleifWitness(g.data.data?.attributes?.entity);
       } catch {
         /* absence is not evidence */
       }

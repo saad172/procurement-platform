@@ -19,7 +19,17 @@ import type { ToolContext, ToolDefinition } from '@/tools';
  * rather than merely caught (SPEC §10.5, tier 1).
  */
 
-export type CapturedCall = { name: string; input: unknown };
+/**
+ * One tool call as the Job saw it: what was asked, and what came back.
+ *
+ * `output` is the data half, filled in when the handler returns and left
+ * `undefined` when it throws. The resolve Job reads it: a rung tool hands the
+ * model a list of candidates and the Job never sees them otherwise, so an
+ * entity an agent *looked at* and never fetched was invisible — and a Candidate
+ * a rung surfaced that nothing recorded is a Candidate the Needs Review page
+ * cannot offer a person.
+ */
+export type CapturedCall = { name: string; input: unknown; output?: unknown };
 
 /**
  * Wraps one registry tool.
@@ -38,7 +48,10 @@ export function toRunnableTool(
     description: tool.description,
     inputSchema: tool.input as never,
     run: async (input, context) => {
-      onCall?.({ name: tool.name, input });
+      // Recorded before the handler runs, so a call that throws is still a call
+      // the Job knows was made; `output` is filled in below if it returns.
+      const captured: CapturedCall = { name: tool.name, input };
+      onCall?.(captured);
 
       const startedAt = Date.now();
 
@@ -71,6 +84,7 @@ export function toRunnableTool(
         throw error;
       }
       await recordOutcome(ctx, context?.toolUse?.id, result, Date.now() - startedAt);
+      if (result.ok) captured.output = result.data;
 
       // A handler returning objections renders as a VISIBLE BLOCK listing them
       // verbatim, and the model is told — so it adjusts rather than retrying

@@ -8,8 +8,16 @@ import {
   type CandidateFacts,
   type RosterRow,
 } from '@/domain/match/discriminators';
+import { sameCountry } from '@/domain/match/address-ladder';
 import { seedFor, shuffleCandidates } from '@/domain/match/shuffle';
-import { settleMatch, type CandidateRecord } from '@/domain/match/settle-match';
+import { ownersOf, parseRelationships } from '@/domain/parse-relationships';
+import { compareAddresses } from '@/domain/match/address-ladder';
+import {
+  nextAttemptNumber,
+  settleMatch,
+  type CandidateRecord,
+  type SettledEvidence,
+} from '@/domain/match/settle-match';
 import type { Upstream } from '@/upstream';
 import {
   attributeTexts,
@@ -50,16 +58,35 @@ export function toCandidateFacts(
 ): CandidateFacts {
   // EVERY address, not just the first: a large company carries many, and the
   // roster's city is often not the one listed first.
+  //
+  // `line` rides along because the street rung reads it. It is Sayari's
+  // `properties.value`, the whole address as one string, and it is the only
+  // field that says which *building* — `city` and `postcode` say which town.
   const addressBlocks = entity.attributes?.address?.data ?? [];
   const addresses = addressBlocks
     .map((a) => ({
       city: a.properties?.city ?? null,
       postcode: a.properties?.postcode ?? null,
       country: a.properties?.country ?? null,
+      line: typeof a.properties?.value === 'string' ? a.properties.value : null,
     }))
-    .filter((a) => a.city != null || a.postcode != null || a.country != null);
+    .filter((a) => a.city != null || a.postcode != null || a.country != null || a.line != null);
   const properties = addressBlocks[0]?.properties;
   const aliasBlock = entity.attributes?.name?.data ?? [];
+
+  /**
+   * The current one-hop **upward** owners named in this record's own payload.
+   *
+   * `name_cover` reads them to tell a family member from the company the roster
+   * meant. Parsed here rather than in the Discriminators so that module stays
+   * pure over flat facts, and through `parseRelationships`/`ownersOf` rather
+   * than a second reader, because direction is exactly what a second reader
+   * gets wrong (`src/domain/relationships.ts`).
+   */
+  const owners = ownersOf(parseRelationships(entity, entity.id).edges).map((edge) => ({
+    entityId: edge.targetId,
+    label: edge.targetLabel,
+  }));
 
   const latestStatus =
     entity.latest_status && typeof entity.latest_status === 'object'
@@ -75,7 +102,7 @@ export function toCandidateFacts(
     addresses:
       addresses.length > 0
         ? addresses
-        : [{ city: null, postcode: null, country: entity.countries?.[0] ?? null }],
+        : [{ city: null, postcode: null, country: entity.countries?.[0] ?? null, line: null }],
     aliases: attributeTexts(aliasBlock),
     businessPurposes: attributeTexts(entity.attributes?.business_purpose?.data),
     companyType: entity.company_type ?? null,
@@ -83,6 +110,39 @@ export function toCandidateFacts(
     latestStatus,
     lei: typeof entity.lei === 'string' ? entity.lei : findLei(entity),
     gleif,
+    owners,
+    // An owner absent from a truncated window is not an absent owner, and
+    // `name_cover` says which of the two it is looking at.
+    relationshipsTruncated: relationshipsTruncated(entity),
+  };
+}
+
+/**
+ * Projects the entity block of a GLEIF record into the witness the Discriminators
+ * read.
+ *
+ * `jurisdiction` and `headquartersAddress.city` were both in the projection and
+ * neither was read until the LEI witness needed them: the jurisdiction is the
+ * one field a subsidiary cannot borrow from its parent, and the headquarters
+ * city is where a Delaware corporation keeps the city it actually operates in.
+ */
+export function toGleifWitness(
+  entity:
+    | {
+        legalName?: { name?: string | null } | null;
+        jurisdiction?: string | null;
+        legalAddress?: { city?: string | null; country?: string | null } | null;
+        headquartersAddress?: { city?: string | null } | null;
+      }
+    | null
+    | undefined,
+): CandidateFacts['gleif'] {
+  return {
+    legalName: entity?.legalName?.name ?? null,
+    jurisdiction: entity?.jurisdiction ?? null,
+    legalCity: entity?.legalAddress?.city ?? null,
+    legalCountry: entity?.legalAddress?.country ?? null,
+    hqCity: entity?.headquartersAddress?.city ?? null,
   };
 }
 
@@ -122,13 +182,19 @@ export type ResolveDeps = {
     /** Which rungs the Round actually climbed — measured, never assumed. */
     rungsUsed: string[];
     /**
-     * Every entity id the Round looked at, including its picks.
+     * Every entity id the Round looked at, **with the rung that surfaced it**,
+     * including its picks.
      *
      * The rung tools hand candidates straight to the model, so without this the
      * Job never learns they exist — and a Job that agrees on a company it has
      * not stored cannot settle, because `match.entity_id` is a foreign key.
+     *
+     * The rung travels with the id rather than being taken from the Round,
+     * because "what did it take to find this Candidate" is a question about the
+     * Candidate. Stamping the highest rung the Round reached onto everything it
+     * saw answers it wrongly for every id the earlier rungs returned.
      */
-    entityIdsSeen: string[];
+    entityIdsSeen: { entityId: string; rung: string }[];
   }>;
 };
 
@@ -183,12 +249,7 @@ async function gatherPrepassCandidates(
       // The second witness, fetched only where there is an LEI to join on.
       try {
         const gleif = await upstream.gleif.joinLei({ lei: facts.lei });
-        const entity = gleif.data.data?.attributes?.entity;
-        facts.gleif = {
-          legalName: entity?.legalName?.name ?? null,
-          city: entity?.legalAddress?.city ?? null,
-          country: entity?.legalAddress?.country ?? null,
-        };
+        facts.gleif = toGleifWitness(gleif.data.data?.attributes?.entity);
       } catch {
         // A GLEIF miss leaves `gleif` undefined, which reads as `unavailable`
         // rather than as a failure — absence is not evidence.
@@ -231,6 +292,7 @@ async function runAutoAcceptGate(
   }));
 
   if (gate.accepted) {
+    const settled = candidates.find((c) => c.entityId === gate.entityId)!;
     await settleMatch(db, {
       supplierId: args.supplierId,
       status: 'accepted',
@@ -239,6 +301,7 @@ async function runAutoAcceptGate(
       jobId: args.jobId,
       rungsUsed: ['R1'],
       note: gate.reason,
+      settledEvidence: settledEvidenceFor(args.roster, settled),
       candidates: ruleCandidateRecords,
     });
     return {
@@ -314,7 +377,7 @@ async function runRoundLadder(
   args: { supplierId: string; roster: RosterRow; jobId?: string | undefined },
   candidates: CandidateFacts[],
 ): Promise<{ outcome: ResolveOutcome } | { outcome: null; state: NonConvergenceState }> {
-  const { db, upstream } = deps;
+  const { db } = deps;
   const seen = [...candidates];
   let rungsUsed = ['R1'];
   let objection: string | undefined;
@@ -333,35 +396,20 @@ async function runRoundLadder(
   const foundByRung = new Map<string, string>(candidates.map((c) => [c.entityId, 'R1']));
 
   /**
-   * Folds a Round's discoveries into what the Job knows.
+   * The attempt this Job is about to write.
    *
-   * Fetching here rather than inside the Round keeps every upstream call on the
-   * Job's own `usage_event` trail, and it is what makes the picked entity exist
-   * locally before `settleMatch` tries to reference it.
-   *
-   * A fetch that fails is skipped rather than fatal: an id the agents saw but
-   * we cannot re-fetch is a candidate we cannot describe, not a reason to throw
-   * away a Round that otherwise succeeded. It simply never becomes a pick,
-   * because a pick with no local row cannot be settled.
+   * It is read once, before the ladder starts, because the shuffle seed needs
+   * it and the shuffle has to be the same on every Round of one attempt.
+   * `settleMatch` computes the same number the same way inside its transaction.
    */
-  const absorb = async (entityIds: readonly string[], rung: string): Promise<void> => {
-    for (const entityId of entityIds) {
-      if (seen.some((candidate) => candidate.entityId === entityId)) continue;
-      try {
-        const fetched = await upstream.sayari.getEntity({ id: entityId });
-        await upsertEntity(db, fetched.data, fetched.upstreamResponseId);
-        seen.push(toCandidateFacts(fetched.data));
-        foundByRung.set(entityId, rung);
-      } catch (error) {
-        console.error(`[resolve] could not absorb candidate ${entityId}:`, error);
-      }
-    }
-  };
+  const attemptN = await nextAttemptNumber(db, args.supplierId);
 
   for (let roundN = 1; roundN <= MAX_ROUNDS; roundN += 1) {
-    // The seed is derived from the attempt and the Round, so a replay
-    // reconstructs the same prompt rather than a differently-ordered one.
-    const seed = seedFor(`${args.supplierId}`, roundN);
+    // Seeded on the Supplier, the attempt and the Round (SPEC §19.1), so a
+    // replay reconstructs the same prompt and a RE-RUN does not: an attempt
+    // that showed the blind evaluator the identical ordering it had already
+    // answered would be re-reading its own answer.
+    const seed = seedFor(args.supplierId, attemptN, roundN);
     const round = await runRound({
       roster: args.roster,
       candidates: seen,
@@ -374,45 +422,196 @@ async function runRoundLadder(
     // agreement check below is comparing ids the Job can actually store.
     lastRound = round;
 
-    // The highest rung this Round climbed is where anything new came from.
-    await absorb(round.entityIdsSeen, round.rungsUsed.at(-1) ?? 'R1');
+    // Each id carries the rung that surfaced it, so a Candidate an R2 search
+    // returned is not recorded as having cost an R3 one.
+    await absorb(deps, round.entityIdsSeen, seen, foundByRung);
     rungsUsed = [...new Set([...rungsUsed, ...round.rungsUsed])];
 
     // AGREEMENT IS OUR CODE COMPARING TWO ENTITY IDS. Neither agent is asked
     // whether it agrees, and neither is told what the other said.
     if (round.resolverPick && round.resolverPick === round.evaluatorPick) {
       const picked = seen.find((c) => c.entityId === round.resolverPick);
-      await settleMatch(db, {
-        supplierId: args.supplierId,
-        status: 'accepted',
-        entityId: round.resolverPick,
-        settledBy: 'agents',
-        jobId: args.jobId,
-        rungsUsed,
-        note: `Both agents independently named ${picked?.label ?? round.resolverPick} at round ${roundN}.`,
-        candidates: seen.map((c) => ({
-          entityId: c.entityId,
-          foundByRung: foundByRung.get(c.entityId) ?? 'R1',
-          verdicts: [
-            { reportedBy: 'resolver', results: round.resolverVerdicts },
-            { reportedBy: 'evaluator', results: round.evaluatorVerdicts },
-          ],
-        })),
-      });
+      if (!picked) {
+        objection = unheldPickObjection(round.resolverPick, roundN);
+        continue;
+      }
+
       return {
-        outcome: {
-          status: 'accepted',
-          entityId: round.resolverPick,
-          settledBy: 'agents',
-          rounds: roundN,
-          reason: `Both agents independently named the same company at round ${roundN}.`,
-        },
+        outcome: await settleAgreement(db, args, {
+          picked,
+          seen,
+          foundByRung,
+          round,
+          roundN,
+          rungsUsed,
+        }),
       };
     }
     objection = round.objection;
   }
 
   return { outcome: null, state: { seen, rungsUsed, lastRound, foundByRung } };
+}
+
+/**
+ * Folds a Round's discoveries into what the Job knows.
+ *
+ * Fetching in the Job rather than inside the Round keeps every upstream call on
+ * the Job's own `usage_event` trail, and it is what makes the picked entity
+ * exist locally before `settleMatch` tries to reference it.
+ *
+ * A fetch that fails is skipped rather than fatal: an id the agents saw but we
+ * cannot re-fetch is a candidate we cannot describe, not a reason to throw away
+ * a Round that otherwise succeeded. It simply never becomes a pick, because a
+ * pick with no local row cannot be settled.
+ */
+async function absorb(
+  deps: Pick<ResolveDeps, 'db' | 'upstream'>,
+  found: readonly { entityId: string; rung: string }[],
+  seen: CandidateFacts[],
+  foundByRung: Map<string, string>,
+): Promise<void> {
+  for (const { entityId, rung } of found) {
+    if (seen.some((candidate) => candidate.entityId === entityId)) continue;
+    try {
+      const fetched = await deps.upstream.sayari.getEntity({ id: entityId });
+      await upsertEntity(deps.db, fetched.data, fetched.upstreamResponseId);
+      seen.push(toCandidateFacts(fetched.data));
+      foundByRung.set(entityId, rung);
+    } catch (error) {
+      console.error(`[resolve] could not absorb candidate ${entityId}:`, error);
+    }
+  }
+}
+
+/**
+ * **An agreed id has to be a Candidate this Job holds.**
+ *
+ * Nothing checked. The two agents are given a candidate list and a set of rung
+ * tools, and an id they both name can be one the Job never saw, one whose fetch
+ * failed in `absorb`, or — since a model writes the field — one that is not an
+ * entity at all. Settling on it would write a `match.entity_id` with no local
+ * row, which the foreign key refuses; before the key refuses it, it is a Match
+ * pointing at a company the app cannot describe.
+ *
+ * Treated as non-convergence rather than as an error, because that is what it
+ * is: the Round produced no usable answer, and the ladder has more rungs. The
+ * objection names the id so the next Round can say where it came from, and
+ * proposes nothing.
+ */
+function unheldPickObjection(entityId: string, roundN: number): string {
+  return [
+    `Both independent reads named ${entityId} at round ${roundN}, and that is not one of the candidates this job holds.`,
+    'It was never returned by a rung here, or its record could not be fetched. Name a candidate from the list you were given, or use a rung tool and name something it returns.',
+  ].join('\n');
+}
+
+/** Settles a Round the two agents agreed on. */
+async function settleAgreement(
+  db: Database,
+  args: { supplierId: string; roster: RosterRow; jobId?: string | undefined },
+  round: {
+    picked: CandidateFacts;
+    seen: readonly CandidateFacts[];
+    foundByRung: Map<string, string>;
+    round: Awaited<ReturnType<NonNullable<ResolveDeps['runRound']>>>;
+    roundN: number;
+    rungsUsed: string[];
+  },
+): Promise<ResolveOutcome> {
+  await settleMatch(db, {
+    supplierId: args.supplierId,
+    status: 'accepted',
+    entityId: round.picked.entityId,
+    settledBy: 'agents',
+    jobId: args.jobId,
+    rungsUsed: round.rungsUsed,
+    note: `Both agents independently named ${round.picked.label} at round ${round.roundN}.`,
+    settledEvidence: settledEvidenceFor(args.roster, round.picked),
+    candidates: candidateRecords(args.roster, round.seen, round.foundByRung, round.round),
+  });
+  return {
+    status: 'accepted',
+    entityId: round.picked.entityId,
+    settledBy: 'agents',
+    rounds: round.roundN,
+    reason: `Both agents independently named the same company at round ${round.roundN}.`,
+  };
+}
+
+/**
+ * What the settled Candidate says about **where it is**, for the country the
+ * Match will be scored on (SPEC §9.4, `deriveSettledCountry`).
+ *
+ * The anchored address is re-derived by running the ladder again rather than
+ * threaded down from the Discriminator run, because the two must be the same
+ * address and the cheapest way to guarantee that is to ask the same function
+ * the same question. It is pure and it costs nothing.
+ */
+function settledEvidenceFor(roster: RosterRow, candidate: CandidateFacts): SettledEvidence {
+  const anchored = compareAddresses({
+    rosterAddress: roster.address,
+    rosterCountry: roster.country,
+    addresses: candidate.addresses,
+  });
+  return {
+    lei: candidate.lei,
+    gleifLegalCountry: candidate.gleif?.legalCountry ?? null,
+    anchoredAddressCountry: anchored.evidence.candidateCountry,
+  };
+}
+
+/**
+ * One `CandidateRecord` per Candidate the Job holds, carrying **that
+ * Candidate's own verdicts**.
+ *
+ * ## Both agents' verdicts, per Candidate (SPEC §19.2)
+ *
+ * The Needs Review view exists so a person can choose between Candidates, and
+ * choosing means seeing *where the two reads differed*, Discriminator by
+ * Discriminator. The last Round's verdicts are attributed to the agent that
+ * produced them; every other Candidate carries our own Discriminator run,
+ * reported as `rules`, because neither agent named it.
+ *
+ * ## Why the agreement path shares this with the non-convergence one
+ *
+ * It did not, and the difference was a bug rather than a design. The
+ * non-convergence path attributed each Round's verdicts to the Candidate the
+ * agent had actually named; the agreement path wrote **the picked entity's
+ * eight verdicts against every candidate row it stored**. So a Needs Review
+ * page for an accepted Match showed four rejected Candidates each carrying the
+ * winner's own reasoning — every one of them apparently passing all eight, and
+ * the record of why they lost gone. One function, so the two cannot drift
+ * again.
+ */
+function candidateRecords(
+  roster: RosterRow,
+  seen: readonly CandidateFacts[],
+  foundByRung: Map<string, string>,
+  round: Awaited<ReturnType<NonNullable<ResolveDeps['runRound']>>> | undefined,
+): CandidateRecord[] {
+  return seen.map((candidate) => {
+    const verdicts: { reportedBy: string; results: ReturnType<typeof runDiscriminators> }[] = [];
+    if (round?.resolverPick === candidate.entityId) {
+      verdicts.push({ reportedBy: 'resolver', results: round.resolverVerdicts });
+    }
+    if (round?.evaluatorPick === candidate.entityId) {
+      verdicts.push({ reportedBy: 'evaluator', results: round.evaluatorVerdicts });
+    }
+    if (verdicts.length === 0) {
+      verdicts.push({ reportedBy: 'rules', results: runDiscriminators(roster, candidate) });
+    }
+    const rung = foundByRung.get(candidate.entityId) ?? 'R1';
+    return {
+      entityId: candidate.entityId,
+      foundByRung: rung,
+      queryProvenance:
+        rung === 'R1'
+          ? 'batch resolution pre-pass over the roster row'
+          : `found by an agent during a Match round, at rung ${rung}`,
+      verdicts,
+    };
+  });
 }
 
 /** ── Non-convergence: parked, and the two reasons are different ───────────── */
@@ -442,40 +641,7 @@ async function settleNonConvergence(
      * showing. Recording only the pre-pass would hide the work that was done
      * and present a shorter list than the Round actually considered.
      */
-    /**
-     * **Both agents' verdicts, per Candidate** (SPEC §19.2).
-     *
-     * The Needs Review view exists so a person can choose between Candidates,
-     * and choosing means seeing *where the two reads differed*, Discriminator
-     * by Discriminator. Storing only the resolver's would hand over an answer
-     * with half its argument missing — and this path stored exactly that until
-     * the `needs_review` test asked for the evaluator's and found none.
-     *
-     * The last Round's verdicts are attributed to the agent that produced
-     * them; every other Candidate carries our own Discriminator run, reported
-     * as `rules`, because neither agent named it.
-     */
-    candidates: seen.map((c) => {
-      const verdicts: { reportedBy: string; results: ReturnType<typeof runDiscriminators> }[] = [];
-      if (lastRound?.resolverPick === c.entityId) {
-        verdicts.push({ reportedBy: 'resolver', results: lastRound.resolverVerdicts });
-      }
-      if (lastRound?.evaluatorPick === c.entityId) {
-        verdicts.push({ reportedBy: 'evaluator', results: lastRound.evaluatorVerdicts });
-      }
-      if (verdicts.length === 0) {
-        verdicts.push({ reportedBy: 'rules', results: runDiscriminators(args.roster, c) });
-      }
-      return {
-        entityId: c.entityId,
-        foundByRung: foundByRung.get(c.entityId) ?? 'R1',
-        queryProvenance:
-          foundByRung.get(c.entityId) === 'R1'
-            ? 'batch resolution pre-pass over the roster row'
-            : 'found by an agent during a Match round',
-        verdicts,
-      };
-    }),
+    candidates: candidateRecords(args.roster, seen, foundByRung, lastRound),
   });
   return {
     status,
@@ -495,9 +661,12 @@ async function settleNonConvergence(
  */
 function sawCandidateInCountry(roster: RosterRow, candidates: readonly CandidateFacts[]): boolean {
   if (!roster.country) return candidates.length > 0;
-  return candidates.some(
-    (c) => c.country && c.country.toUpperCase() === roster.country!.toUpperCase(),
-  );
+  // `sameCountry`, not raw uppercase equality: Sayari returns `Germany` where
+  // the roster says `DEU` often enough that comparing the strings decided the
+  // difference between "choose among these" and "there is nothing here" on a
+  // spelling. It is the same normaliser the country Discriminator uses, so the
+  // two cannot disagree about what country a Candidate is in.
+  return candidates.some((c) => c.country && sameCountry(roster.country!, c.country));
 }
 
 /**

@@ -19,6 +19,22 @@ import {
  * LEI can never be auto-accepted**. That is the safe direction of failure. On a
  * roster of trade names few rows clear this bar, and **that count is a result
  * to report**, not a defect to fix.
+ *
+ * ## And no rival free of a fail
+ *
+ * *Exactly one candidate passed all eight* is a weaker statement than it looks,
+ * because `unavailable` is not a `fail`. A rival whose eight verdicts are all
+ * pass or `can't tell` has not been ruled out by anything — it has been ruled
+ * out by a missing status field, or an unread script, or an LEI it does not
+ * carry. Measured on the roster: `SAMVARDHANA MOTHERSON ADSYS TECH LIMITED`
+ * was the only all-eight pass for the Samvardhana Motherson row, and
+ * `Samvardhana Motherson International Ltd.` — at the roster's own Noida
+ * address — lost it on one `unavailable` liveness verdict. The gate settled
+ * silently on the smaller company.
+ *
+ * So a clean winner is accepted only when every other candidate carries at
+ * least one **`fail`**: a reason it is not the company, rather than an absence
+ * of reasons that it is.
  */
 
 export type AutoAcceptOutcome =
@@ -73,6 +89,28 @@ export function evaluateAutoAccept(assessments: readonly CandidateAssessment[]):
   }
 
   const only = clean[0]!;
+
+  /**
+   * Every other candidate has to have been **ruled out**, not merely
+   * out-scored. A rival with no `fail` verdict is one the code could not tell
+   * apart from the winner, and settling between them is exactly the judgement
+   * the agents exist to make.
+   */
+  const undismissed = assessments.filter(
+    (a) =>
+      a !== only &&
+      a.verdicts.length === DISCRIMINATOR_NAMES.length &&
+      a.verdicts.every((v) => v.verdict !== 'fail'),
+  );
+  if (undismissed.length > 0) {
+    const names = undismissed.map((a) => a.candidate.label).join(', ');
+    const them = undismissed.length === 1 ? 'it' : 'them';
+    return {
+      accepted: false,
+      reason: `${only.candidate.label} passed all eight discriminators, but ${names} failed none of them either — every verdict against ${them} is a pass or a "can't tell", so nothing here rules ${them} out. The agents decide.`,
+    };
+  }
+
   // The second witness. `lei_witness` passing already implies GLEIF agreed, but
   // the gate states the requirement independently rather than inferring it —
   // the whole point is that two mechanisms have to agree.
