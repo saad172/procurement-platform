@@ -33,6 +33,11 @@ import { RenderWidget } from '@/components/widgets';
 /** One tool call's frozen result, as the dock draws it — the `Widget` itself is `@/tools/define`'s, the one type `widget()` produces. */
 type WidgetCall = { toolName: string; widget: Widget };
 type Proposal = {
+  /**
+   * The `thread_message` row this proposal was written to. The gate posts it
+   * back, because the person's answer has to name the row it answers.
+   */
+  messageId: string;
   toolName: string;
   input: unknown;
   estimate: {
@@ -325,9 +330,12 @@ export function ChatDock({ programId }: { programId: string }) {
  * Rendered **from `confirm(input)` itself** and stored on the message, so what
  * the person consented to is what ran. **No editing here** — editing would make
  * the gate an input form and split the proposal from the act.
+ *
+ * Both buttons post `{ messageId, accept }` to `/api/chat/confirm`, which is
+ * where the tool actually runs; the sending lives in `useConfirm` below.
  */
 function ConfirmGate({ proposal }: { proposal: Proposal }) {
-  const [state, setState] = useState<'proposed' | 'accepted' | 'declined'>('proposed');
+  const { state, failure, answer } = useConfirm(proposal.messageId);
 
   return (
     <div className="card" style={{ marginTop: '0.5rem', borderColor: '#f0dcb4' }}>
@@ -358,32 +366,110 @@ function ConfirmGate({ proposal }: { proposal: Proposal }) {
         </ul>
       ) : null}
 
-      {state === 'proposed' ? (
-        <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem' }}>
-          <button
-            type="button"
-            className="badge good"
-            style={{ cursor: 'pointer' }}
-            onClick={() => setState('accepted')}
-          >
-            Run it
-          </button>
-          <button
-            type="button"
-            className="badge mute"
-            style={{ cursor: 'pointer' }}
-            onClick={() => setState('declined')}
-          >
-            No
-          </button>
-        </div>
-      ) : (
+      {state === 'accepted' || state === 'declined' ? (
         <p className="note" style={{ margin: '0.4rem 0 0' }}>
           {state === 'accepted'
             ? 'Enqueued. The application will say when it finishes — the model does not announce it, because it would be writing about results it has not read.'
             : 'Declined. The model has been told, so it can offer something cheaper rather than proposing this again.'}
         </p>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem' }}>
+            <button
+              type="button"
+              className="badge good"
+              style={{ cursor: 'pointer' }}
+              disabled={state === 'sending'}
+              onClick={() => void answer(true)}
+            >
+              Run it
+            </button>
+            <button
+              type="button"
+              className="badge mute"
+              style={{ cursor: 'pointer' }}
+              disabled={state === 'sending'}
+              onClick={() => void answer(false)}
+            >
+              No
+            </button>
+          </div>
+          {/*
+            A failed answer says what happened and leaves the buttons, because
+            the proposal is still `proposed` in the database — the person's
+            press did not take, and a gate that hid its buttons after one would
+            read as though it had.
+          */}
+          {state === 'failed' ? (
+            <p className="note" style={{ margin: '0.4rem 0 0' }}>
+              That did not go through: {failure}
+            </p>
+          ) : null}
+        </>
       )}
     </div>
   );
+}
+
+/** What the confirm route answers with: `{ declined }`, `{ ok, data }`, or `{ error }`. */
+type ConfirmAnswer = { declined?: boolean; ok?: boolean; data?: unknown; error?: string };
+
+/**
+ * The person's answer, posted to the route that owns it.
+ *
+ * A hook rather than a handler inside `ConfirmGate`, for the reason
+ * `useChatThread` is one: the gate above is what a person *reads* before
+ * deciding, and where an answer is *sent* has one place to look.
+ *
+ * `sending` disables both buttons, so one proposal cannot be answered twice;
+ * `failed` keeps them, so an answer that did not reach the route can be given
+ * again. Neither state is written anywhere — the row's `confirm_state` is the
+ * record, and this is only what the screen says while the post is in the air.
+ */
+function useConfirm(messageId: string) {
+  const [state, setState] = useState<'proposed' | 'sending' | 'accepted' | 'declined' | 'failed'>(
+    'proposed',
+  );
+  const [failure, setFailure] = useState('');
+
+  async function answer(accept: boolean) {
+    setState('sending');
+    try {
+      const response = await fetch('/api/chat/confirm', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        // The id names the row this answers. The route reads the frozen
+        // estimate off that row, so what runs is what the person was shown.
+        body: JSON.stringify({ messageId, accept }),
+      });
+      const body = (await response.json().catch(() => ({}))) as ConfirmAnswer;
+
+      const reason = failureOf(response, body);
+      if (reason != null) {
+        setFailure(reason);
+        setState('failed');
+        return;
+      }
+      setState(accept ? 'accepted' : 'declined');
+    } catch (error) {
+      // Named, never dressed up as an assistant apology — the same rule the
+      // send path follows.
+      setFailure(error instanceof Error ? error.message : String(error));
+      setState('failed');
+    }
+  }
+
+  return { state, failure, answer };
+}
+
+/** The reason an answer did not take, or `null` when it did. */
+function failureOf(response: Response, answer: ConfirmAnswer): string | null {
+  if (!response.ok) return answer.error ?? `the confirm route answered ${response.status}`;
+
+  // A 200 carrying `ok: false` is the tool's own objections. They are shown
+  // verbatim rather than reported as a run, because nothing ran.
+  if (answer.ok === false) {
+    return Array.isArray(answer.data) ? answer.data.join(' · ') : 'the tool did not run';
+  }
+  return null;
 }
