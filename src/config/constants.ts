@@ -145,6 +145,22 @@ export const MODEL_PRICE_USD_PER_MTOK: Record<string, { input: number; output: n
 };
 
 /**
+ * What a cached input token costs, as a multiple of the input price.
+ *
+ * Beside the price table because they are the same kind of number and carry the
+ * same caveat: **a committed price constant, not a bill.** A cache read is
+ * billed at a tenth of an input token and a cache write at a quarter more than
+ * one, so pricing all three at the plain input rate — which every copy of this
+ * arithmetic did — over-charges a Job that caches well and under-charges one
+ * that writes a large prefix. `src/lib/price.ts` is the only reader.
+ *
+ * Output tokens have no multiplier: they are priced by the table's own `output`
+ * figure, and a cached output token does not exist.
+ */
+export const CACHE_READ_PRICE_MULTIPLIER = 0.1;
+export const CACHE_WRITE_PRICE_MULTIPLIER = 1.25;
+
+/**
  * The one sentence defining which company is the right one, quoted verbatim
  * into the resolver prompt, the evaluator prompt and the Needs Review UI so
  * that all three are arguing about the same thing (SPEC §6.7).

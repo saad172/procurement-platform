@@ -2,7 +2,6 @@ import type { BetaMessage } from '@anthropic-ai/sdk/resources/beta';
 import type { BetaMessageStream } from '@anthropic-ai/sdk/lib/BetaMessageStream';
 import { eq, sql } from 'drizzle-orm';
 import * as t from '@/db/schema';
-import { MODEL_PRICE_USD_PER_MTOK } from '@/config/constants';
 import { getAnthropicClient } from './client';
 import { describeModelError } from './describe-model-error';
 import { takeWireHash } from './wire';
@@ -32,31 +31,19 @@ import type { ModelContext, RunLoopOutcome, RunLoopParams } from './types';
  * already breached its ceiling does not spend one more tool call proving it.
  */
 
-/** Sums the four token counts a turn reports, for the cap and for the price. */
+/**
+ * The tokens **the cap counts**, which is not the tokens the bill counts.
+ *
+ * `cache_read_input_tokens` is deliberately excluded. A per-Job ceiling is a
+ * correctness backstop on how much work a Job does, and a cached read is work
+ * the Job is *not* redoing — counting it would make the ceiling fire earlier on
+ * the Jobs that cache best, which is the opposite of what it is for. Dollars
+ * are a separate question with a separate function (`src/lib/price.ts`), and
+ * that one counts every token, cached or not.
+ */
 function tokensOf(message: BetaMessage): number {
   const u = message.usage;
-  return (
-    (u.input_tokens ?? 0) +
-    (u.output_tokens ?? 0) +
-    (u.cache_creation_input_tokens ?? 0) +
-    (u.cache_read_input_tokens ?? 0)
-  );
-}
-
-/**
- * Dollars from a **committed price constant, not a bill** — which the UI says
- * out loud wherever it renders one.
- *
- * Keyed by model id though we only ever ask for one, because server-side
- * refusal fallback can serve a turn from a model we did not choose.
- */
-export function priceOf(message: BetaMessage): number {
-  const price =
-    MODEL_PRICE_USD_PER_MTOK[message.model] ?? MODEL_PRICE_USD_PER_MTOK['claude-opus-5']!;
-  const u = message.usage;
-  const input =
-    (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
-  return (input / 1_000_000) * price.input + ((u.output_tokens ?? 0) / 1_000_000) * price.output;
+  return (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
 }
 
 /** Counts `tool_use` blocks, which is what the ceiling actually bounds. */

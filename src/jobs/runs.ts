@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { JOB_CAPS, RUN_BUDGET_USD_PER_SUPPLIER, type JobKind } from '@/config/constants';
-import { MODEL_PRICE_USD_PER_MTOK } from '@/config/constants';
+import { priceOf } from '@/lib/price';
 
 /**
  * Runs and Jobs (SPEC §5, §18).
@@ -151,26 +151,28 @@ export async function dequeueJob(db: Database): Promise<typeof t.job.$inferSelec
  * What a Run has actually spent, from `usage_event` — the one home of usage.
  *
  * Computed from a **committed price constant, not a bill**, and the UI says so
- * wherever it renders a dollar figure.
+ * wherever it renders a dollar figure. The arithmetic itself lives in
+ * `src/lib/price.ts`: it was written out here, in `db/queries/runs.ts` and in
+ * the model chokepoint, and all three priced a cached read at the plain input
+ * rate.
+ *
+ * An upstream row prices at zero, because Sayari publishes no per-call price —
+ * so this bounds Anthropic dollars and nothing else, which is why the per-Job
+ * upstream call ceilings had to start being enforced.
  */
 export async function runSpendUsd(db: Database, runId: string): Promise<number> {
   const rows = await db
     .select({
       model: t.usageEvent.model,
-      input: t.usageEvent.inputTokens,
-      output: t.usageEvent.outputTokens,
-      cacheCreate: t.usageEvent.cacheCreationInputTokens,
-      cacheRead: t.usageEvent.cacheReadInputTokens,
+      inputTokens: t.usageEvent.inputTokens,
+      outputTokens: t.usageEvent.outputTokens,
+      cacheCreationInputTokens: t.usageEvent.cacheCreationInputTokens,
+      cacheReadInputTokens: t.usageEvent.cacheReadInputTokens,
     })
     .from(t.usageEvent)
     .where(eq(t.usageEvent.runId, runId));
 
-  return rows.reduce((sum, row) => {
-    if (!row.model) return sum; // an upstream row: Sayari publishes no per-call price
-    const price = MODEL_PRICE_USD_PER_MTOK[row.model] ?? MODEL_PRICE_USD_PER_MTOK['claude-opus-5']!;
-    const input = (row.input ?? 0) + (row.cacheCreate ?? 0) + (row.cacheRead ?? 0);
-    return sum + (input / 1e6) * price.input + ((row.output ?? 0) / 1e6) * price.output;
-  }, 0);
+  return rows.reduce((sum, row) => sum + priceOf(row), 0);
 }
 
 /**

@@ -14,7 +14,7 @@
  *    exercises; the model's fallback is server-side, so there is no cold path
  *    of ours to keep warm.
  */
-export { runLoop, priceOf } from './run-loop';
+export { runLoop } from './run-loop';
 export { getAnthropicClient, resetAnthropicClients } from './client';
 export { describeModelError } from './describe-model-error';
 export {
