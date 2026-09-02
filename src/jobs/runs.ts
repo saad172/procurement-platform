@@ -193,6 +193,69 @@ export async function checkRunBudget(
 }
 
 /**
+ * What this Job has already spent, read back from the rows that recorded it.
+ *
+ * **A Job calls `runLoop()` up to twelve times** — a proposer attempt and an
+ * evaluator per Round, plus the free retries — and each call used to start its
+ * counters at zero. So `JOB_CAPS` (SPEC §17.6, §18.3) bounded a *call* while
+ * every comment and both spec sections called it a Job. A recommend Job spent
+ * 904,207 tokens against its 900,000 ceiling and nothing fired, because no
+ * single Round crossed it alone.
+ *
+ * Seeding from the database rather than threading a counter through the callers
+ * is what makes the ceiling survive the thing it exists for: a Job re-queued
+ * after a crash resumes with its spend still counted against it.
+ *
+ * The token sum is `input + cache_creation + output` — **`cache_read` is
+ * excluded**, because the cap measures the Job's own work and not its cache hit
+ * rate. `src/lib/price.ts` counts every token, because a bill does.
+ */
+export async function jobCountersSoFar(
+  db: Database,
+  jobId: string,
+): Promise<{ toolCalls: number; tokens: number }> {
+  const [tokenRow] = await db
+    .select({
+      tokens: sql<string>`coalesce(sum(
+        coalesce(${t.usageEvent.inputTokens}, 0)
+        + coalesce(${t.usageEvent.cacheCreationInputTokens}, 0)
+        + coalesce(${t.usageEvent.outputTokens}, 0)
+      ), 0)`,
+    })
+    .from(t.usageEvent)
+    .where(eq(t.usageEvent.jobId, jobId));
+
+  const [callRow] = await db
+    .select({ toolCalls: sql<string>`count(*)` })
+    .from(t.traceToolCall)
+    .innerJoin(t.traceTurn, eq(t.traceToolCall.traceTurnId, t.traceTurn.id))
+    .where(eq(t.traceTurn.jobId, jobId));
+
+  return { toolCalls: Number(callRow?.toolCalls ?? 0), tokens: Number(tokenRow?.tokens ?? 0) };
+}
+
+/**
+ * The running totals, written after every turn.
+ *
+ * `job.tokens_used` and `job.tool_calls_used` have existed since the first
+ * migration and were written by nothing — 174 Job rows read `0` start to
+ * finish, so there was no persisted counter a cap check could have read even if
+ * one had existed. They are the Job's own ledger; the Run page still derives its
+ * figures from `trace_tool_call` and `usage_event`, because those land turn by
+ * turn and cannot fall behind a Job that died between them.
+ */
+export async function recordJobCounters(
+  db: Database,
+  jobId: string,
+  counters: { toolCalls: number; tokens: number },
+): Promise<void> {
+  await db
+    .update(t.job)
+    .set({ toolCallsUsed: counters.toolCalls, tokensUsed: counters.tokens })
+    .where(eq(t.job.id, jobId));
+}
+
+/**
  * `terminated` names a number you set; `failed` names something that broke.
  *
  * A terminated Job **does not fail its run** — the run continues and reports

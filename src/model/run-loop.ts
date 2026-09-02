@@ -2,6 +2,14 @@ import type { BetaMessage } from '@anthropic-ai/sdk/resources/beta';
 import type { BetaMessageStream } from '@anthropic-ai/sdk/lib/BetaMessageStream';
 import { eq, sql } from 'drizzle-orm';
 import * as t from '@/db/schema';
+/**
+ * The two counter functions live in `src/jobs/runs.ts` because **the `job`
+ * table has one owner** — an ESLint rule refuses a write to it from anywhere
+ * else, after the UI turned out to be a second owner of the Job state machine.
+ * The chokepoint reads its ceiling from that owner rather than growing a second
+ * writer of the same two columns.
+ */
+import { jobCountersSoFar, recordJobCounters } from '@/jobs/runs';
 import { getAnthropicClient } from './client';
 import { describeModelError } from './describe-model-error';
 import { takeWireHash } from './wire';
@@ -91,11 +99,26 @@ function isMessageStream(value: BetaMessage | BetaMessageStream): value is BetaM
  * before yielding the next turn.
  */
 export async function runLoop(params: RunLoopParams, ctx: ModelContext): Promise<RunLoopOutcome> {
+  /**
+   * **The ceilings are per JOB, and a Job calls this up to twelve times.**
+   *
+   * Both counters therefore start from what the Job has already spent, read
+   * back from `usage_event` and `trace_tool_call`. Starting them at zero made
+   * `JOB_CAPS` a per-call ceiling while SPEC §17.6 and §18.3 both describe a
+   * per-Job one — a recommend Job crossed its 900,000-token cap by half a
+   * percent and nothing fired, because no single Round crossed it alone.
+   *
+   * Chat has no `jobId` and keeps counting per call, which is the right answer
+   * there: chat is not a Job, has no Round boundary and no resume checkpoint,
+   * and `CHAT_TOOL_CALL_CAP` is a runaway backstop on one turn.
+   */
+  const seed = ctx.jobId ? await jobCountersSoFar(ctx.db, ctx.jobId) : { toolCalls: 0, tokens: 0 };
+
   const { runner, controller } = buildRunner(params, ctx);
 
   let turns = 0;
-  let toolCalls = 0;
-  let tokens = 0;
+  let toolCalls = seed.toolCalls;
+  let tokens = seed.tokens;
   let lastMessage: BetaMessage | undefined;
   const toolUses: { name: string; input: unknown }[] = [];
 
@@ -119,6 +142,10 @@ export async function runLoop(params: RunLoopParams, ctx: ModelContext): Promise
       toolUses.push(...written.toolUses);
       toolCalls += written.toolCalls;
       tokens += written.tokens;
+
+      // The Job's own ledger, brought up to date before anything can stop the
+      // loop — so a Job killed mid-Round still says what it had spent.
+      if (ctx.jobId) await recordJobCounters(ctx.db, ctx.jobId, { toolCalls, tokens });
 
       const decision = await checkCapsAndBudget(params, controller, turn, {
         turns,
