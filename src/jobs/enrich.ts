@@ -5,6 +5,7 @@ import { derivedId } from '@/db/derived-id';
 import { ownersOf, parseRelationships, type ParsedEdge } from '@/domain/parse-relationships';
 import { FAMILY_TRAVERSAL_LIMIT } from '@/config/constants';
 import { COUNTRY_INDICATORS } from '@/domain/scoring/anchors';
+import { chooseHtsLine } from '@/domain/hs-code';
 import { unionRiskFactors, type FamilyMemberRisk } from '@/domain/family';
 import { nearestPlant, type PlantPoint } from '@/domain/geo';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
@@ -303,9 +304,17 @@ export async function enrichTariff(
   });
 
   const rows = Array.isArray(result.data) ? result.data : [];
-  const line = rows.find((r) =>
-    r.htsno?.replace(/\./g, '').startsWith(args.hsCode.replace(/\./g, '')),
-  );
+  /**
+   * **Which line answered is part of what the rate means** (SPEC §7.1).
+   *
+   * `chooseHtsLine` prefers the line carrying the queried code and otherwise
+   * takes the most general line beneath it, in a total order rather than
+   * whichever the API happened to return first. Both facts are stored, because
+   * the seed's own note on `8708.99` is that the lines under one heading run
+   * Free to 2.5% — so *"5% on 8544.30"* and *"5% on 8544.30.00.00, asked as
+   * 8544.30"* are different claims and only one of them was being written down.
+   */
+  const { line, matchedBy } = chooseHtsLine(rows, args.hsCode);
   const mfnRatePct = parseRate(line?.general ?? null);
 
   await ctx.db.insert(t.tariffLine).values({
@@ -315,6 +324,8 @@ export async function enrichTariff(
     description: line?.description ?? null,
     mfnRate: mfnRatePct?.toFixed(3) ?? null,
     rateText: line?.general ?? null,
+    matchedHtsno: line?.htsno ?? null,
+    matchedBy,
   });
   return { enrichmentId, mfnRatePct };
 }

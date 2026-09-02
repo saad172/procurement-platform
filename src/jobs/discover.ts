@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { DISCOVER_CLASSIFY_TOP_N, DISCOVER_TRADE_LIMIT, JOB_CAPS } from '@/config/constants';
+import { hsHeading } from '@/domain/hs-code';
 import { runLoop } from '@/model';
 import { toRunnableTools } from '@/model/tool-adapter';
 import * as classifierPrompts from '@/model/prompts/classifier';
@@ -129,14 +130,17 @@ async function loadDiscoverQuery(
 
   /**
    * Trade data indexes HS at **six digits**, so the seed's 8- and 10-digit
-   * lines are truncated here rather than sent whole.
+   * lines are widened to their heading here rather than sent whole.
    *
    * That widening is worth stating, because it is the source of the noise this
    * job exists to handle: `8507.60` is *any* lithium-ion battery, not a
    * traction pack, which is exactly why the top of the result set is freight
-   * forwarders and consumer-battery sellers.
+   * forwarders and consumer-battery sellers. `hsHeading` is where the rule
+   * lives and where it is tested against the seed's own lines — it was a
+   * `slice(0, 6)` here and a `startsWith` in the tariff Enrichment, two
+   * unnamed halves of one idea.
    */
-  const hsCodes = [...new Set(lines.map((line) => line.hsCode.replace(/\D/g, '').slice(0, 6)))];
+  const hsCodes = [...new Set(lines.map((line) => hsHeading(line.hsCode)))];
 
   return { result: null, query: { hsCodes, arrivalCountries } };
 }

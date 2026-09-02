@@ -148,6 +148,21 @@ export const enrichmentSubjectKind = pgEnum('enrichment_subject_kind', [
 ]);
 
 /**
+ * How a stored MFN rate was matched to the HS line asked for (SPEC §7.1).
+ *
+ * The USITC answers with the lines *under* a code as often as with the code
+ * itself, so a rate is always the result of a choice: `exact` where a returned
+ * line carries the queried code digit for digit, `sub_line` where the rate was
+ * read from a line beneath it — the ordinary case for a six-digit Category
+ * line — and `none` where nothing matched and the rate is null.
+ *
+ * Recorded rather than assumed, because the seed's own note on `8708.99` is
+ * that the lines under one heading run Free to 2.5%: which line answered is
+ * part of what the rate means.
+ */
+export const tariffLineMatch = pgEnum('tariff_line_match', ['exact', 'sub_line', 'none']);
+
+/**
  * Every geocode records its precision level, because 4 of 6 sampled addresses
  * missed at building precision (SPEC §7.1). A city centroid is not a factory,
  * and the UI must say so rather than imply a surveyed point.

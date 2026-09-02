@@ -13,7 +13,12 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { entity } from './entities';
-import { enrichmentSource, enrichmentSubjectKind, geocodePrecision } from './enums';
+import {
+  enrichmentSource,
+  enrichmentSubjectKind,
+  geocodePrecision,
+  tariffLineMatch,
+} from './enums';
 import { upstreamResponse } from './upstream';
 
 /**
@@ -134,6 +139,7 @@ export const tariffLine = pgTable(
     enrichmentId: uuid('enrichment_id')
       .notNull()
       .references(() => enrichment.id, { onDelete: 'cascade' }),
+    /** The code that was asked for — the Category's `category_hs_line`. */
     hsCode: text('hs_code').notNull(),
     /** The importer this rate is for. USA is scored; MEX is rendered beside it. */
     importerCountry: text('importer_country').notNull(),
@@ -142,6 +148,22 @@ export const tariffLine = pgTable(
     /** Percent. Null where the source returned no general rate. */
     mfnRate: numeric('mfn_rate', { precision: 6, scale: 3 }),
     rateText: text('rate_text'),
+    /**
+     * The HTS line the rate was actually read from, and how it was chosen.
+     *
+     * These two are the raw input behind the stored rate. The match used to be
+     * a bare `startsWith` on the dotted-stripped code with the **first** hit
+     * winning in whatever order the API returned its lines, and nothing
+     * recorded that a widening had happened: the row said `8544.30 · 5%`
+     * whether the source had answered about `8544.30` or about a ten-digit
+     * line beneath it. `chooseHtsLine` (`src/domain/hs-code.ts`) now prefers
+     * the exact line and orders the rest; these columns are what it decided.
+     *
+     * Null on rows written before the choice was recorded — there is nothing
+     * honest to backfill, because the choice was not made explicitly.
+     */
+    matchedHtsno: text('matched_htsno'),
+    matchedBy: tariffLineMatch('matched_by'),
   },
   (t) => [index('tariff_line_key_idx').on(t.hsCode, t.importerCountry)],
 );
