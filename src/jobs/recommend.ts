@@ -131,7 +131,15 @@ async function loadRecommendContext(
     .select({ supplierId: t.supplierCategory.supplierId })
     .from(t.supplierCategory)
     .where(eq(t.supplierCategory.categoryId, args.categoryId))
-    // Ordered, because the shortlist order reaches the prompt.
+    /**
+     * Ordered, because these ids become the keys of the frozen Criterion
+     * values, Scores and ranks, and a JSON object preserves insertion order —
+     * an unordered query makes a prompt whose key order differs between two
+     * databases holding identical data.
+     *
+     * It is **not** the Shortlist order and never was: `frozen_inputs`
+     * carries the ranked order per Category, read from `loadShortlist`.
+     */
     .orderBy(asc(t.supplierCategory.supplierId));
   const supplierIds = bidders.map((b) => b.supplierId);
 

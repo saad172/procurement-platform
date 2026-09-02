@@ -313,39 +313,41 @@ const getSupplierFamily = defineTool({
 
 /** The stored family, in the one order a prompt can rely on. */
 async function loadFamilyMembers(ctx: ToolContext, rootEntityId: string) {
-  return ctx.db
-    .select({
-      memberEntityId: t.familyMember.memberEntityId,
-      // Per member as well as on the envelope: a re-enrichment updates the
-      // rows it re-read, so two members can belong to two different walks.
-      enrichmentId: t.familyMember.enrichmentId,
-      hopDepth: t.familyMember.hopDepth,
-      truncated: t.familyMember.truncated,
-      exploredCount: t.familyMember.exploredCount,
-      reachableCount: t.familyMember.reachableCount,
-      discoveredByJob: t.familyMember.discoveredByJob,
-      label: t.entity.label,
-      country: t.entity.country,
-      sanctioned: t.entity.sanctioned,
-      risk: t.entity.risk,
-    })
-    .from(t.familyMember)
-    .innerJoin(t.entity, eq(t.entity.id, t.familyMember.memberEntityId))
-    .where(eq(t.familyMember.rootEntityId, rootEntityId))
-    /**
-     * **A query that feeds a prompt needs a total order.**
-     *
-     * Without this the fifty family members came back in whatever order
-     * Postgres found them — stable within one database, different in another,
-     * and the family list is truncated at fifty so a different order is a
-     * different *set*. It surfaced as an assess replay missing on turn 3, and
-     * the diff showed two entirely different Chinese subsidiaries at the top.
-     *
-     * By hop depth first, because that is the order a person reads a family
-     * in: the immediate subsidiaries, then what sits behind them. `entityId`
-     * breaks the tie, since it is the only field guaranteed unique.
-     */
-    .orderBy(asc(t.familyMember.hopDepth), asc(t.familyMember.memberEntityId));
+  return (
+    ctx.db
+      .select({
+        memberEntityId: t.familyMember.memberEntityId,
+        // Per member as well as on the envelope: a re-enrichment updates the
+        // rows it re-read, so two members can belong to two different walks.
+        enrichmentId: t.familyMember.enrichmentId,
+        hopDepth: t.familyMember.hopDepth,
+        truncated: t.familyMember.truncated,
+        exploredCount: t.familyMember.exploredCount,
+        reachableCount: t.familyMember.reachableCount,
+        discoveredByJob: t.familyMember.discoveredByJob,
+        label: t.entity.label,
+        country: t.entity.country,
+        sanctioned: t.entity.sanctioned,
+        risk: t.entity.risk,
+      })
+      .from(t.familyMember)
+      .innerJoin(t.entity, eq(t.entity.id, t.familyMember.memberEntityId))
+      .where(eq(t.familyMember.rootEntityId, rootEntityId))
+      /**
+       * **A query that feeds a prompt needs a total order.**
+       *
+       * Without this the fifty family members came back in whatever order
+       * Postgres found them — stable within one database, different in another,
+       * and the family list is truncated at fifty so a different order is a
+       * different *set*. It surfaced as an assess replay missing on turn 3, and
+       * the diff showed two entirely different Chinese subsidiaries at the top.
+       *
+       * By hop depth first, because that is the order a person reads a family
+       * in: the immediate subsidiaries, then what sits behind them. `entityId`
+       * breaks the tie, since it is the only field guaranteed unique.
+       */
+      .orderBy(asc(t.familyMember.hopDepth), asc(t.familyMember.memberEntityId))
+  );
 }
 
 /**
