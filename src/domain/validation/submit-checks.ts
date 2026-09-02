@@ -1,3 +1,4 @@
+import { canonicalJson } from '@/lib/canonical-json';
 import { candidatesFrom, checkNumberFidelity } from './number-fidelity';
 
 /**
@@ -62,8 +63,29 @@ export type Objection = { check: string; message: string };
 const ASSESSMENT_REQUIRED = ['identity', 'limits'] as const;
 const RECOMMENDATION_REQUIRED = ['headline'] as const;
 
-const citationKey = (c: SubmittedSentence['citations'][number]): string =>
-  JSON.stringify(c, Object.keys(c).sort());
+/**
+ * A stable key for a citation, so validation and the insert agree on identity.
+ *
+ * **Built on `canonicalJson`, which sorts at every level.** The first version
+ * was `JSON.stringify(c, Object.keys(c).sort())`, and a replacer *array* is not
+ * a key order — it is a **filter applied at every depth**. So the only keys
+ * that survived were the top-level ones the citation happened to carry, and
+ * every Shortlist citation `{shortlist: {programId, categoryId}}` serialised as
+ * `{"shortlist":{}}`.
+ *
+ * Two consequences, both real:
+ *
+ * 1. `resolveCitations` dedupes by this key, so **the first Shortlist citation
+ *    in a document was looked up and its result reused for every other one** —
+ *    a second, different (program, category) pair was never queried.
+ * 2. A bogus pair therefore passed `checkCitationsResolve` on the back of a
+ *    valid one, and failed inside the publish transaction on the foreign key —
+ *    three Rounds after the check that exists to catch it.
+ *
+ * It lives here rather than in `publish.ts` because the check is what needs it
+ * to be right; the insert reads the same function so the two cannot drift.
+ */
+export const citationKey = (c: SubmittedSentence['citations'][number]): string => canonicalJson(c);
 
 /**
  * Runs all eight and returns every objection.
