@@ -234,6 +234,37 @@ async function runOneRound<TDraft>(
         ? `The model loop failed on all ${attempts} attempts. The last failure was: ${proposal.message}`
         : `The proposer could not produce a well-shaped draft in ${attempts} attempts.`;
 
+    /**
+     * **The draft it would have fallen back on may be one the code rejected.**
+     *
+     * `state.lastDraft` is only cleared when a draft passes the checks, so a
+     * draft that failed the validator in Round N was still sitting there when
+     * Round N+1's three attempts all failed — and this early return published
+     * it, which is exactly the fault `settleAfterMaxRounds` was written to
+     * stop. A code objection is not a matter of judgement: a Citation pointing
+     * at a row that does not exist cannot be inserted whatever anyone thinks of
+     * it, so carrying one forward as dissent treats an impossibility as an
+     * opinion. The exhausted-attempts objection is carried alongside, because
+     * *why there is no newer draft* is the other half of the answer.
+     */
+    if (state.lastCodeObjections.length > 0) {
+      return {
+        outcome: {
+          draft: undefined,
+          evaluatorOutcome: 'rejected_by_code',
+          rounds: state.rounds,
+          dissent: [
+            ...state.lastCodeObjections.map((o) => ({
+              objection: `[${o.check}] ${o.message}`,
+              reply: undefined,
+            })),
+            { objection, reply: undefined },
+          ],
+          roundsUsed: roundN,
+        },
+      };
+    }
+
     return {
       outcome: {
         draft: state.lastDraft,
