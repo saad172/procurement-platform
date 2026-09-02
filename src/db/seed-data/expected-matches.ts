@@ -11,7 +11,8 @@
  * contract counterparty, not the brand and not a division; the group parent is
  * recorded through the ownership hop instead.*
  *
- * It is not derived from any source, **every row is unconfirmed**, and it exists
+ * It is not derived from any source, **every row is confirmed by assumption
+ * rather than by verification** (see below), and it exists
  * so the Match loop can be *measured* — accepted right, accepted wrong, parked
  * correctly, parked when the answer was there, not found wrongly. Nothing in
  * `src/` outside this file and `scripts/check-matches.ts` may read it, no Score
