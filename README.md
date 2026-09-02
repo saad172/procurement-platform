@@ -102,7 +102,7 @@ pnpm test       # vitest run  (pnpm test:watch to iterate)
 pnpm format     # prettier --write
 ```
 
-> **All 629 pass, including on a database created seconds ago.** Two replays used
+> **All 654 pass, including on a database created seconds ago.** Two replays used
 > to miss at turn 3 on a freshly created `procurement_test`, which read as a
 > drifted fixture for three sessions and was not one: `enrich` asked for "the
 > cached entity body" without saying *which* entity, so it could attribute one
