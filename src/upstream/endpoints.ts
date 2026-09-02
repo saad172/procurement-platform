@@ -237,13 +237,88 @@ export const sayariTraversalOwnership = defineEndpoint({
       // clearest statement that the Corporate family read is downward-only.
       () => ({
         path: `/v1/downstream/${encodeURIComponent(String(id))}`,
-        query: { limit: rest.limit as number },
+        query: downstreamQuery(rest),
       }),
       deps,
     );
   },
   projection: traversalSchema,
-} as EndpointDef<{ id: string; limit?: number }, z.infer<typeof traversalSchema>>);
+} as EndpointDef<TraversalWalkParams, z.infer<typeof traversalSchema>>);
+
+/**
+ * The depth-and-cursor parameters a **Deep Traversal** adds to the same two
+ * endpoints the Corporate family already uses (SPEC §8.5).
+ *
+ * `maxDepth`, `minDepth` and `offset` are all on the SDK's own `Ownership` and
+ * `Ubo` request types, so this is one endpoint row with more of its parameters
+ * named rather than a second row aimed at the same URL — which would have given
+ * the same call two cache keyspaces and two usage-row endpoint names.
+ *
+ * **They are optional and there is no default for them, deliberately.** The
+ * defaults are applied before hashing (SPEC §16.6), so writing `maxDepth: 3`
+ * into `defaults` would change `params_hash` for the automatic family read that
+ * does not ask for a depth at all — invalidating its cache and every recorded
+ * fixture that holds one. A caller that wants a depth says so; a caller that
+ * does not gets the server's own default, which the response echoes back.
+ */
+type TraversalWalkParams = {
+  id: string;
+  limit?: number;
+  offset?: number;
+  minDepth?: number;
+  maxDepth?: number;
+};
+
+/**
+ * The raw fallback's query string, named the way the SDK's own client names it
+ * — `min_depth` / `max_depth`, snake_case, against the camelCase the SDK takes.
+ * A fallback that sent `maxDepth` would be answered at the server's default
+ * depth without complaint, which is the silent-wrong-key failure mode
+ * `trade.searchSuppliers` already cost this build once (BUILD-NOTES 31).
+ */
+function downstreamQuery(rest: Record<string, unknown>) {
+  return {
+    limit: rest.limit as number | undefined,
+    offset: rest.offset as number | undefined,
+    min_depth: rest.minDepth as number | undefined,
+    max_depth: rest.maxDepth as number | undefined,
+  };
+}
+
+/**
+ * The **upward** walk: who owns this company, rather than what it owns.
+ *
+ * `ubo` is `/v1/ubo/{id}` in the SDK and takes the same parameter set as
+ * `ownership`, which is why it can share `downstreamQuery` and the same lenient
+ * projection. It exists here for the Deep Traversal alone: the Corporate family
+ * is downward-only by measurement (SPEC §8.1 — `traversal.ubo` returned 0 on
+ * the measured company), and a Deep Traversal is the person-triggered
+ * expansion that is allowed to ask the more expensive question anyway.
+ *
+ * A zero result is therefore an expected, honest outcome here rather than a
+ * failure — the same coverage precondition the family badge applies (§8.2).
+ */
+export const sayariTraversalUbo = defineEndpoint({
+  source: 'sayari',
+  endpoint: 'traversal.ubo',
+  bucket: 'traversal',
+  timeoutMs: SAYARI_SLOW_MS,
+  defaults: { limit: 50 },
+  normalizeParams: (p) => flat(p),
+  dispatch: async (params, deps) => {
+    const { id, ...rest } = params;
+    const client = getSayariClient(deps.credentials);
+    return viaSdkWithRawFallback(
+      () => client.traversal.ubo(String(id), rest as never, requestOptions(deps)),
+      () => ({
+        path: `/v1/ubo/${encodeURIComponent(String(id))}`,
+        query: downstreamQuery(rest),
+      }),
+      deps,
+    );
+  },
+  projection: traversalSchema,
+} as EndpointDef<TraversalWalkParams, z.infer<typeof traversalSchema>>);
 
 /**
  * The general traversal, used for Deep Traversal and for the type-filtered
