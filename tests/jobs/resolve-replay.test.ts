@@ -42,12 +42,20 @@ import { JOB_CAPS } from '@/config/constants';
  * even though this test's `accepted` / `settled_by = 'agents'` assertions could
  * not survive a miss on their own.
  *
- * **This test is red until the fixture is re-recorded.** The Discriminator
- * changes on this branch moved the resolver's own first prompt: `summarise()`
- * prints `addresses=N` per Candidate and `toCandidateFacts` now keeps address
- * blocks carrying only a line, so turn 1 no longer matches. Re-record with
- * `pnpm fixtures:record-replayable agree-r1` and follow what the recording did
- * rather than re-rolling for the old outcome (finding 79).
+ * ## Re-recorded 2026-09-02, and the second attempt is the interesting one
+ *
+ * The first re-recording drifted at turn 5 and it was not the prompt: a live
+ * call projected the body the SDK returned, while a replay projected the same
+ * body after a `jsonb` round trip, which sorts object keys by length then
+ * bytewise. Sayari's `risk` is a *record* keyed by factor and `identifiers` an
+ * array of passthrough objects, so one entity's four identifiers and two risk
+ * factors came back in a different order — a different tool result, a different
+ * request, a miss. **A fixture recorded on a cold cache could not replay from
+ * the bodies it had just recorded.** `call()` now projects the stored row, and
+ * `tests/upstream/call.test.ts` asserts the two projections are the same bytes.
+ *
+ * The outcome itself did not move: both agents named
+ * `CX3012yTGIhgMxcZG6hgnA` at Round 1, as they did on 2026-08-31.
  */
 
 const FIXTURE = 'resolve/agree-r1';
