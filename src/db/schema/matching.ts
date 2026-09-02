@@ -12,7 +12,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { supplier } from './authored';
 import { entity } from './entities';
-import { discriminatorVerdict, matchSettledBy, matchStatus } from './enums';
+import { discriminatorVerdict, matchCountrySource, matchSettledBy, matchStatus } from './enums';
 
 /**
  * Matching (SPEC §3.3, §6).
@@ -48,6 +48,24 @@ export const match = pgTable(
     settledBy: matchSettledBy('settled_by').notNull(),
     /** Sayari's own `matchStrength`. Null for a discovered Supplier reads as strong. */
     matchStrength: text('match_strength'),
+    /**
+     * **The country this Supplier is scored on**, ISO3, decided at settle time
+     * (SPEC §9.4, finding 107).
+     *
+     * It lives on the Match rather than on the Profile because it is a fact
+     * about *this settlement*, not about the entity: the same Sayari record can
+     * be the right answer for a Japanese roster row and carry `countries[0] =
+     * SWE`, and a second Supplier matching the same record from a different
+     * address would be scored on a different site. Deriving it at read time
+     * from the Discriminator verdicts — which is where it started — made every
+     * reader re-run the derivation and made the answer move when the verdicts
+     * were re-recorded.
+     *
+     * Null on a Match that has never been settled with evidence, which reads as
+     * "fall back to the Profile's own country" rather than as "no country".
+     */
+    settledCountry: text('settled_country'),
+    settledCountrySource: matchCountrySource('settled_country_source'),
     settledAt: timestamp('settled_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('match_entity_idx').on(t.entityId)],

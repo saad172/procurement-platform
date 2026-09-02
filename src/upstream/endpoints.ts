@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { alpha2ToAlpha3, alpha3ToAlpha2 } from '@/domain/iso3166';
 import { getSayariClient, rawFetch, viaSdkWithRawFallback } from './dispatchers/sayari';
 import { requestOptions } from './dispatchers/sayari-client';
 import {
@@ -445,29 +446,22 @@ export const gleifSearchByName = defineEndpoint({
 >);
 
 /**
- * The roster is ISO3 and GLEIF is ISO2. Only the roster's eleven origins are
- * mapped: a partial table that returns `undefined` for anything else is safer
- * than a full one nobody checks, because `undefined` drops the filter rather
- * than sending a code that silently matches nothing.
+ * The roster is ISO3 and GLEIF is ISO2.
+ *
+ * This used to be an eleven-entry table of the roster's own origins, argued for
+ * on the grounds that a partial table returning `undefined` is safer than a full
+ * one nobody checks — `undefined` drops the filter rather than sending a code
+ * that silently matches nothing. That argument was about *this* call, and it
+ * still holds for it. It stopped being enough once the LEI witness and
+ * `name_cover` needed the same mapping to tell a subsidiary from its parent
+ * (`src/domain/iso3166.ts`), and two copies of a country table is one more than
+ * anything should have. The failure behaviour here is unchanged: an unreadable
+ * value still returns `undefined` and still drops the filter.
  */
-const ISO3_TO_ISO2: Record<string, string> = {
-  USA: 'US',
-  DEU: 'DE',
-  JPN: 'JP',
-  KOR: 'KR',
-  FRA: 'FR',
-  ESP: 'ES',
-  CAN: 'CA',
-  CHN: 'CN',
-  MEX: 'MX',
-  IND: 'IN',
-  GBR: 'GB',
-};
-
 export function iso3ToIso2(iso3: string | undefined): string | undefined {
   if (!iso3) return undefined;
-  if (iso3.length === 2) return iso3.toUpperCase();
-  return ISO3_TO_ISO2[iso3.toUpperCase()];
+  if (iso3.length === 2) return alpha2ToAlpha3(iso3) ? iso3.toUpperCase() : undefined;
+  return alpha3ToAlpha2(iso3);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

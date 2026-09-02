@@ -31,6 +31,7 @@
     "smoke:assess": "tsx scripts/smoke-assess.ts",
     "smoke:discover": "tsx scripts/smoke-discover.ts",
     "check:prefilter": "tsx scripts/check-prefilter.ts",
+    "check:matches": "tsx scripts/check-matches.ts",
     "smoke:pages": "tsx scripts/smoke-pages.ts",
     "fixtures:record": "tsx scripts/record-fixture.ts",
     "fixtures:record-replayable": "tsx scripts/record-replayable.ts",

@@ -57,8 +57,18 @@ export type SupplierScoringInput = {
     | {
         entityId: string;
         legalName: string;
-        /** **The Profile's country is what is scored**, never the roster's. */
+        /**
+         * **What is scored is the country the Match settled on** (SPEC §9.4):
+         * GLEIF's legal-address country where the settled Candidate has an LEI,
+         * else the country of the address the Discriminators anchored on, else
+         * the Profile's own. Decided once, at settle time, and stored on the
+         * Match — never re-derived by a reader.
+         */
         country?: string | undefined;
+        /** Sayari's own country on the Profile, kept alongside `country` so a reader sees both when they differ. */
+        profileCountry?: string | undefined;
+        /** Which of the three the scored `country` is (`match.settled_country_source`). */
+        countrySource?: 'gleif' | 'matched_address' | 'profile' | undefined;
         lat?: number | undefined;
         lon?: number | undefined;
         coordinatePrecision?: string | undefined;

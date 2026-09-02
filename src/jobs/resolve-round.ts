@@ -51,8 +51,15 @@ export type ResolveRoundDeps = {
   modelCtx: ModelContext;
 };
 
-/** What each agent submits. The two tools are separate so the Trace names who spoke. */
-type Submission = {
+/**
+ * What each agent submits. The two tools are separate so the Trace names who
+ * spoke.
+ *
+ * Exported, with `disagreementObjection` and `entityIdsIn`, because both are
+ * decisions this Round makes about the agents' output rather than model
+ * behaviour — the kind SPEC §19.3 says to test directly instead of recording.
+ */
+export type Submission = {
   entityId: string | null;
   verdicts: {
     discriminator: string;
@@ -154,7 +161,7 @@ export function makeRunRound(deps: ResolveRoundDeps): NonNullable<ResolveDeps['r
       evaluatorVerdicts: verdictsFor(roster, candidates, evaluator.submission?.entityId ?? null),
       // Carried into the next Round's prompt, so a disagreement is argued rather
       // than merely repeated.
-      objection: disagreementObjection(resolver.submission, evaluator.submission),
+      objection: disagreementObjection(resolver.submission, evaluator.submission, roundN),
       rungsUsed: rungsIn(calls, roundN),
       entityIdsSeen: entityIdsIn(calls, resolver.submission, evaluator.submission),
       /**
@@ -283,11 +290,36 @@ function verdictsFor(
  * proposes nothing. An objection that told the next Round which answer to
  * prefer would be the settlement arriving early, dressed as evidence.
  */
-function disagreementObjection(
+export function disagreementObjection(
   resolver: Submission | null,
   evaluator: Submission | null,
+  roundN: number,
 ): string | undefined {
   if (!resolver && !evaluator) return 'Neither agent submitted a pick.';
+
+  /**
+   * **Both agents naming nothing is a result, and it used to be silent.**
+   *
+   * `resolver?.entityId === evaluator?.entityId` is true when both are `null`,
+   * so two agents that both found nothing produced no objection at all — and an
+   * objection is the only thing that differs between one Round's prompt and the
+   * next. The next Round then received a byte-identical prompt and, with a
+   * temperature of zero, had no reason to do anything but repeat itself. Three
+   * Rounds of the same question is not a ladder.
+   *
+   * It says what happened and asks for a different rung. It still proposes no
+   * answer: naming one would be the settlement arriving early, dressed as
+   * evidence.
+   */
+  if (!resolver?.entityId && !evaluator?.entityId) {
+    return [
+      `Both independent reads came back with no candidate at round ${roundN}.`,
+      `  One said: ${describe(resolver)}`,
+      `  The other said: ${describe(evaluator)}`,
+      'Searching the same way again will return the same nothing. Try a rung you have not used yet, or a different query term, and say why that term rather than the last one.',
+    ].join('\n');
+  }
+
   if (resolver?.entityId === evaluator?.entityId) return undefined;
 
   return [
@@ -331,25 +363,71 @@ function rungsIn(calls: readonly CapturedCall[], roundN: number): string[] {
 }
 
 /**
- * Every entity id this Round looked at, including the picks.
+ * Which rung a tool name *is*, for tagging the Candidates its result carried.
  *
- * The caller fetches any it does not already hold. A pick is included
- * explicitly rather than relied upon appearing in a lookup, because an agent
- * can name a candidate a rung tool returned without ever fetching it.
+ * Anything not on this list is not a rung — `sayari_get_entity` is how an agent
+ * reads a Candidate it already has — so an id seen only there is attributed to
+ * R1, the pre-pass that put it in front of the agent in the first place.
  */
-function entityIdsIn(
+const RUNG_OF_TOOL: Readonly<Record<string, string>> = {
+  find_candidates_by_name_town: 'R2',
+  find_candidates_by_address: 'R3a',
+  find_lei_by_name: 'R3b',
+  join_lei: 'R3c',
+};
+
+/**
+ * Every entity id this Round looked at, **with the rung that surfaced it**.
+ *
+ * ## It used to harvest almost nothing
+ *
+ * The previous version read `call.input.entityId` — a field **no rung tool
+ * has**. `find_candidates_by_name_town` takes a name variant,
+ * `find_candidates_by_address` an address, `find_lei_by_name` a name and
+ * `join_lei` an LEI. So the only ids it ever collected were the two picks and
+ * whatever `sayari_get_entity` happened to be called with, and a Candidate a
+ * rung *returned* but no agent bothered to fetch was never recorded at all.
+ * That is precisely the Candidate Needs Review exists to offer a person: one
+ * the ladder found and the agents passed over.
+ *
+ * ## And the rung is per id, not per Round
+ *
+ * `foundByRung` used to take the highest rung the Round climbed and stamp it on
+ * everything the Round saw, so an R2 hit looked like it had cost an R3 search.
+ * The rung recorded here is the one whose own result carried the id.
+ *
+ * The picks are added last and only if nothing else claimed them, because an
+ * agent can name a candidate a rung returned without ever fetching it — and if
+ * a rung did surface it, the rung is the better answer to *what did it take to
+ * find this*.
+ */
+export function entityIdsIn(
   calls: readonly CapturedCall[],
   resolver: Submission | null,
   evaluator: Submission | null,
-): string[] {
-  const ids = new Set<string>();
+): { entityId: string; rung: string }[] {
+  const rungOf = new Map<string, string>();
+  const remember = (entityId: unknown, rung: string) => {
+    if (typeof entityId !== 'string' || entityId.length === 0) return;
+    if (!rungOf.has(entityId)) rungOf.set(entityId, rung);
+  };
 
   for (const call of calls) {
-    const input = call.input as { entityId?: unknown };
-    if (typeof input?.entityId === 'string') ids.add(input.entityId);
+    const rung = RUNG_OF_TOOL[call.name] ?? 'R1';
+    // What the agent asked for by id — `sayari_get_entity` and friends.
+    remember((call.input as { entityId?: unknown } | null)?.entityId, rung);
+    // What the rung handed back. `find_candidates_by_name_town` and
+    // `find_candidates_by_address` both return `{ entityId, label, … }` rows;
+    // the two GLEIF rungs return LEIs and no Sayari id, so they contribute
+    // nothing here and correctly so.
+    for (const row of Array.isArray(call.output) ? call.output : []) {
+      remember((row as { entityId?: unknown } | null)?.entityId, rung);
+    }
   }
-  if (resolver?.entityId) ids.add(resolver.entityId);
-  if (evaluator?.entityId) ids.add(evaluator.entityId);
 
-  return [...ids];
+  for (const pick of [resolver?.entityId, evaluator?.entityId]) {
+    remember(pick, 'R1');
+  }
+
+  return [...rungOf].map(([entityId, rung]) => ({ entityId, rung }));
 }

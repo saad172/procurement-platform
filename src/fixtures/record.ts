@@ -75,9 +75,16 @@ async function loadRecordableJob(db: Database, jobId: string) {
  * **upstream bodies**, which is precisely what a later Job's replay needs:
  * `assess` reads enrichments, and enrichments come from those bodies.
  *
+ * `resolve` joins it for the same reason (finding 107, `rules-r0`): the
+ * auto-accept gate is **plain code, zero tokens** (SPEC §6.3), and a Supplier
+ * it settles alone produces no Round and so no turn — refusing that fixture
+ * would be refusing the gate for working.
+ *
  * The distinction that matters is *no turns* versus *turns we cannot replay*.
  * The second is still refused, below.
  */
+const NO_TURN_JOB_KINDS = new Set(['enrich', 'resolve']);
+
 async function loadTurnRows(
   db: Database,
   jobId: string,
@@ -89,7 +96,7 @@ async function loadTurnRows(
     .where(eq(t.traceTurn.jobId, jobId))
     .orderBy(asc(t.traceTurn.n));
 
-  if (turnRows.length === 0 && jobKind !== 'enrich') {
+  if (turnRows.length === 0 && !NO_TURN_JOB_KINDS.has(jobKind)) {
     throw new UnrecordableJobError(
       jobId,
       `it has no trace turns, and "${jobKind}" is a model-driven kind that should have produced some`,

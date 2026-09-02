@@ -23,6 +23,20 @@ import type { Fixture, FixtureTurn } from './types';
  *
  * The error names the missed turn and lists what the fixture holds, because the
  * useful question after a miss is always *which turn drifted, and from what*.
+ *
+ * ## And the count is readable, because a miss can look like a pass
+ *
+ * A miss is served to the SDK as a `400`, so what the *caller* sees is a loop
+ * that failed to produce a submission — and for some Jobs that is a legal
+ * outcome. `resolve/not-found` was green while throwing **eighteen** misses:
+ * the assertions read `not_found` with no Candidates, which is exactly what a
+ * Round that never got an answer produces, and exactly what the recording
+ * itself had produced. The fixture was proving nothing and saying so to nobody.
+ *
+ * So the returned `fetch` carries its own bookkeeping — `misses` and `served` —
+ * and a replay test asserts on it. That turns *"the outcome still looks right"*
+ * into *"every recorded turn was served, in order, and none drifted"*, which is
+ * the claim a fixture exists to make.
  */
 
 export class ReplayMissError extends Error {
@@ -91,7 +105,20 @@ export class UnhashableFixtureError extends Error {
  * `ReplayMissError` is still constructed — for its message, and for callers
  * that drive the fetch directly.
  */
-export function replayFetch(fixture: Fixture): typeof fetch {
+/**
+ * A `fetch` that also reports what it did.
+ *
+ * `misses` and `served` are getters over the closure's own counters, so a test
+ * reads the live figure rather than a snapshot taken at construction.
+ */
+export type ReplayFetch = typeof fetch & {
+  /** Requests that found no unserved turn with a matching wire hash. */
+  readonly misses: number;
+  /** The `n` of every turn served, in the order they were served. */
+  readonly served: readonly number[];
+};
+
+export function replayFetch(fixture: Fixture): ReplayFetch {
   const unhashable = fixture.turns.filter((turn) => turn.wireHash == null).map((turn) => turn.n);
   if (unhashable.length > 0) throw new UnhashableFixtureError(fixture.manifest.name, unhashable);
 
@@ -103,14 +130,16 @@ export function replayFetch(fixture: Fixture): typeof fetch {
   }
 
   const served: number[] = [];
+  let misses = 0;
 
-  return async (_input, init) => {
+  const fetchFixture: typeof fetch = async (_input, init) => {
     const body = init?.body;
     const hash = typeof body === 'string' ? wireHash(body) : '';
 
     const bucket = byHash.get(hash);
     const turn = bucket?.find((candidate) => !served.includes(candidate.n));
     if (!turn) {
+      misses += 1;
       const miss = new ReplayMissError(fixture.manifest.name, hash, served, fixture.turns);
       return new Response(
         JSON.stringify({ type: 'error', error: { type: 'replay_miss', message: miss.message } }),
@@ -141,4 +170,9 @@ export function replayFetch(fixture: Fixture): typeof fetch {
       headers: { 'content-type': 'application/json' },
     });
   };
+
+  return Object.defineProperties(fetchFixture, {
+    misses: { get: () => misses, enumerable: true },
+    served: { get: () => [...served], enumerable: true },
+  }) as ReplayFetch;
 }

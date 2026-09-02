@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { derivedId } from '@/db/derived-id';
+import { toAlpha3 } from '@/domain/iso3166';
 import type { DiscriminatorResult } from './discriminators';
 
 /**
@@ -36,6 +37,23 @@ export type CandidateRecord = {
   verdicts: { reportedBy: string; results: DiscriminatorResult[] }[];
 };
 
+/**
+ * What the settler knows about **where the settled Candidate actually is**.
+ *
+ * Only a settler that ran the Discriminators has this: the rules gate and the
+ * agent Rounds do, a human override and a promoted Lead do not. Absent, the
+ * settled country falls back to the Profile's own, which is exactly what those
+ * two paths can honestly say.
+ */
+export type SettledEvidence = {
+  /** The LEI on the settled Candidate's record, if it carries one. */
+  lei: string | null;
+  /** GLEIF's own legal-address country for that LEI — ISO2 as GLEIF gives it. */
+  gleifLegalCountry: string | null;
+  /** The country of the one recorded address the three address rungs anchored on. */
+  anchoredAddressCountry: string | null;
+};
+
 export type Settlement = {
   supplierId: string;
   status: 'accepted' | 'needs_review' | 'not_found';
@@ -47,7 +65,106 @@ export type Settlement = {
   note?: string | undefined;
   rungsUsed?: string[] | undefined;
   candidates?: CandidateRecord[] | undefined;
+  /** See `SettledEvidence`. Absent on the human and discovered paths. */
+  settledEvidence?: SettledEvidence | undefined;
 };
+
+export type CountrySource = 'gleif' | 'matched_address' | 'profile';
+
+/**
+ * **The country this Match is scored on** (SPEC §9.4, finding 107).
+ *
+ * Three sources, in order of what each one actually witnesses:
+ *
+ * 1. **GLEIF's legal-address country**, where the settled Candidate has an LEI
+ *    and a GLEIF record. An independent register saying where this legal person
+ *    is registered.
+ * 2. **The anchored address's country** — the country of the one recorded
+ *    address the three address rungs agreed on. That address is the building
+ *    the Match is *about*, so its country is the site's.
+ * 3. **The Profile's own country**, which is Sayari's `countries[0]` or its
+ *    first address's, and is a fact about the *record*. Measured: ten of fifty
+ *    accepted Matches carry one that disagrees with the roster row the country
+ *    Discriminator had just agreed with, and Sumitomo Electric's reads `SWE`
+ *    against a Japanese address — so `country_resilience` and the tariff origin
+ *    were both scored on Sweden.
+ *
+ * The rule this replaces was "the roster's country whenever the country
+ * Discriminator passed", which was right about the ten and wrong in principle:
+ * it scored *what the roster claimed* rather than what any source witnessed,
+ * and it had nothing to say when the Discriminator did not pass.
+ */
+export function deriveSettledCountry(args: {
+  evidence?: SettledEvidence | undefined;
+  profileCountry: string | null;
+}): { country: string | null; source: CountrySource | null } {
+  const { evidence } = args;
+
+  if (evidence?.lei) {
+    const gleif = toAlpha3(evidence.gleifLegalCountry);
+    if (gleif) return { country: gleif, source: 'gleif' };
+  }
+  const anchored = toAlpha3(evidence?.anchoredAddressCountry);
+  if (anchored) return { country: anchored, source: 'matched_address' };
+
+  const profile = toAlpha3(args.profileCountry);
+  return profile ? { country: profile, source: 'profile' } : { country: null, source: null };
+}
+
+/**
+ * The one `match` row per Supplier, inserted or updated, carrying the country
+ * this settlement decided to score on.
+ *
+ * The Profile's own country is read inside the same transaction so the fallback
+ * is the row this settlement is about to point at, and not a value the caller
+ * happened to be holding. A parked Match has no entity and therefore no site:
+ * the two country columns stay null, which reads as *fall back to the
+ * Profile's* rather than as *no country*.
+ */
+async function upsertMatchRow(
+  tx: Parameters<Parameters<Database['transaction']>[0]>[0],
+  settlement: Settlement,
+): Promise<string> {
+  const existing = await tx.query.match.findFirst({
+    where: eq(t.match.supplierId, settlement.supplierId),
+  });
+
+  const profileCountry = settlement.entityId
+    ? ((await tx.query.entity.findFirst({ where: eq(t.entity.id, settlement.entityId) }))
+        ?.country ?? null)
+    : null;
+  const settled = settlement.entityId
+    ? deriveSettledCountry({ evidence: settlement.settledEvidence, profileCountry })
+    : { country: null, source: null };
+
+  const values = {
+    status: settlement.status,
+    entityId: settlement.entityId,
+    settledBy: settlement.settledBy,
+    matchStrength: settlement.matchStrength ?? null,
+    settledCountry: settled.country,
+    settledCountrySource: settled.source,
+  };
+
+  if (existing) {
+    const [row] = await tx
+      .update(t.match)
+      .set({ ...values, settledAt: new Date() })
+      .where(eq(t.match.id, existing.id))
+      .returning({ id: t.match.id });
+    return row!.id;
+  }
+  const [row] = await tx
+    .insert(t.match)
+    .values({
+      // One Match per Supplier, upserted — so the Supplier IS the key.
+      id: derivedId('match', settlement.supplierId, 0),
+      supplierId: settlement.supplierId,
+      ...values,
+    })
+    .returning({ id: t.match.id });
+  return row!.id;
+}
 
 /**
  * Settles one Supplier's Match, appending an attempt and its candidates.
@@ -61,38 +178,7 @@ export async function settleMatch(
   settlement: Settlement,
 ): Promise<{ matchId: string; attemptId: string }> {
   return db.transaction(async (tx) => {
-    const existing = await tx.query.match.findFirst({
-      where: eq(t.match.supplierId, settlement.supplierId),
-    });
-
-    const matchId = existing
-      ? (
-          await tx
-            .update(t.match)
-            .set({
-              status: settlement.status,
-              entityId: settlement.entityId,
-              settledBy: settlement.settledBy,
-              matchStrength: settlement.matchStrength ?? null,
-              settledAt: new Date(),
-            })
-            .where(eq(t.match.id, existing.id))
-            .returning({ id: t.match.id })
-        )[0]!.id
-      : (
-          await tx
-            .insert(t.match)
-            .values({
-              // One Match per Supplier, upserted — so the Supplier IS the key.
-              id: derivedId('match', settlement.supplierId, 0),
-              supplierId: settlement.supplierId,
-              status: settlement.status,
-              entityId: settlement.entityId,
-              settledBy: settlement.settledBy,
-              matchStrength: settlement.matchStrength ?? null,
-            })
-            .returning({ id: t.match.id })
-        )[0]!.id;
+    const matchId = await upsertMatchRow(tx, settlement);
 
     // Append-only: the next attempt number, never an overwrite.
     const [{ next }] = (await tx
@@ -177,6 +263,23 @@ export async function settleDiscoveredLead(
     settledBy: 'discovered',
     note: 'Promoted from a lead. No name matching happened, so there is no match strength to report.',
   });
+}
+
+/**
+ * The attempt number the next settlement of this Supplier will carry.
+ *
+ * `settleMatch` computes the same number the same way inside its transaction;
+ * this is for callers that need it *before* they settle — the shuffle seed is
+ * `(supplierId, attemptN, roundN)`, and the ordering has to be fixed before the
+ * first Round runs (SPEC §19.1).
+ */
+export async function nextAttemptNumber(db: Database, supplierId: string): Promise<number> {
+  const [row] = await db
+    .select({ next: sql<number>`coalesce(max(${t.matchAttempt.attemptN}), 0) + 1` })
+    .from(t.matchAttempt)
+    .innerJoin(t.match, eq(t.match.id, t.matchAttempt.matchId))
+    .where(eq(t.match.supplierId, supplierId));
+  return Number(row?.next ?? 1);
 }
 
 /** Every candidate ever seen for a Supplier, across attempts. */

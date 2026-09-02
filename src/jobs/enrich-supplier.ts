@@ -4,6 +4,7 @@ import * as t from '@/db/schema';
 import { latestCountryIndicators, latestNewsItems } from '@/db/queries/enrichments';
 import { computeFamilyExposure, unionRiskFactors } from '@/domain/family';
 import { nearestPlant } from '@/domain/geo';
+import type { CountrySource } from '@/domain/match/settle-match';
 import { scoreSupplier } from '@/domain/score';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
 import type { SupplierScoringInput } from '@/domain/scoring/types';
@@ -74,6 +75,12 @@ type ResolvedProfile = {
   match: AcceptedMatch;
   categories: { categoryId: string }[];
   profileRow: typeof t.entity.$inferSelect;
+  /**
+   * The country everything country-derived is fetched and scored against
+   * (SPEC §9.4) — the one the Match settled on. See `siteCountryOf`.
+   */
+  siteCountry: string | undefined;
+  countrySource: CountrySource;
 };
 
 /**
@@ -121,10 +128,44 @@ async function loadResolvedProfile(
   const profileRow = await db.query.entity.findFirst({ where: eq(t.entity.id, match.entityId) });
   if (!profileRow) throw new Error(`profile entity ${match.entityId} is not stored`);
 
+  const acceptedMatch = { ...match, entityId: match.entityId };
+  const { siteCountry, countrySource } = siteCountryOf(acceptedMatch, profileRow);
+
   return {
     result: null,
-    profile: { supplier, match: { ...match, entityId: match.entityId }, categories, profileRow },
+    profile: { supplier, match: acceptedMatch, categories, profileRow, siteCountry, countrySource },
   };
+}
+
+/**
+ * **The country this Supplier is scored on**, read off the Match (SPEC §9.4).
+ *
+ * The Match decided it at settle time and wrote it down
+ * (`deriveSettledCountry`, `src/domain/match/settle-match.ts`): GLEIF's
+ * legal-address country where the settled Candidate has an LEI, else the
+ * country of the address the Discriminators anchored on, else the Profile's
+ * own.
+ *
+ * This function used to *derive* it here, from the persisted `country`
+ * Discriminator verdicts, and score the roster's country whenever that verdict
+ * read `pass`. Two things were wrong with that. It scored what the roster
+ * **claimed** rather than what any source **witnessed** — the roster is the
+ * question, not an answer. And it made the scored country a function of rows
+ * that get re-recorded: re-running a Match moved the country of an already
+ * enriched Supplier without anything having said so.
+ *
+ * The fallback stays: a Match settled before this column existed, a promoted
+ * Lead, or a settlement with no evidence, all read the Profile's own country
+ * and say `'profile'` — which is the honest source for all three.
+ */
+export function siteCountryOf(
+  match: AcceptedMatch,
+  profileRow: typeof t.entity.$inferSelect,
+): { siteCountry: string | undefined; countrySource: CountrySource } {
+  if (match.settledCountry && match.settledCountrySource) {
+    return { siteCountry: match.settledCountry, countrySource: match.settledCountrySource };
+  }
+  return { siteCountry: profileRow.country ?? undefined, countrySource: 'profile' };
 }
 
 type FanOutResult = {
@@ -142,7 +183,7 @@ async function fanOutEnrichments(
   profile: ResolvedProfile,
 ): Promise<FanOutResult> {
   const { db } = ctx;
-  const { match, profileRow, supplier, categories } = profile;
+  const { match, profileRow, supplier, categories, siteCountry } = profile;
   const written: string[] = [];
 
   // ── 1. Negative news, on the RESOLVED LEGAL NAME ─────────────────────────
@@ -157,8 +198,10 @@ async function fanOutEnrichments(
   written.push(family.enrichmentId);
 
   // ── 3. Country indicators, shared across every Supplier in the country ───
-  if (profileRow.country) {
-    const country = await enrichCountry(ctx, { country: profileRow.country });
+  // Fetched for the country the Match settled on (SPEC §9.4), so the World Bank
+  // rows a Supplier holds and the country its Criteria score are the same one.
+  if (siteCountry) {
+    const country = await enrichCountry(ctx, { country: siteCountry });
     written.push(...country.enrichmentIds);
   }
 
@@ -268,14 +311,16 @@ async function assembleScoringInput(
   owners: Awaited<ReturnType<typeof readOwnerEdges>>,
 ): Promise<SupplierScoringInput> {
   const { db } = ctx;
-  const { supplier, match, profileRow } = profile;
+  const { supplier, match, profileRow, siteCountry, countrySource } = profile;
   const { lat, lon, coordinatePrecision, tariffByCategory } = fanOut;
 
   const plants = await loadPlants(db, args.programId);
   const nearest = nearestPlant(lat != null && lon != null ? { lat, lon } : undefined, plants);
 
   /**
-   * **The latest generation of each, and no earlier one.**
+   * **The latest generation of each, and no earlier one** — for the settled
+   * country, which is the same one `fanOutEnrichments` fetched, so a fetch and
+   * its read never disagree.
    *
    * Both used to be read straight off the value table for the whole subject —
    * every generation at once, and for the indicators with no `ORDER BY` at
@@ -285,16 +330,14 @@ async function assembleScoringInput(
    * matters here is that re-enriching a Supplier may not move a Criterion
    * when the upstream body has not moved (SPEC §9.1).
    */
-  const indicators = profileRow.country
-    ? await latestCountryIndicators(db, profileRow.country)
-    : [];
+  const indicators = siteCountry ? await latestCountryIndicators(db, siteCountry) : [];
 
   const newsRows = await latestNewsItems(db, match.entityId);
 
   const presentEnrichments = [
     'sayari_negative_news',
     'sayari_ownership_family',
-    ...(profileRow.country ? ['world_bank'] : []),
+    ...(siteCountry ? ['world_bank'] : []),
     ...(profileRow.lei ? ['gleif'] : []),
     ...(tariffByCategory.size > 0 ? ['usitc'] : []),
     ...(coordinatePrecision ? ['nominatim'] : []),
@@ -307,7 +350,11 @@ async function assembleScoringInput(
     profile: {
       entityId: match.entityId,
       legalName: profileRow.label,
-      country: profileRow.country ?? undefined,
+      // The country the Match settled on — see `siteCountryOf`. `profileCountry`
+      // and `countrySource` ride along so a Criterion can show both.
+      country: siteCountry,
+      profileCountry: profileRow.country ?? undefined,
+      countrySource,
       lat: lat ?? undefined,
       lon: lon ?? undefined,
       coordinatePrecision,

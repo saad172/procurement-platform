@@ -59,6 +59,21 @@ const VALUE = (
   anchorLine: string,
 ): CriterionOutcome => ({ status: 'value', value, clamped, rawInputs, anchorLine });
 
+/**
+ * **`profileCountry` and `countrySource` render only where they diverge**
+ * from `country` (SPEC §9.4) — the country the Match settled on and Sayari's
+ * Profile agreeing is not a fact a reader needs restated beside every number, and
+ * adding it unconditionally would ripple into every already-recorded
+ * Assessment and Recommendation replay for a Supplier whose two countries
+ * simply agree, for no reader benefit.
+ */
+function countryProvenance(input: SupplierScoringInput): Record<string, unknown> {
+  const country = input.profile?.country ?? null;
+  const profileCountry = input.profile?.profileCountry ?? null;
+  if (country == null || profileCountry == null || country === profileCountry) return {};
+  return { profileCountry, countrySource: input.profile?.countrySource ?? 'profile' };
+}
+
 export const COMPLIANCE_ANCHOR_LINE =
   'starts at 100; high −40, elevated −20, relevant −8, floored at 0. `_indirect` and `_adjacent` score one band down; `_subtier` badges and never deducts';
 
@@ -305,11 +320,15 @@ function worstLevel(factors: readonly RiskFactor[]) {
 }
 
 /**
- * **Country resilience** — six World Bank indicators for the **Profile's**
- * country, not the roster's.
+ * **Country resilience** — six World Bank indicators for the country the
+ * **Match settled on** (SPEC §9.4): GLEIF's legal-address country where the
+ * settled Candidate has an LEI, else the anchored address's, else the Profile's
+ * own.
  *
- * The roster country is retained and a disagreement is a **finding**, not an
- * error. There is deliberately no human override: an override would write an
+ * When that country differs from Sayari's own, `rawInputs` carries both —
+ * `country` is the one scored, `profileCountry` is Sayari's — so a reader sees
+ * the two apart rather than trusting one silently.
+ * There is deliberately no human override: an override would write an
  * unsourced fact straight into a Score.
  */
 export function countryResilience(input: SupplierScoringInput): CriterionOutcome {
@@ -326,7 +345,7 @@ export function countryResilience(input: SupplierScoringInput): CriterionOutcome
       country
         ? `no World Bank indicator returned a value for ${country} under mrnev=1`
         : 'the Profile has no country, so no indicator could be looked up',
-      { country: country ?? null },
+      { country: country ?? null, ...countryProvenance(input) },
       COUNTRY_ANCHOR_LINE,
     );
   }
@@ -345,6 +364,7 @@ export function countryResilience(input: SupplierScoringInput): CriterionOutcome
     clamped,
     {
       country: country ?? null,
+      ...countryProvenance(input),
       indicators: present.map((x) => ({
         code: x.spec.code,
         label: x.spec.label,
@@ -368,8 +388,8 @@ export function countryResilience(input: SupplierScoringInput): CriterionOutcome
 }
 
 /**
- * **Tariff exposure** — the Category's default HS line × the Profile's country
- * as origin × importer USA.
+ * **Tariff exposure** — the Category's default HS line × the settled
+ * country as origin (SPEC §9.4) × importer USA.
  *
  * **A Supplier with no Category has no Score at all**, not an unknown Criterion
  * here — that case is handled by the assembler, because it is a property of the
@@ -399,6 +419,7 @@ export function tariffExposure(input: SupplierScoringInput): CriterionOutcome {
       mexicoRatePct: tariff.mexicoRatePct ?? null,
       candidateLines: tariff.candidateLines ?? [],
       originCountry: input.profile?.country ?? null,
+      ...countryProvenance(input),
       importerCountry: 'USA',
     },
     TARIFF_ANCHOR_LINE,

@@ -438,3 +438,51 @@ describe('data confidence is a badge, not a Criterion', () => {
     expect(scoreSupplier(strong).score).toBeCloseTo(scoreSupplier(adequate).score!, 9);
   });
 });
+
+/**
+ * **Country resilience and tariff origin score `profile.country`** — which is
+ * the country the Match settled on by the time `assembleScoringInput`
+ * (`src/jobs/enrich-supplier.ts`) builds it, never re-derived here (SPEC §9.4).
+ * What this level tests is the rendering: `rawInputs` carries `profileCountry`
+ * and `countrySource` **only where they diverge** from the country actually
+ * scored — Sumitomo Electric's shape, kept both apart rather than silently
+ * agreeing with itself, without repeating the same country twice on every
+ * Supplier whose Profile and settled country simply agree (as most do).
+ */
+describe('country resilience and tariff exposure score the settled country (SPEC §9.4)', () => {
+  const sumitomoLike = (countrySource: 'gleif' | 'matched_address' | 'profile') =>
+    completeInput({
+      profile: {
+        ...completeInput().profile!,
+        country: 'JPN',
+        profileCountry: 'SWE',
+        countrySource,
+      },
+    });
+
+  it('carries both countries in rawInputs when the settled country and the Profile disagree', () => {
+    // Measured: Sumitomo Electric's own LEI is registered in Japan and its
+    // Profile's `countries[0]` reads SWE.
+    const r = scoreSupplier(sumitomoLike('gleif'));
+    const country = r.criteria.find((c) => c.key === 'country_resilience')!;
+    const tariff = r.criteria.find((c) => c.key === 'tariff_exposure')!;
+    expect(country.outcome.rawInputs.country).toBe('JPN');
+    expect(country.outcome.rawInputs.profileCountry).toBe('SWE');
+    expect(country.outcome.rawInputs.countrySource).toBe('gleif');
+    expect(tariff.outcome.rawInputs.originCountry).toBe('JPN');
+    expect(tariff.outcome.rawInputs.profileCountry).toBe('SWE');
+    expect(tariff.outcome.rawInputs.countrySource).toBe('gleif');
+  });
+
+  it('omits both fields when the settled country and the Profile already agree', () => {
+    // `completeInput()`'s Profile carries no `profileCountry` at all — the
+    // ordinary shape for a Supplier this finding never touches.
+    const r = scoreSupplier(completeInput());
+    const country = r.criteria.find((c) => c.key === 'country_resilience')!;
+    const tariff = r.criteria.find((c) => c.key === 'tariff_exposure')!;
+    expect(country.outcome.rawInputs.profileCountry).toBeUndefined();
+    expect(country.outcome.rawInputs.countrySource).toBeUndefined();
+    expect(tariff.outcome.rawInputs.profileCountry).toBeUndefined();
+    expect(tariff.outcome.rawInputs.countrySource).toBeUndefined();
+  });
+});

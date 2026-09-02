@@ -185,9 +185,11 @@ describe('the facts a Discriminator is given', () => {
     expect(facts.aliases).toEqual(['Rosoboronexport', 'ROE JSC']);
   });
 
-  it('still reads the address blocks it always read', () => {
+  it('still reads the address blocks it always read, now with the line the street rung needs', () => {
     const facts = toCandidateFacts(entitySchema.parse(sdkBody));
-    expect(facts.addresses).toEqual([{ city: 'Moscow', postcode: '107076', country: 'RUS' }]);
+    expect(facts.addresses).toEqual([
+      { city: 'Moscow', postcode: '107076', country: 'RUS', line: '27 Stromynka St, Moscow' },
+    ]);
     expect(facts.country).toBe('RUS');
     expect(facts.companyType).toBe('CORP');
   });

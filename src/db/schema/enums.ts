@@ -57,6 +57,28 @@ export const matchSettledBy = pgEnum('match_settled_by', [
 ]);
 
 /**
+ * Where the **country a Match is scored on** came from (SPEC §9.4).
+ *
+ * `gleif` — the settled Candidate has an LEI and GLEIF's own legal address
+ *           names a country. An independent register, and the strongest of the
+ *           three.
+ * `matched_address` — the country of the one recorded address the Discriminators
+ *           anchored on, which is the building the Match is *about*.
+ * `profile` — the Profile's own country, which is Sayari's `countries[0]` and
+ *           is a fact about the record rather than about the site. Sumitomo
+ *           Electric's reads `SWE` against a Japanese roster address.
+ *
+ * An enum rather than text because the Supplier page renders the three
+ * differently — "scored JPN (GLEIF)" is a stronger sentence than "scored JPN
+ * (profile)", and a fourth value would be a claim nobody has argued for.
+ */
+export const matchCountrySource = pgEnum('match_country_source', [
+  'gleif',
+  'matched_address',
+  'profile',
+]);
+
+/**
  * `unavailable` is a verdict distinct from `fail` (SPEC §6.2). The real Robert
  * Bosch GmbH has no LEI at all, so `lei_witness = unavailable` must not read as
  * evidence against it.

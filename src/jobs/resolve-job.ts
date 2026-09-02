@@ -48,6 +48,22 @@ export async function runResolveJob(
   if (!supplier) throw new Error(`no supplier ${args.supplierId}`);
   if (!supplier.rosterName) throw new Error(`supplier ${args.supplierId} has no roster name`);
 
+  /**
+   * **Whether this Supplier bids on anything**, read rather than assumed.
+   *
+   * `business_purpose` degrades explicitly for an uncategorised Supplier — it
+   * stops asking "is this consistent with the category" and asks "is this an
+   * operating company at all", and it says which question it asked in its own
+   * reasoning line (SPEC §6.2). This was hardcoded `true`, so the eight rows
+   * the seed keeps deliberately uncategorised were judged against a category
+   * they do not have, and the Needs Review page quoted a sentence about a
+   * comparison that had not happened.
+   */
+  const categories = await deps.db
+    .select({ categoryId: t.supplierCategory.categoryId })
+    .from(t.supplierCategory)
+    .where(eq(t.supplierCategory.supplierId, supplier.id));
+
   // Rung R1. Address and country are omitted when the roster row lacks them,
   // rather than sent as nulls — an empty field is a different query.
   const prepass = await deps.upstream.sayari.resolve({
@@ -83,7 +99,7 @@ export async function runResolveJob(
         name: supplier.rosterName,
         address: supplier.rosterAddress,
         country: supplier.rosterCountry,
-        hasCategory: true,
+        hasCategory: categories.length > 0,
       },
       prepassEntityIds: prepassCandidateIds(prepass.data)
         .slice(0, PREPASS_CANDIDATES)

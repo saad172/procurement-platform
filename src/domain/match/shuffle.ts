@@ -12,12 +12,24 @@ import { createHash } from 'node:crypto';
  * answering a different question — and a fixture that answers a different
  * question is not a fixture.
  *
- * The seed is `hash(match_attempt_id, round_n)`: stable for one Round of one
- * attempt, different across Rounds, and derived rather than stored.
+ * The seed is `hash(supplier_id, attempt_n, round_n)`: stable for one Round of
+ * one attempt, different across Rounds, different across attempts, and derived
+ * rather than stored.
+ *
+ * **The attempt number is not decoration.** This module's own comment said the
+ * seed was the attempt and the Round while the caller passed the *Supplier* id
+ * and the Round — so every re-run of a Supplier shuffled its Candidates into
+ * exactly the same order, and a second attempt showed the blind evaluator the
+ * identical prompt it had already answered. A re-run that cannot vary the one
+ * thing the shuffle exists to vary is not a second opinion.
+ *
+ * A replay stays deterministic because all three components are: the attempt
+ * number is `max(attempt_n) + 1` over rows the replay recreates in the same
+ * order.
  */
 
-export function seedFor(matchAttemptId: string, roundN: number): number {
-  const digest = createHash('sha256').update(`${matchAttemptId}:${roundN}`).digest();
+export function seedFor(supplierId: string, attemptN: number, roundN: number): number {
+  const digest = createHash('sha256').update(`${supplierId}:${attemptN}:${roundN}`).digest();
   return digest.readUInt32BE(0);
 }
 
