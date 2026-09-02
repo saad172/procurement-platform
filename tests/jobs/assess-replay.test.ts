@@ -17,11 +17,12 @@ import { buildAssessableSupplier, openJob } from '../support/pipeline';
  *
  * ## The name is a lie about the current recording, and it is kept anyway
  *
- * Re-recorded on 2026-09-02, this fixture **converges**: the evaluator objected
- * once, on `number_fidelity`, to the draft's own *"this is round 1 of 3"* —
- * a figure the model counted rather than was given — the proposer dropped it,
- * and Round 2 passed. Two Rounds, `passed`, verdict
- * `recommend_with_conditions`.
+ * Re-recorded on 2026-09-02 after the prompts moved (finding 152), this fixture
+ * **converges at once**: the evaluator passed all six rubric items on the first
+ * draft. One Round, `passed`, verdict `recommend_with_conditions`. The
+ * recording before it took two Rounds — the evaluator objected on
+ * `number_fidelity` to the draft's own *"this is round 1 of 3"*, a figure the
+ * model counted rather than was given, and the proposer dropped it.
  *
  * Earlier recordings under this name published carrying an objection the
  * evaluator would not withdraw: that the cited rows *"carry only a key and a
