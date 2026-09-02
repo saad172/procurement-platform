@@ -1,6 +1,6 @@
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import type { BetaRunnableTool } from '@anthropic-ai/sdk/lib/tools/BetaRunnableTool';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import type { ToolContext, ToolDefinition } from '@/tools';
 
@@ -33,7 +33,7 @@ export function toRunnableTool(
   ctx: ToolContext,
   onCall?: (call: CapturedCall) => void,
 ): BetaRunnableTool<never> {
-  return betaZodTool({
+  const runnable = betaZodTool({
     name: tool.name,
     description: tool.description,
     inputSchema: tool.input as never,
@@ -86,6 +86,94 @@ export function toRunnableTool(
       return JSON.stringify(modelPayload(result.data));
     },
   }) as BetaRunnableTool<never>;
+
+  return { ...runnable, parse: recordingParse(runnable, ctx) };
+}
+
+/**
+ * The tool's own `parse`, with the failure written down.
+ *
+ * **The runner parses before it runs.** `generateToolResponse` calls
+ * `tool.parse(input)` inside its own `try`, so a zod failure becomes an
+ * `is_error` tool result and `run` is never entered — which means `onCall`
+ * never fires and `recordOutcome` never fires either. The `trace_tool_call` row
+ * that `runLoop` opened before the tool ran was therefore left with a null
+ * output and a null `ok`: **indistinguishable from a tool that was called and
+ * never returned**, which is the one state a Trace can least afford, and the
+ * same fault the throwing-handler case was fixed for.
+ *
+ * It is the *model's* mistake rather than ours, so the issues are recorded as
+ * objections — the same shape a handler's own refusal takes — and the throw is
+ * re-raised unchanged, so the runner still tells the model exactly what it
+ * would have.
+ */
+function recordingParse(
+  runnable: { name: string; parse: (input: unknown) => unknown },
+  ctx: ToolContext,
+): (input: unknown) => never {
+  return ((input: unknown) => {
+    try {
+      return runnable.parse(input);
+    } catch (error) {
+      void recordParseFailure(ctx, runnable.name, input, describeParseError(error));
+      throw error;
+    }
+  }) as (input: unknown) => never;
+}
+
+/** A zod issue list, in the model's own field names; anything else, verbatim. */
+function describeParseError(error: unknown): string[] {
+  const issues = (error as { issues?: { path: (string | number)[]; message: string }[] }).issues;
+  if (!issues) {
+    return [`the input did not parse: ${error instanceof Error ? error.message : String(error)}`];
+  }
+  return issues.map((issue) => `${issue.path.join('.') || '(root)'} — ${issue.message}`);
+}
+
+/**
+ * Completes the row by **the input the call carried**, because `parse` is not
+ * given the `tool_use` id.
+ *
+ * The runner hands `run` a context holding the block; `parse` gets the raw
+ * input alone. `writeToolCalls` stored that same input verbatim moments
+ * earlier, on the newest turn of this Job, so it identifies the row — and the
+ * `output IS NULL` clause keeps a second, identical call in an earlier turn out
+ * of it.
+ *
+ * Like `recordOutcome`, it never fails the tool: bookkeeping that can break a
+ * live Job is worse than no bookkeeping.
+ */
+async function recordParseFailure(
+  ctx: ToolContext,
+  toolName: string,
+  input: unknown,
+  objections: string[],
+): Promise<void> {
+  if (!ctx.jobId) return; // Chat has no Trace; the transcript is the record.
+  try {
+    const [row] = await ctx.db
+      .select({ id: t.traceToolCall.id })
+      .from(t.traceToolCall)
+      .innerJoin(t.traceTurn, eq(t.traceTurn.id, t.traceToolCall.traceTurnId))
+      .where(
+        and(
+          eq(t.traceTurn.jobId, ctx.jobId),
+          eq(t.traceToolCall.toolName, toolName),
+          isNull(t.traceToolCall.output),
+          sql`${t.traceToolCall.input} = ${JSON.stringify(input ?? null)}::jsonb`,
+        ),
+      )
+      .orderBy(desc(t.traceTurn.n))
+      .limit(1);
+    if (!row) return;
+
+    await ctx.db
+      .update(t.traceToolCall)
+      .set({ output: { objections } as never, ok: false as never, ms: 0 })
+      .where(eq(t.traceToolCall.id, row.id));
+  } catch (error) {
+    console.error(`[model] could not record the refused input to ${toolName}:`, error);
+  }
 }
 
 /**

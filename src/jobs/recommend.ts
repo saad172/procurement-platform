@@ -17,6 +17,7 @@ import type { ModelContext } from '@/model/types';
 import { buildEvidence, buildFrozenInputs, parseObjections } from './assess';
 import { publishVersion } from './publish';
 import { roundCheckpoint } from './round-checkpoint';
+import { readSubmission } from './submission';
 import { UnpublishableDraftError, type EvaluationResult, type ProposalResult } from './rounds';
 import { runProposerEvaluatorLoop } from './rounds';
 import { raiseIfStopped } from './stops';
@@ -206,21 +207,15 @@ async function runRecommendPropose(
     };
   }
 
-  const submitted = result.toolUses.find((u) => u.name === 'submit_recommendation')?.input as
-    | RecommendDraft
-    | undefined;
-  if (!submitted?.sentences?.length) {
-    return {
-      kind: 'refinement_failure',
-      message:
-        `the loop ended without a usable submit_recommendation payload ` +
-        `(tools called: ${result.toolUses.map((u) => u.name).join(', ') || 'none'})`,
-    };
-  }
+  // The LAST submission, parsed against the tool's own schema: a first one the
+  // SDK's parse refused never reached `run()`, and what follows it is the
+  // model's answer to that objection.
+  const submitted = readSubmission<RecommendDraft>(result.toolUses, 'submit_recommendation');
+  if (!submitted.ok) return { kind: 'refinement_failure', message: submitted.message };
   return {
     kind: 'draft',
-    draft: { picks: submitted.picks ?? [], sentences: submitted.sentences },
-    text: JSON.stringify(submitted),
+    draft: { picks: submitted.value.picks ?? [], sentences: submitted.value.sentences },
+    text: JSON.stringify(submitted.value),
   };
 }
 

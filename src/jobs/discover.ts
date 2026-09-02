@@ -11,6 +11,7 @@ import type { Upstream } from '@/upstream';
 import { attributeTexts, type SayariEntity } from '@/upstream/projections/sayari';
 import { upsertEntity } from './resolve';
 import { raiseIfStopped } from './stops';
+import { readSubmission } from './submission';
 
 /**
  * Discover (SPEC §11) — the search for companies on no imported list.
@@ -291,12 +292,15 @@ async function classifyAndRecordLeads(
     // rather than quietly filing the rest as `unclear`, which is a verdict.
     raiseIfStopped(result);
 
-    const submitted =
-      result.status === 'done'
-        ? (result.toolUses.find((use) => use.name === 'submit_lead_classification')?.input as
-            | { classification: string; reasoning: string }
-            | undefined)
-        : undefined;
+    // The last classification, parsed against the tool's own schema. An
+    // unparseable one leaves the Lead `unclear`, which is a real answer and
+    // often the right one — but it is recorded as *we could not read it*
+    // rather than as the classifier's judgement.
+    const read = readSubmission<{ classification: string; reasoning: string }>(
+      result.status === 'done' ? result.toolUses : [],
+      'submit_lead_classification',
+    );
+    const submitted = read.ok ? read.value : undefined;
     if (submitted) classified += 1;
 
     const related = familyMembers.get(candidate.entity.id);

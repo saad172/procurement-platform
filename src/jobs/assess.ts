@@ -17,6 +17,7 @@ import * as assessPrompts from '@/model/prompts/assess';
 import { getRegistry, type ToolContext, type ToolDefinition } from '@/tools';
 import { citationKey, publishVersion, resolveCitations } from './publish';
 import { roundCheckpoint } from './round-checkpoint';
+import { readSubmission } from './submission';
 import {
   UnpublishableDraftError,
   runProposerEvaluatorLoop,
@@ -480,24 +481,20 @@ async function runAssessPropose(
         `the loop ended as ${result.status}` + ('error' in result ? `: ${result.error}` : ''),
     };
   }
-  // Read the proposal out of the message rather than out of the tool's
-  // run(): the agents propose, and our code settles.
-  const submitted = result.toolUses.find((u) => u.name === 'submit_assessment')?.input as
-    | AssessDraft
-    | undefined;
-  if (!submitted?.sentences?.length) {
-    // An Assessment exists only when submit_assessment runs, so a refused
-    // or empty turn makes no record at all — the empty-Assessment failure
-    // is structurally impossible rather than guarded against.
-    return {
-      kind: 'refinement_failure',
-      message:
-        `the loop ended without a usable submit_assessment payload ` +
-        `(tools called: ${result.toolUses.map((u) => u.name).join(', ') || 'none'}; ` +
-        `sentences: ${(submitted as { sentences?: unknown[] } | undefined)?.sentences?.length ?? 'none'})`,
-    };
-  }
-  return { kind: 'draft', draft: submitted, text: JSON.stringify(submitted) };
+  /**
+   * Read the proposal out of the message rather than out of the tool's `run()`
+   * — the agents propose, and our code settles — and read the **last** one,
+   * parsed against the tool's own schema. A first submission the SDK's parse
+   * refused never reaches `run()`, and the model's answer to that objection is
+   * the submission after it.
+   *
+   * An Assessment exists only when `submit_assessment` runs, so a refused or
+   * empty turn makes no record at all: the empty-Assessment failure is
+   * structurally impossible rather than guarded against.
+   */
+  const submitted = readSubmission<AssessDraft>(result.toolUses, 'submit_assessment');
+  if (!submitted.ok) return { kind: 'refinement_failure', message: submitted.message };
+  return { kind: 'draft', draft: submitted.value, text: JSON.stringify(submitted.value) };
 }
 
 async function validateAssessDraft(

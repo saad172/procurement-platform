@@ -13,6 +13,7 @@ import {
 } from '@/domain/match/discriminators';
 import type { ResolveDeps } from './resolve';
 import { raiseIfStopped } from './stops';
+import { readSubmission } from './submission';
 
 /**
  * One Match Round: a resolver, then a **blind** evaluator (SPEC §6).
@@ -223,13 +224,20 @@ async function runAgent(args: {
     console.warn(`[resolve] round ${args.roundN} ${args.submitToolName}: ${result.reason}`);
   }
 
-  // The proposal is read from the MESSAGE, not from the tool's `run()`. A
-  // terminal tool's handler is not guaranteed to have fired, and the agents
-  // propose while our code settles.
-  const submission =
-    (result.toolUses.find((use) => use.name === args.submitToolName)?.input as
-      | Submission
-      | undefined) ?? null;
+  /**
+   * The proposal is read from the MESSAGE, not from the tool's `run()`: a
+   * terminal tool's handler is not guaranteed to have fired, and the agents
+   * propose while our code settles.
+   *
+   * The **last** one, parsed against the tool's own schema. A submission the
+   * SDK's parse refused — eight verdicts is a length check a model does miss —
+   * never reached `run()` at all, and the corrected one is the submission after
+   * it. A payload that still does not parse is no pick, which the ladder reads
+   * as *the agents did not converge* rather than as a shape it can settle on.
+   */
+  const read = readSubmission<Submission>(result.toolUses, args.submitToolName);
+  if (!read.ok) console.warn(`[resolve] round ${args.roundN}: ${read.message}`);
+  const submission = read.ok ? read.value : null;
 
   return {
     submission,
