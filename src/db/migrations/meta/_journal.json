@@ -43,6 +43,13 @@
       "when": 1788206815890,
       "tag": "0005_slow_emma_frost",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788374783667,
+      "tag": "0006_even_doctor_octopus",
+      "breakpoints": true
     }
   ]
 }
