@@ -258,7 +258,13 @@ async function dispatch<TParams extends Record<string, unknown>, TProjected>(
           bodyHash,
           via,
         })
-        .returning({ id: t.upstreamResponse.id, fetchedAt: t.upstreamResponse.fetchedAt });
+        // `body` comes back so phase 4 can project the STORED row rather than
+        // the object that went in — see `project()` for why that matters.
+        .returning({
+          id: t.upstreamResponse.id,
+          fetchedAt: t.upstreamResponse.fetchedAt,
+          body: t.upstreamResponse.body,
+        });
       await writeUsage(ctx, def, {
         ms,
         outcome: 'ok',
@@ -269,7 +275,7 @@ async function dispatch<TParams extends Record<string, unknown>, TProjected>(
 
       // ── 4. Project ───────────────────────────────────────────────────────
       return {
-        data: project(def, body, paramsHash),
+        data: project(def, stored!.body, paramsHash),
         cacheHit: false,
         via,
         fetchedAt: stored!.fetchedAt,
@@ -306,7 +312,31 @@ async function dispatch<TParams extends Record<string, unknown>, TProjected>(
   throw lastError ?? new Error('unreachable: retry loop exited without a result');
 }
 
-/** Callers never see an SDK type — only our own lenient projection. */
+/**
+ * Callers never see an SDK type — only our own lenient projection.
+ *
+ * ## Both callers project the **stored** body, and that is not a detail
+ *
+ * `jsonb` does not preserve object key order: it stores keys sorted by length
+ * then bytewise, so the row Postgres hands back is not the object that went in.
+ * A live call used to project the body the SDK returned while a cache hit
+ * projected the round-tripped one, which made **two different objects out of
+ * one body** — Sayari's `risk` is a record keyed by factor and `identifiers` is
+ * an array of passthrough objects, so both come out in a different order
+ * depending on which side read them.
+ *
+ * A tool result is this projection serialised, and a request body is the tool
+ * results so far. So a fixture recorded on a **cold** cache could never replay
+ * from the bodies it had just recorded: `resolve/agree-r1` missed at turn 5 on
+ * one entity's four identifiers and two risk factors, having replayed four
+ * turns cleanly.
+ *
+ * Reading the row back on the live path costs one already-open round trip and
+ * makes the two projections identical by construction — the same argument
+ * finding 100 made for having one reader of the cache rather than two.
+ * `tests/upstream/call.test.ts` asserts it over the serialised form, because
+ * the two objects were always equal by value.
+ */
 function project<TParams extends Record<string, unknown>, TProjected>(
   def: EndpointDef<TParams, TProjected>,
   body: unknown,
