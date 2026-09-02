@@ -112,10 +112,54 @@ export const DEEP_TRAVERSAL_MAX_PAGES = Math.ceil(
  * runaway loop is not something a human should be able to wave through, so
  * these are not raisable from the UI, unlike the run budget.
  *
- * PROVISIONAL.
+ * ## Re-fit on 2026-09-02, from measurement rather than from argument
+ *
+ * The first table was provisional and every number in it was too small. What
+ * it was measured against, on the development database (59 resolve, 62 enrich,
+ * 60 assess, 4 recommend Jobs) and on the committed fixtures:
+ *
+ * | Job kind | worst tool calls | worst tokens | old cap | new cap |
+ * |---|---|---|---|---|
+ * | resolve | **90** (`resolve/not-found`), 57 on dev | 354,917 | 60 · 400,000 | 180 · 1,100,000 |
+ * | assess | **66** on dev, 37 on the fixture | 770,047 | 40 · 450,000 | 130 · 2,300,000 |
+ * | recommend | **79** on dev, 11 on the fixture | 1,148,502 | 60 · 900,000 | 160 · 3,500,000 |
+ * | enrich | 11 upstream calls | — | 25 | 25, unchanged |
+ * | fetch_entity | 1 | — | 2 | 2, unchanged |
+ * | traverse | 8 (`DEEP_TRAVERSAL_MAX_PAGES` × 2) | — | 20 | 20, unchanged |
+ * | discover | never run | never run | 40 · 300,000 | unchanged, still PROVISIONAL |
+ *
+ * Tokens are the ceiling's own definition — input + cache_creation + output,
+ * Job-wide, cache reads excluded (`tokensOf` in `run-loop.ts`) — summed per
+ * `job_id` over `usage_event`, and tool calls are `trace_tool_call` rows per
+ * Job. **Three of the six numbers were below what a healthy Job had already
+ * spent**: assess ran to 66 tool calls against a ceiling of 40 and recommend to
+ * 79 against 60, and neither fired only because the ceiling used to bound one
+ * `runLoop()` call rather than the Job (finding 117). The Job-wide count landed
+ * afterwards, which turned three provisional numbers into three latent bugs.
+ *
+ * **The measurements are conservative twice over.** They come from runs made
+ * before prompt caching was switched on (finding 124), so every repeated prefix
+ * was billed as fresh input; with caching the same work counts *fewer* capped
+ * tokens, because a cache read is excluded by design.
+ *
+ * `discover` is the one row still provisional: no `discover` Job has ever run
+ * on the development database, so there is nothing to fit it to and inventing a
+ * number would be the thing this re-fit exists to stop.
+ *
+ * **One ceiling, two counters.** `tool_call_cap` bounds model `tool_use` blocks
+ * in `run-loop.ts` *and* upstream dispatches in `upstream/call.ts` — and the
+ * upstream one counts every `usage_event` row with `cache_hit = false`, which
+ * includes the model's own turns. So a resolve Job that made 34 model turns had
+ * 26 upstream calls left of 60. The worst Job measured 57 of those combined
+ * events against the old 60. Both readings are covered here: 180 is 2× the 90
+ * model tool calls of `resolve/not-found` and comfortably over its ~86 combined
+ * events.
+ *
+ * **Re-measured by:** the queries in finding 150, over `usage_event` and
+ * `trace_tool_call` grouped by `job.kind`.
  */
 export const JOB_CAPS = {
-  resolve: { toolCalls: 60, tokens: 400_000 },
+  resolve: { toolCalls: 180, tokens: 1_100_000 },
   enrich: { toolCalls: 25, tokens: 0 },
   /**
    * One company, one `getEntity`. The ceiling is 2 rather than 1 only because a
@@ -123,8 +167,9 @@ export const JOB_CAPS = {
    */
   fetch_entity: { toolCalls: 2, tokens: 0 },
   traverse: { toolCalls: 20, tokens: 0 },
-  assess: { toolCalls: 40, tokens: 450_000 },
-  recommend: { toolCalls: 60, tokens: 900_000 },
+  assess: { toolCalls: 130, tokens: 2_300_000 },
+  recommend: { toolCalls: 160, tokens: 3_500_000 },
+  /** PROVISIONAL — no `discover` Job has run, so there is nothing to fit to. */
   discover: { toolCalls: 40, tokens: 300_000 },
   dossier: { toolCalls: 100, tokens: 0 },
 } as const;
