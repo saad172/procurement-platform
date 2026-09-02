@@ -1,0 +1,2 @@
+ALTER TABLE "enrichment" ADD COLUMN "generation" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+CREATE INDEX "enrichment_generation_idx" ON "enrichment" USING btree ("source","subject_kind","subject_key","generation");

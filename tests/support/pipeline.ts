@@ -109,6 +109,31 @@ export async function buildAssessableSupplier(
   return { supplierId: supplier.id, programId: program.id, runId: run!.id };
 }
 
+/**
+ * A **second** enrich Job over a Supplier the pipeline has already enriched.
+ *
+ * Re-enrichment is a normal act — a person clicks *Run* again, or a Deep
+ * Traversal reopens a Profile — and it is the act every append-only Enrichment
+ * table is exposed to. Everything upstream is served from the cache the first
+ * pass warmed, so this spends nothing and asks the same questions.
+ */
+export async function reEnrichSupplier(
+  db: TestDb,
+  args: { supplierId: string; programId: string; runId: string },
+): Promise<void> {
+  const jobId = await openJob(db, args.runId, 'enrich', args.supplierId);
+  await enrichSupplier(
+    {
+      db,
+      upstream: replayUpstream(db, args.runId, jobId),
+      meter: { addModelTokens: () => {} },
+      runId: args.runId,
+      jobId,
+    } as never,
+    { supplierId: args.supplierId, programId: args.programId },
+  );
+}
+
 /** A Job row, because caps and `job_id` are what the bookkeeping hangs off. */
 export async function openJob(
   db: TestDb,

@@ -1,0 +1,1 @@
+ALTER TABLE "lead" ADD COLUMN "not_classified_reason" text;

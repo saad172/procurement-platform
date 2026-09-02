@@ -43,6 +43,27 @@
       "when": 1788206815890,
       "tag": "0005_slow_emma_frost",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788374083460,
+      "tag": "0006_nappy_wong",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788374453380,
+      "tag": "0007_careful_johnny_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788374747762,
+      "tag": "0008_needy_ogun",
+      "breakpoints": true
     }
   ]
 }

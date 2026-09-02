@@ -52,10 +52,17 @@ export async function loadCategoryPage(
 
   const scoredLine = category.hsLines.find((l) => l.isDefault);
 
+  /**
+   * The Lead rows, the company each one is, and — where Discover found one —
+   * the **name** of the Supplier it may be related to. SPEC §11.2 words the
+   * badge with the company in it (*possibly related to Yazaki*), which needs a
+   * name rather than the `related_supplier_id` the row stores.
+   */
   const leads = await db
-    .select({ lead: t.lead, entity: t.entity })
+    .select({ lead: t.lead, entity: t.entity, relatedSupplierName: t.supplier.rosterName })
     .from(t.lead)
     .innerJoin(t.entity, eq(t.entity.id, t.lead.entityId))
+    .leftJoin(t.supplier, eq(t.supplier.id, t.lead.relatedSupplierId))
     .where(eq(t.lead.categoryId, categoryId));
 
   const version = recommendation?.versions[0];

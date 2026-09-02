@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { z } from 'zod/v4';
-import { leadRelation } from '@/domain/lead-answer';
+import { leadClassificationLabel, leadRelation } from '@/domain/lead-answer';
 import { RawPayload } from './raw';
 
 /**
@@ -24,6 +24,8 @@ const leadSchema = z.object({
   programId: z.string(),
   entityId: z.string(),
   classification: z.string().nullable(),
+  /** Why there is none, when there is none — never the word `unclear`. */
+  notClassifiedReason: z.string().nullable().optional(),
   shipmentCount: z.number().nullable(),
   latestShipmentDate: z.string().nullable(),
   relatedSupplierId: z.string().nullable().optional(),
@@ -76,13 +78,7 @@ function LeadRow({ l }: { l: Lead }) {
         ) : null}
       </td>
       <td>
-        {l.classification ? (
-          <span className={`badge ${l.classification === 'manufacturer' ? 'good' : 'mute'}`}>
-            {l.classification.replace(/_/g, ' ')}
-          </span>
-        ) : (
-          <span className="badge mute">not classified</span>
-        )}
+        <ClassificationBadge l={l} />
       </td>
       <td className="num">
         {l.shipmentCount?.toLocaleString('en-US') ?? '—'}
@@ -92,6 +88,29 @@ function LeadRow({ l }: { l: Lead }) {
         <RelationBadge l={l} />
       </td>
     </tr>
+  );
+}
+
+/**
+ * The classification, or why there is none.
+ *
+ * Shares `leadClassificationLabel` with the Category page for the reason the
+ * relation badge shares `leadRelation`: this widget already drifted from the
+ * page once. A Lead with no classification says *not classified: <reason>*
+ * rather than `unclear`, because a classifier that hit its cap made no
+ * judgement and *unclear* is a judgement.
+ */
+function ClassificationBadge({ l }: { l: Lead }) {
+  const label = leadClassificationLabel(l);
+  if (label.kind === 'not_classified') {
+    return (
+      <span className="badge mute" title={label.title ?? undefined}>
+        {label.label}
+      </span>
+    );
+  }
+  return (
+    <span className={`badge ${label.manufacturer ? 'good' : 'mute'}`}>{label.label}</span>
   );
 }
 

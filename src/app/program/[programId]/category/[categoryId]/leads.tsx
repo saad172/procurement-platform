@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type * as t from '@/db/schema';
-import { leadRelation } from '@/domain/lead-answer';
+import { leadClassificationLabel, leadRelation } from '@/domain/lead-answer';
 import { dismiss, promote } from './lead-actions';
 
 /**
@@ -27,7 +27,11 @@ export function LeadsTable({
   programId: string;
   categoryId: string;
   categoryCode: string;
-  leads: { lead: typeof t.lead.$inferSelect; entity: typeof t.entity.$inferSelect }[];
+  leads: {
+    lead: typeof t.lead.$inferSelect;
+    entity: typeof t.entity.$inferSelect;
+    relatedSupplierName: string | null;
+  }[];
   showDismissed: boolean;
 }) {
   const visible = leads.filter((row) => showDismissed || !row.lead.dismissed);
@@ -60,11 +64,12 @@ export function LeadsTable({
               </tr>
             </thead>
             <tbody>
-              {visible.map(({ lead, entity }) => (
+              {visible.map(({ lead, entity, relatedSupplierName }) => (
                 <LeadRow
                   key={lead.id}
                   lead={lead}
                   entity={entity}
+                  relatedSupplierName={relatedSupplierName}
                   programId={programId}
                   categoryId={categoryId}
                   categoryCode={categoryCode}
@@ -94,12 +99,14 @@ export function LeadsTable({
 function LeadRow({
   lead,
   entity,
+  relatedSupplierName,
   programId,
   categoryId,
   categoryCode,
 }: {
   lead: typeof t.lead.$inferSelect;
   entity: typeof t.entity.$inferSelect;
+  relatedSupplierName: string | null;
   programId: string;
   categoryId: string;
   categoryCode: string;
@@ -111,7 +118,7 @@ function LeadRow({
         <div className="note">{entity.country ?? 'country unknown'}</div>
       </td>
       <td>
-        <ClassificationBadge value={lead.classification} />
+        <ClassificationBadge lead={lead} />
         {lead.classificationReasoning ? (
           <div className="note" title={lead.classificationReasoning}>
             {lead.classificationReasoning.slice(0, 70)}…
@@ -124,7 +131,7 @@ function LeadRow({
         {lead.latestShipmentDate ?? 'not recorded'}
       </td>
       <td>
-        <RelationBadge lead={lead} />
+        <RelationBadge lead={lead} relatedSupplierName={relatedSupplierName} />
       </td>
       <td>
         <LeadActions
@@ -139,8 +146,14 @@ function LeadRow({
 }
 
 /** `leadRelation()` (`@/domain/lead-answer`) owns the wording; this only picks the tone and the markup that carries it. */
-function RelationBadge({ lead }: { lead: typeof t.lead.$inferSelect }) {
-  const relation = leadRelation(lead);
+function RelationBadge({
+  lead,
+  relatedSupplierName,
+}: {
+  lead: typeof t.lead.$inferSelect;
+  relatedSupplierName: string | null;
+}) {
+  const relation = leadRelation(lead, relatedSupplierName);
   if (relation.kind === 'verified') {
     return (
       <span className="badge good" title={relation.title}>
@@ -213,15 +226,26 @@ function LeadActions({
 }
 
 /**
- * The closed enum, rendered.
+ * The closed enum, rendered — or the reason there is no enum to render.
  *
  * **`unclear` is a real answer and is often the right one** — a guess dressed
  * as a classification is worse than an admission, because a person reviewing
- * leads can act on "unclear" and cannot act on a confident mistake.
+ * leads can act on "unclear" and cannot act on a confident mistake. Which is
+ * why *not classified* is a different badge in different words:
+ * `leadClassificationLabel` says which of the two this row is, and a row that
+ * was never classified says why rather than borrowing the model's word for
+ * having looked.
  */
-function ClassificationBadge({ value }: { value: string | null }) {
-  if (!value) return <span className="badge mute">not classified</span>;
-  if (value === 'manufacturer') return <span className="badge good">manufacturer</span>;
-  if (value === 'unclear') return <span className="badge warn">unclear</span>;
-  return <span className="badge mute">{value.replace(/_/g, ' ')}</span>;
+function ClassificationBadge({ lead }: { lead: typeof t.lead.$inferSelect }) {
+  const label = leadClassificationLabel(lead);
+  if (label.kind === 'not_classified') {
+    return (
+      <span className="badge mute" title={label.title ?? undefined}>
+        {label.label}
+      </span>
+    );
+  }
+  if (label.manufacturer) return <span className="badge good">manufacturer</span>;
+  if (lead.classification === 'unclear') return <span className="badge warn">unclear</span>;
+  return <span className="badge mute">{label.label}</span>;
 }
