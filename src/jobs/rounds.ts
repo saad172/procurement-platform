@@ -224,56 +224,7 @@ async function runOneRound<TDraft>(
   }
 
   if (!proposal || proposal.kind !== 'draft') {
-    /**
-     * Out of attempts. A broken loop, not a disagreement — and **which** kind
-     * of broken is the whole value of the message.
-     */
-    const attempts = MAX_FREE_RETRIES_PER_ROUND + 1;
-    const objection =
-      proposal?.kind === 'loop_failure'
-        ? `The model loop failed on all ${attempts} attempts. The last failure was: ${proposal.message}`
-        : `The proposer could not produce a well-shaped draft in ${attempts} attempts.`;
-
-    /**
-     * **The draft it would have fallen back on may be one the code rejected.**
-     *
-     * `state.lastDraft` is only cleared when a draft passes the checks, so a
-     * draft that failed the validator in Round N was still sitting there when
-     * Round N+1's three attempts all failed — and this early return published
-     * it, which is exactly the fault `settleAfterMaxRounds` was written to
-     * stop. A code objection is not a matter of judgement: a Citation pointing
-     * at a row that does not exist cannot be inserted whatever anyone thinks of
-     * it, so carrying one forward as dissent treats an impossibility as an
-     * opinion. The exhausted-attempts objection is carried alongside, because
-     * *why there is no newer draft* is the other half of the answer.
-     */
-    if (state.lastCodeObjections.length > 0) {
-      return {
-        outcome: {
-          draft: undefined,
-          evaluatorOutcome: 'rejected_by_code',
-          rounds: state.rounds,
-          dissent: [
-            ...state.lastCodeObjections.map((o) => ({
-              objection: `[${o.check}] ${o.message}`,
-              reply: undefined,
-            })),
-            { objection, reply: undefined },
-          ],
-          roundsUsed: roundN,
-        },
-      };
-    }
-
-    return {
-      outcome: {
-        draft: state.lastDraft,
-        evaluatorOutcome: 'published_with_objections',
-        rounds: state.rounds,
-        dissent: [{ objection, reply: undefined }],
-        roundsUsed: roundN,
-      },
-    };
+    return { outcome: settleAfterAttemptsRunOut(proposal, state, roundN) };
   }
 
   state.lastDraft = proposal.draft;
@@ -321,6 +272,61 @@ async function runOneRound<TDraft>(
   }
   state.carriedObjections = evaluation.objections;
   return { outcome: null };
+}
+
+/**
+ * Every attempt in this Round failed to produce a draft at all.
+ *
+ * A broken loop, not a disagreement — and **which** kind of broken is the whole
+ * value of the message: three `Connection error`s once exhausted the retries
+ * and the Job announced *"the proposer could not produce a well-shaped draft in
+ * 3 attempts"*, blaming the model for a network fault.
+ *
+ * **The draft it falls back on may be one the code rejected.** `lastDraft` is
+ * cleared only when a draft passes the checks, so a draft that failed the
+ * validator in Round N was still sitting there when Round N+1's three attempts
+ * all failed — and this published it, which is the fault `settleAfterMaxRounds`
+ * exists to stop, reached by the one path that did not go through it. A code
+ * objection is not a matter of judgement: a Citation pointing at a row that
+ * does not exist cannot be inserted whatever anyone thinks of it, so carrying
+ * one forward as dissent treats an impossibility as an opinion.
+ */
+function settleAfterAttemptsRunOut<TDraft>(
+  proposal: ProposalResult<TDraft> | undefined,
+  state: RoundState<TDraft>,
+  roundN: number,
+): LoopOutcome<TDraft> {
+  const attempts = MAX_FREE_RETRIES_PER_ROUND + 1;
+  const objection =
+    proposal?.kind === 'loop_failure'
+      ? `The model loop failed on all ${attempts} attempts. The last failure was: ${proposal.message}`
+      : `The proposer could not produce a well-shaped draft in ${attempts} attempts.`;
+
+  if (state.lastCodeObjections.length > 0) {
+    return {
+      draft: undefined,
+      evaluatorOutcome: 'rejected_by_code',
+      rounds: state.rounds,
+      // Both halves of the answer: what the code refused, and why there is no
+      // newer draft to put in its place.
+      dissent: [
+        ...state.lastCodeObjections.map((o) => ({
+          objection: `[${o.check}] ${o.message}`,
+          reply: undefined,
+        })),
+        { objection, reply: undefined },
+      ],
+      roundsUsed: roundN,
+    };
+  }
+
+  return {
+    draft: state.lastDraft,
+    evaluatorOutcome: 'published_with_objections',
+    rounds: state.rounds,
+    dissent: [{ objection, reply: undefined }],
+    roundsUsed: roundN,
+  };
 }
 
 /**

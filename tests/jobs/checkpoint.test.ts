@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { loadRoundCheckpoint, saveRoundCheckpoint } from '@/jobs/checkpoint';
@@ -17,6 +17,18 @@ import { getTestDb, testDatabaseIsUp, testSql, type TestDb } from '../support/te
  */
 
 type Draft = { text: string };
+
+/**
+ * Dropped again at the end, because the last of these tests leaves a Job in
+ * `queued` — and `dequeueJob` takes the oldest queued Job **anywhere**, so one
+ * left behind here is one `runs.test.ts` claims while proving that two workers
+ * never take the same Job.
+ */
+afterAll(async () => {
+  if (!(await testDatabaseIsUp())) return;
+  await getTestDb();
+  await testSql()`DELETE FROM program WHERE name = 'checkpoint fixture'`;
+});
 
 describe('the ladder resumes at the Round it reached', () => {
   it('continues from the next Round, carrying the objections that Round drew', async () => {
