@@ -73,6 +73,7 @@ what production runs: the dequeue, the caps, the Trace, the usage rows.
 pnpm enqueue resolve Yazaki          # queue it
 pnpm worker                          # in a second terminal, claim and run it
 pnpm enqueue recommend HAR
+pnpm enqueue traverse Yazaki         # a Deep Traversal: Sayari credits, no model tokens
 pnpm enqueue resolve Rosoboronexport --test-program   # the arranged fixtures program
 ```
 
@@ -88,6 +89,30 @@ pnpm fixtures:record-chat                    # chat has no Trace; recorded at th
 pnpm fixtures:rehash <name> <dumpDir>        # only when the HASH changed, not the request
 ```
 
+`fixtures:record-replayable` runs the Job itself, from a reset database, and
+exports it — one named recipe per fixture:
+
+```
+pnpm fixtures:record-replayable rules-r0     # the auto-accept gate settling alone: 0 tokens
+pnpm fixtures:record-replayable agree-r1     # resolve, agents agree in Round 1
+pnpm fixtures:record-replayable not-found
+pnpm fixtures:record-replayable sanctioned
+pnpm fixtures:record-replayable assess
+pnpm fixtures:record-replayable recommend
+pnpm fixtures:record-replayable traverse     # a Deep Traversal of the Yazaki Profile
+```
+
+**`traverse` is the odd one out**: `assess` and `recommend` spend Anthropic
+tokens and read Sayari from cache; `traverse` spends **Sayari credits and no
+tokens at all** — the recorded Yazaki walk cost three calls. A resolve recipe's
+whole input *is* the upstream, so it cannot be served from a fixture without
+recording a recording; each one resets the test database first
+([finding 85](docs/BUILD-NOTES.md)) and runs the real Job live.
+
+**Order matters, and it is not arbitrary: resolve → assess → recommend → chat.**
+`assess` is recorded by replaying `resolve`, and `recommend` by replaying
+`assess`, so a stale resolve fixture reddens everything downstream of it.
+
 Record with `MODEL_REQUEST_DUMP_DIR=/tmp/dumps` set and `fixtures:rehash` can
 rebuild the hashes offline. Without it, a change to how a request is hashed costs
 a full pipeline re-run — about forty-five minutes
@@ -102,14 +127,20 @@ pnpm test       # vitest run  (pnpm test:watch to iterate)
 pnpm format     # prettier --write
 ```
 
-> **All 654 pass, including on a database created seconds ago.** Two replays used
-> to miss at turn 3 on a freshly created `procurement_test`, which read as a
-> drifted fixture for three sessions and was not one: `enrich` asked for "the
-> cached entity body" without saying *which* entity, so it could attribute one
-> company's ownership to another, and the recorded fixture had frozen the wrong
-> answer. [`docs/BUILD-NOTES.md` finding 100](docs/BUILD-NOTES.md) is the
-> account; `tests/jobs/owner-edges.test.ts` is what stops it returning, because a
-> replay fixture provably cannot.
+> **The suite is red, and every red test is a recording that has not been made.**
+> On `integration` at `da8e2ab`, 862 tests run and **17 fail**; on the
+> `evaluator-verdict` branch (PR #7) 884 run and **26 fail** — those 17 plus 9 of
+> its own. Nothing under `src/` is failing on any branch. The Anthropic key
+> available to this build returned **HTTP 401** on 2026-09-02, so
+> `resolve/agree-r1` could not be re-recorded after the Match gate changed what a
+> Candidate summary says; four replay tests miss it directly and the rest never
+> get a settled Match, because `tests/support/pipeline.ts` seeds through it. The
+> nine on PR #7 are the assess, recommend and chat fixtures drifting on prompts
+> and payloads that genuinely changed.
+> **[`docs/BUILD-NOTES.md` finding 148](docs/BUILD-NOTES.md) names every red test,
+> its fixture and its turn**, and states what was not recorded, not run and not
+> built that day, and why. Recording order once a key works: resolve → assess →
+> recommend → chat.
 
 Two checks spend real Sayari credits and so are scripts rather than tests:
 
@@ -124,6 +155,37 @@ pnpm check:founding-example   # re-measures the Bosch example the app is built a
 pnpm check:prefilter          # grades the forwarder heuristic against Sayari's own flag
 ```
 
+### Grading the Match loop against a truth set
+
+SPEC §1.2 rules out a hand-labelled gold set on the ground that the
+evaluator-in-the-loop *is* the eval. That is what
+[finding 108](docs/BUILD-NOTES.md) cost: the auto-accept gate settled four
+Suppliers on a subsidiary and no number anywhere said so.
+
+`src/db/seed-data/expected-matches.ts` is one expected Match per roster row —
+an entity id, or `parking_is_correct`, or `not_in_sayari` — with a `twins` list,
+a confidence and the evidence-side reason. It was drafted **entirely from rows
+the development database already held**, so it cost no upstream call and no
+credit, and **no app behaviour may depend on it**: nothing outside it and
+`scripts/check-matches.ts` may read it, no Score may move because of it, and no
+Match may be settled from it. `docs/seed/expected-matches-draft.md` is the
+human-readable review sheet.
+
+```bash
+pnpm check:matches            # reads the database, spends nothing
+```
+
+It prints a five-way scoreboard — accepted right, accepted a Twin, accepted
+wrong, parked correctly, parked with the answer in hand, not found wrongly —
+over **confirmed rows only**, listing the rest as outstanding, so nothing can
+flatter the loop until a person has said a row is true. All fifty rows read
+`confirmed: true` on the owner's instruction of 2026-09-02 (*"make the best
+assumptions for now"*): **a confirmation by assumption is still a confirmation,
+and still a judgement.** Today it reads **42 accepted right · 4 accepted a Twin ·
+4 accepted wrong**, on a database where twelve of the seventeen rules-settled
+rows have not yet been re-run under the tightened gate
+([finding 146](docs/BUILD-NOTES.md)).
+
 One check spends nothing but needs the app running, because what it checks is
 the app running:
 
@@ -132,8 +194,11 @@ pnpm dev          # in one terminal
 pnpm smoke:pages  # in another — fetches all thirteen pages
 ```
 
-**Nothing in the suite touches `src/app`.** Sixty-one test files cover the
-domain, the jobs, the tools and the two clients, and not one renders a page. So
+**Nothing in the suite renders a page.** Eighty-four test files cover the domain,
+the jobs, the tools and the two clients; exactly one reaches `src/app` at all —
+`tests/app/confirm-route.test.ts`, which posts to the chat confirm route because
+[finding 128](docs/BUILD-NOTES.md) is a fault in the route and nowhere else — and
+not one renders a page. So
 `smoke:pages` fetches every route and asserts more than a status code: a page
 that lost its `where` clause still returns 200, renders empty, and passes a
 status check. Each route carries **markers read out of the database** — the
@@ -258,6 +323,35 @@ Sequenced so each step is verifiable before the next depends on it
 
 All sixteen are done. What each step actually cost, and every place the spec's
 assumptions turned out to be wrong, is in
-[`docs/BUILD-NOTES.md`](docs/BUILD-NOTES.md) — 105 numbered findings, each one a
+[`docs/BUILD-NOTES.md`](docs/BUILD-NOTES.md) — 148 numbered findings, each one a
 measurement rather than an opinion. **The write-up should quote that file, not
 the spec, for any number.**
+
+### The correctness pass, 2026-09-02
+
+After the sixteen steps, the model loops were audited for **data and output**
+correctness — the right company, a defensible pick — rather than for structure
+alone. The audit is [findings 108–148](docs/BUILD-NOTES.md); the work landed as
+six branches and pull requests.
+
+| PR | Branch | Base | What it is |
+|---|---|---|---|
+| [#4](https://github.com/saad172/procurement-platform/pull/4) | `loop-spine` | `main` | Thirteen corrections to the loops: Job-wide caps, a live budget check, `terminated` reaching the row, the submission parsed, upstream failures as sentences, prompt caching switched on with no fixture moved |
+| [#2](https://github.com/saad172/procurement-platform/pull/2) | `enrichment-data` | `main` | Enrichment values read one generation at a time; Discover writes down what it decided |
+| [#3](https://github.com/saad172/procurement-platform/pull/3) | `recommendation-mark` | `main` | A person can mark a Recommendation accepted, rejected or needs work, and the accepted version stays in front |
+| [#5](https://github.com/saad172/procurement-platform/pull/5) | `match-gate` | `main` | The auto-accept gate anchors on one address, corroborates jurisdiction, reads a name's surplus, refuses an unruled-out rival — and the truth set |
+| [#6](https://github.com/saad172/procurement-platform/pull/6) | `deep-traversal` | `loop-spine` | The Deep Traversal follows the cursor in both directions |
+| [#7](https://github.com/saad172/procurement-platform/pull/7) | `evaluator-verdict` | `integration` | The evaluator submits a verdict through a tool; the frozen inputs tell the truth; the payloads carry their citation ids |
+
+**`integration` is where they are assembled**, in that order, each merge
+`--no-ff` with the conflicts and their resolutions written into the merge
+commit. Five are merged (`da8e2ab`); PR #7 stacks on top of it, and this
+write-up stacks on both.
+
+Three things the pass did not finish, each with its reason in
+[finding 148](docs/BUILD-NOTES.md): the drifted fixtures are **not re-recorded**
+(the Anthropic key returned 401 all day; total spend $0.00), **twelve of the
+seventeen** rules-settled roster rows are not re-run under the new gate, and the
+**Dossier** is not built — a Deep Traversal was built instead, because it is the
+one of the two that spends no model tokens and could therefore be finished and
+recorded on such a day.
