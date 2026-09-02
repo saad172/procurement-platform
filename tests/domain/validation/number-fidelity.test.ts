@@ -61,6 +61,39 @@ describe('PARAPHRASE FAILS — which is the point of the rule', () => {
     expect(failures[0]!.message).toMatch(/cite the row that carries it/);
   });
 
+  it('states the rule the check actually applies, rounding included', () => {
+    const failures = checkNumberFidelity('Its score is 88.4.', candidates);
+    expect(failures[0]!.message).toMatch(
+      /must appear in the frozen inputs or on a row this sentence cites, rounded to the decimals you wrote/,
+    );
+  });
+
+  it('names nothing when no stored value is near', () => {
+    // 88.4 is 24% away from the nearest candidate (71.28). Naming that would
+    // invite the model to write a figure it never had evidence for.
+    const failures = checkNumberFidelity('Its score is 88.4.', candidates);
+    expect(failures[0]!.message).not.toMatch(/nearest stored value/);
+  });
+
+  it('names the nearest stored value when the figure is one rounding away', () => {
+    // Finding 152: three Rounds were spent on a figure the objection could
+    // have pointed at.
+    const failures = checkNumberFidelity('It is 47.61 km away.', candidates);
+    expect(failures[0]!.message).toMatch(/the nearest stored value is 47\.6/);
+  });
+
+  it('names the nearest stored value for a paraphrased figure too', () => {
+    const failures = checkNumberFidelity('It is roughly 800 km away.', candidates);
+    expect(failures[0]!.message).toMatch(/the nearest stored value is 824/);
+  });
+
+  it('measures a percentage against both readings of a candidate', () => {
+    // A stored 0.025 is 2.5%, so a written 2.6% is one rounding away from it
+    // and the objection says so rather than leaving the model to guess.
+    const failures = checkNumberFidelity('The rate is 2.6%.', candidatesFrom({}, [{ r: 0.025 }]));
+    expect(failures[0]!.message).toMatch(/the nearest stored value is 0\.025/);
+  });
+
   it('reports every failure rather than the first', () => {
     // A Round spent on a rejection should fix everything it can.
     const failures = checkNumberFidelity('It is 800 km away and scores 88.4.', candidates);
