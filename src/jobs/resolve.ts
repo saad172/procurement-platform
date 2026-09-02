@@ -4,6 +4,7 @@ import * as t from '@/db/schema';
 import { MAX_ROUNDS } from '@/config/constants';
 import { evaluateAutoAccept, type CandidateAssessment } from '@/domain/match/auto-accept';
 import {
+  nameTokensOf,
   runDiscriminators,
   type CandidateFacts,
   type RosterRow,
@@ -553,6 +554,9 @@ function settledEvidenceFor(roster: RosterRow, candidate: CandidateFacts): Settl
     rosterAddress: roster.address,
     rosterCountry: roster.country,
     addresses: candidate.addresses,
+    // The same question, including the name tokens, or the ladder can anchor
+    // on a different address here than the Discriminators anchored on.
+    nameTokens: nameTokensOf(roster, candidate),
   });
   return {
     lei: candidate.lei,

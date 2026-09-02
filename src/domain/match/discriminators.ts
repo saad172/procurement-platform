@@ -225,6 +225,11 @@ export function runDiscriminators(
     rosterAddress: roster.address,
     rosterCountry: roster.country,
     addresses: candidate.addresses,
+    // What `name_cover` itself reads, so the street rung and the name rung
+    // cannot disagree about which words are the company's name. Row 1's street
+    // is `Robert-Bosch-Platz`, and two of its three street-level tokens are the
+    // company.
+    nameTokens: nameTokensOf(roster, candidate),
   });
 
   return [
@@ -237,6 +242,23 @@ export function runDiscriminators(
     businessPurpose(roster, candidate),
     liveness(candidate),
   ];
+}
+
+/**
+ * Every significant token of the roster name and of the Candidate's own label.
+ *
+ * Handed to the address ladder so its street rung can drop the company's name
+ * from the roster's "street-level" tokens. Both sides are needed: the roster
+ * name is what the street is named after, and the Candidate's label is what its
+ * address line repeats.
+ *
+ * Exported because `settledEvidenceFor` (`src/jobs/resolve.ts`) re-runs the
+ * ladder to find the anchored address, and it has to ask the same function the
+ * same question or it can anchor on a different address than the Discriminators
+ * did — which would score the Match on a country no rung ever agreed with.
+ */
+export function nameTokensOf(roster: RosterRow, candidate: CandidateFacts): string[] {
+  return [...significantTokens(roster.name), ...significantTokens(candidate.label)];
 }
 
 function countryDiscriminator(
@@ -300,7 +322,8 @@ function localityDiscriminator(address: AddressComparison): DiscriminatorResult 
  * sentence about a comparison that had not happened.
  */
 function streetDiscriminator(address: AddressComparison): DiscriminatorResult {
-  const { streetTokensMatched, rosterStreetTokens, candidateLine } = address.evidence;
+  const { streetTokensMatched, rosterStreetTokens, distinctiveStreetTokens, candidateLine } =
+    address.evidence;
   return {
     discriminator: 'street',
     verdict: address.street,
@@ -313,10 +336,12 @@ function streetDiscriminator(address: AddressComparison): DiscriminatorResult {
               ', ',
             )}. This is never sufficient alone: an investment arm often sits at its parent's exact address.`
         : address.street === 'fail'
-          ? `"${candidateLine}" carries none of the roster line's street-level tokens (${rosterStreetTokens.slice(0, 4).join(', ')}), so this is a different building in the same place.`
+          ? `"${candidateLine}" carries none of the roster line's street-level tokens (${distinctiveStreetTokens.slice(0, 4).join(', ')}), so this is a different building in the same place.`
           : rosterStreetTokens.length === 0
             ? 'The roster line carries no street-level tokens beyond the city and the postcode.'
-            : 'This address has no line to read a street from, so there is nothing to compare.',
+            : distinctiveStreetTokens.length === 0
+              ? `The roster's street is named after the company itself (${rosterStreetTokens.slice(0, 4).join(', ')}), so its street-level tokens say nothing about which building this is.`
+              : 'This address has no line to read a street from, so there is nothing to compare.',
   };
 }
 

@@ -157,6 +157,113 @@ describe('street compares real street tokens', () => {
 });
 
 /**
+ * **A street named after the company is not evidence about the company.**
+ *
+ * Roster row 1 is `Robert-Bosch-Platz 1 70839 Gerlingen`. Subtract the city,
+ * the postcode and the stopword `platz` and the "street-level" tokens are
+ * `robert`, `bosch`, `1` — two thirds of them the company's own name. Any
+ * record whose address line mentions Bosch matched on the street rung, and one
+ * did.
+ *
+ * `nameTokens` carries the roster name's and the Candidate label's own
+ * significant tokens down from `runDiscriminators`, and the street rung drops
+ * them before comparing — **keeping numbers**, because a house number is a real
+ * street token whatever the company is called.
+ */
+describe("the street rung drops the company's own name", () => {
+  const bosch = {
+    rosterAddress: 'Robert-Bosch-Platz 1 70839 Gerlingen',
+    rosterCountry: 'DEU',
+    // What `name_cover` reads for roster "Bosch" against "ROBERT BOSCH GMBH".
+    nameTokens: ['bosch', 'robert', 'bosch'],
+  };
+
+  it('keeps the house number, and passes the company that is really there', () => {
+    const result = compareAddress({
+      ...bosch,
+      candidateCountry: 'DEU',
+      candidateCity: 'Gerlingen',
+      candidatePostcode: '70839',
+      candidateLine: 'Robert-Bosch-Platz 1, 70839 Gerlingen, DE',
+    });
+    // `robert` and `bosch` are the company; `1` is the building.
+    expect(result.evidence.rosterStreetTokens).toEqual(['robert', 'bosch', '1']);
+    expect(result.evidence.distinctiveStreetTokens).toEqual(['1']);
+    expect(result.street).toBe('pass');
+    expect(result.evidence.streetTokensMatched).toEqual(['1']);
+  });
+
+  it('fails a trade record whose address line is just the company name', () => {
+    /**
+     * The measured rival: `ROBERT BOSCH`, entity `45y20w00TGt2FpimbCEbdA`, an
+     * Indonesian trade-derived company. Its country-less address line names the
+     * company and no building on Robert-Bosch-Platz. Under the old rung this
+     * returned `pass`, and a record with no location evidence at all counted as
+     * placed at the roster address.
+     */
+    const result = compareAddress({
+      ...bosch,
+      candidateCountry: null,
+      candidateCity: null,
+      candidatePostcode: null,
+      candidateLine: 'BUILDING TECHNOLOGIES, (BT-AI/SAL2) ROBERT BOSCH (SOUTH EAST ASIA) PTE',
+    });
+    // This address carries no city or postcode of its own, so `70839` and
+    // `gerlingen` are not subtracted either — but `robert` and `bosch` are, and
+    // they were the only tokens the record could ever have matched.
+    expect(result.evidence.distinctiveStreetTokens).toEqual(['1', '70839', 'gerlingen']);
+    expect(result.evidence.streetTokensMatched).toEqual([]);
+    expect(result.street).toBe('fail');
+  });
+
+  it('would have passed that record without the drop, which is the bug', () => {
+    // Same two inputs, no `nameTokens`: the rung matches on `robert` and
+    // `bosch` — the company's name on both sides, and nothing about a building.
+    const result = compareAddress({
+      rosterAddress: bosch.rosterAddress,
+      rosterCountry: bosch.rosterCountry,
+      candidateCountry: null,
+      candidateCity: null,
+      candidatePostcode: null,
+      candidateLine: 'BUILDING TECHNOLOGIES, (BT-AI/SAL2) ROBERT BOSCH (SOUTH EAST ASIA) PTE',
+    });
+    expect(result.street).toBe('pass');
+    expect(result.evidence.streetTokensMatched).toEqual(['robert', 'bosch']);
+  });
+
+  it('returns unavailable when the street is ONLY the company name', () => {
+    // No house number to survive the drop: the roster line has not described a
+    // building, so no address can agree or disagree with it.
+    const result = compareAddress({
+      rosterAddress: 'Robert-Bosch-Platz 70839 Gerlingen',
+      rosterCountry: 'DEU',
+      nameTokens: ['bosch', 'robert'],
+      candidateCountry: 'DEU',
+      candidateCity: 'Gerlingen',
+      candidatePostcode: '70839',
+      candidateLine: 'Robert-Bosch-Platz, 70839 Gerlingen, DE',
+    });
+    expect(result.evidence.distinctiveStreetTokens).toEqual([]);
+    expect(result.street).toBe('unavailable');
+  });
+
+  it('keeps a number even when the company name contains one', () => {
+    // `Gestamp 2020 SL` must not be able to spend the roster's house number.
+    const result = compareAddress({
+      rosterAddress: 'Calle 2020 16 28014 Madrid',
+      rosterCountry: 'ESP',
+      nameTokens: ['gestamp', '2020'],
+      candidateCountry: 'ESP',
+      candidateCity: 'Madrid',
+      candidatePostcode: '28014',
+      candidateLine: 'CALLE 2020 16, Madrid, 28014, ES',
+    });
+    expect(result.evidence.distinctiveStreetTokens).toEqual(['2020', '16']);
+    expect(result.street).toBe('pass');
+  });
+});
+
+/**
  * **One address answers all three rungs** — the anchoring change.
  *
  * Scoring each rung independently over the whole set is what let a subsidiary

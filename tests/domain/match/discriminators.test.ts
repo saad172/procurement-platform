@@ -640,33 +640,30 @@ describe('the gate refuses when nothing rules the rival out', () => {
     expect(outcome.accepted).toBe(true);
   });
 
-  it('DOES count Sayari’s real ROBERT BOSCH record, because the street rung places it', () => {
+  it('does NOT count Sayari’s real ROBERT BOSCH record, once the street rung stops reading the name', () => {
     /**
-     * **Measured, and it contradicts what this rule was expected to fix.**
+     * **The record that cost row 1 its zero-token settlement, and the two
+     * changes that stopped it.**
      *
-     * The intent behind requiring a placing verdict was that Sayari's second
-     * Bosch record — `ROBERT BOSCH`, entity `45y20w00TGt2FpimbCEbdA` — should
-     * stop blocking row 1's zero-token settlement. It does not, and the reason
-     * is worth having written down where the rule is:
-     *
-     * That record is an Indonesian trade-derived company with sixty-odd Jakarta
-     * addresses. Most carry `country: IDN`, which fails against a DEU roster
-     * row, so `compareAddresses` anchors instead on one of the addresses whose
-     * country is **null** — and the one it picks has the line
+     * `ROBERT BOSCH`, entity `45y20w00TGt2FpimbCEbdA`, is an Indonesian
+     * trade-derived company with sixty-odd Jakarta addresses. Most carry
+     * `country: IDN`, which fails against a DEU roster row, so
+     * `compareAddresses` anchors on one of the addresses whose country is null
+     * — and the one it picked has the line
      * `BUILDING TECHNOLOGIES, (BT-AI/SAL2) ROBERT BOSCH (SOUTH EAST ASIA) PTE`.
      *
-     * The roster line is `Robert-Bosch-Platz 1 70839 Gerlingen`. Strip the city,
-     * the postcode and the generic street word `platz` and the roster's
-     * "street-level tokens" are `robert`, `bosch`, `1` — **the company's own
-     * name**, because the street is named after the company. They match the
-     * company's own name in the candidate's address line, so `street` returns
-     * `pass` and the record counts as placed.
+     * The roster line is `Robert-Bosch-Platz 1 70839 Gerlingen`. Strip the
+     * city, the postcode and the stopword `platz` and its "street-level"
+     * tokens were `robert`, `bosch`, `1` — two thirds of them the company's own
+     * name, because the street is named after the company. They matched the
+     * company's name in the candidate's address line, `street` returned `pass`,
+     * and a record that had produced no location evidence at all counted as a
+     * rival placed at the roster address.
      *
-     * That is name evidence laundered through the street rung, not location
-     * evidence, and no part of the rival rule can see the difference. Fixing it
-     * belongs in the street rung — which should not treat a token it shares
-     * with the roster *name* as street-level agreement — and that is a separate
-     * decision from this one.
+     * The street rung now drops a token that is also in the roster name or the
+     * Candidate's label, keeping numbers. `1` is all that survives, it is not on
+     * this record's line, and the record fails street — so it is doubly not a
+     * rival: nothing places it, and it has a `fail`.
      */
     const tradeRecord = candidate({
       entityId: 'bosch-idn',
@@ -691,16 +688,22 @@ describe('the gate refuses when nothing rules the rival out', () => {
 
     expect(verdictFor(verdicts, 'country').verdict).toBe('unavailable');
     expect(verdictFor(verdicts, 'locality').verdict).toBe('unavailable');
-    // The one that places it, on the brand tokens out of `Robert-Bosch-Platz`.
-    expect(verdictFor(verdicts, 'street').verdict).toBe('pass');
-    expect(verdicts.some((v) => v.verdict === 'fail')).toBe(false);
+    expect(verdictFor(verdicts, 'street').verdict).toBe('fail');
 
     const outcome = evaluateAutoAccept([
       { candidate: candidate({}), verdicts: runDiscriminators(BOSCH_ROW, candidate({})) },
       { candidate: tradeRecord, verdicts },
     ]);
-    expect(outcome.accepted).toBe(false);
-    expect(outcome.reason).toMatch(/ROBERT BOSCH \(street\)/);
+    expect(outcome.accepted).toBe(true);
+  });
+
+  it('still places the right company on the same roster row, by its house number', () => {
+    // The other half of the same change: dropping the company's name from the
+    // roster's street tokens must not cost the correct record its street
+    // agreement. `1` survives the drop and is on ROBERT BOSCH GMBH's own line.
+    const verdicts = runDiscriminators(BOSCH_ROW, candidate({}));
+    expect(verdictFor(verdicts, 'street').verdict).toBe('pass');
+    expect(verdictFor(verdicts, 'street').reasoning).toMatch(/"1"/);
   });
 
   it('still accepts when every rival carries a reason it is not the company', () => {

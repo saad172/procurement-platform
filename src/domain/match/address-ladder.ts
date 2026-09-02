@@ -107,6 +107,11 @@ export type AddressComparison = {
     streetTokensMatched: string[];
     /** Every street-level token the roster line offered, matched or not. */
     rosterStreetTokens: string[];
+    /**
+     * Those of them that are not also the company's own name — what the street
+     * rung actually compares. See `compareAddress`.
+     */
+    distinctiveStreetTokens: string[];
     /** How many addresses were considered, and which one all three rungs read. */
     addressesConsidered: number;
     matchedAddressIndex: number | null;
@@ -219,6 +224,16 @@ export function compareAddresses(args: {
   rosterAddress: string | null;
   rosterCountry: string | null;
   addresses: readonly CandidateAddress[];
+  /**
+   * The roster name's and the Candidate label's own significant tokens, so the
+   * street rung can tell a street name from a company name. Already stripped of
+   * legal forms by the caller — `discriminators.ts` passes what `name_cover`
+   * itself reads, so the two cannot disagree about what a company is called.
+   *
+   * Omitted, nothing is dropped, which is what a caller comparing a bare
+   * address with no company attached wants.
+   */
+  nameTokens?: readonly string[];
 }): AddressComparison {
   if (args.addresses.length === 0) {
     return compareAddress({
@@ -228,6 +243,7 @@ export function compareAddresses(args: {
       candidateCity: null,
       candidatePostcode: null,
       candidateLine: null,
+      nameTokens: args.nameTokens ?? [],
     });
   }
 
@@ -249,6 +265,7 @@ export function compareAddresses(args: {
       candidateCity: address.city,
       candidatePostcode: address.postcode,
       candidateLine: address.line ?? null,
+      nameTokens: args.nameTokens ?? [],
     });
     if (!best || rank(comparison) > rank(best)) {
       best = comparison;
@@ -276,6 +293,8 @@ export function compareAddress(args: {
   candidateCity: string | null;
   candidatePostcode: string | null;
   candidateLine?: string | null;
+  /** See `compareAddresses`. Omitted, no token is dropped as a company name. */
+  nameTokens?: readonly string[];
 }): AddressComparison {
   const roster = args.rosterAddress ?? '';
   const rosterTokens = tokens(roster);
@@ -326,15 +345,41 @@ export function compareAddress(args: {
 
   const rosterStreetTokens = rosterTokens.filter(streetward);
   const addressStreetTokens = tokens(line ?? '').filter(streetward);
-  const streetTokensMatched = rosterStreetTokens.filter((token) =>
+
+  /**
+   * **A street named after the company is not evidence about the company.**
+   *
+   * Roster row 1 is `Robert-Bosch-Platz 1 70839 Gerlingen`. Subtract the city,
+   * the postcode and the stopword `platz` and the "street-level tokens" are
+   * `robert`, `bosch`, `1` — two thirds of which are the company's own name,
+   * because the street is named after it. Any record whose address line
+   * mentions Bosch then matched on the street rung, and one did: an Indonesian
+   * trade-derived record whose only country-less address reads
+   * `BUILDING TECHNOLOGIES, (BT-AI/SAL2) ROBERT BOSCH (SOUTH EAST ASIA) PTE`
+   * passed `street` against a Gerlingen roster row and, failing nothing else,
+   * counted as a rival that cost the right company its settlement.
+   *
+   * So a token that also appears in the roster name or in the Candidate's own
+   * label is dropped before comparing — **unless it is a number**, because a
+   * house number is a real street token whatever the company is called, and
+   * `Gestamp 2020 SL` should not be able to spend the roster's house number.
+   */
+  const nameTokenSet = new Set(args.nameTokens ?? []);
+  const distinctive = (token: string) => /^\d+$/.test(token) || !nameTokenSet.has(token);
+  const distinctiveStreetTokens = rosterStreetTokens.filter(distinctive);
+
+  const streetTokensMatched = distinctiveStreetTokens.filter((token) =>
     addressStreetTokens.includes(token),
   );
 
-  // `unavailable` where either side offers no street-level token at all —
-  // absent evidence is not contrary evidence, and a record with no address line
-  // is not a record claiming a different street.
+  // `unavailable` where either side offers nothing to compare — absent evidence
+  // is not contrary evidence. Three ways that happens, and the third is new:
+  // a roster line whose every street-level token is the company's own name has
+  // not described a building, so no address can agree or disagree with it.
   const street: LadderVerdict =
-    rosterStreetTokens.length === 0 || addressStreetTokens.length === 0
+    rosterStreetTokens.length === 0 ||
+    distinctiveStreetTokens.length === 0 ||
+    addressStreetTokens.length === 0
       ? 'unavailable'
       : streetTokensMatched.length > 0
         ? 'pass'
@@ -354,6 +399,7 @@ export function compareAddress(args: {
       postcodeMatched,
       streetTokensMatched,
       rosterStreetTokens,
+      distinctiveStreetTokens,
       addressesConsidered: 1,
       matchedAddressIndex: 0,
     },
