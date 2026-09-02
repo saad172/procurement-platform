@@ -133,7 +133,11 @@ describe('a ranking is not a decision', () => {
 
   it('does not read as settled when the recommendation published over an objection', () => {
     const [, recommendation] = answers({
-      recommendation: { versionN: 1, evaluatorOutcome: 'published_with_objections' },
+      recommendation: {
+        versionN: 1,
+        evaluatorOutcome: 'published_with_objections',
+        humanMark: null,
+      },
     });
     expect(recommendation!.tone).toBe('you');
     expect(recommendation!.because).toMatch(/Nobody has signed off on it/);
@@ -141,10 +145,55 @@ describe('a ranking is not a decision', () => {
 
   it('reads as settled when a second read agreed', () => {
     const [, recommendation] = answers({
-      recommendation: { versionN: 2, evaluatorOutcome: 'passed' },
+      recommendation: { versionN: 2, evaluatorOutcome: 'passed', humanMark: null },
     });
     expect(recommendation!.tone).toBe('ok');
     expect(recommendation!.said).toMatch(/a second read agreed with it/);
+  });
+});
+
+/**
+ * A person marking a Recommendation is the **later act**, and the one a buyer
+ * is accountable for. The reviewer's outcome is still true and still shown on
+ * the version — it just stops being what the Category page leads with.
+ */
+describe('what a person decided outranks what the reviewer thought', () => {
+  it('says a person accepted it, over the reviewer having agreed', () => {
+    const [, recommendation] = answers({
+      recommendation: { versionN: 2, evaluatorOutcome: 'passed', humanMark: 'accepted' },
+    });
+    expect(recommendation!.tone).toBe('ok');
+    expect(recommendation!.said).toBe(
+      'A person accepted the recommendation for Battery enclosures.',
+    );
+    expect(recommendation!.said).not.toMatch(/second read/);
+    expect(recommendation!.because).toMatch(/would not clear that acceptance/);
+  });
+
+  it('does not read as settled when a person rejected a recommendation the reviewer passed', () => {
+    const [, recommendation] = answers({
+      recommendation: { versionN: 2, evaluatorOutcome: 'passed', humanMark: 'rejected' },
+    });
+    expect(recommendation!.tone).toBe('you');
+    expect(recommendation!.said).toBe(
+      'A person rejected the recommendation for Battery enclosures.',
+    );
+    expect(recommendation!.because).toMatch(/a ranking and no decision behind it/);
+  });
+
+  it('says needs work in CONTEXT’s words, and that it wrote no version', () => {
+    const [, recommendation] = answers({
+      recommendation: {
+        versionN: 2,
+        evaluatorOutcome: 'published_with_objections',
+        humanMark: 'needs_work',
+      },
+    });
+    expect(recommendation!.tone).toBe('you');
+    expect(recommendation!.said).toBe(
+      'A person marked the recommendation for Battery enclosures needs work.',
+    );
+    expect(recommendation!.because).toMatch(/writes no new version/);
   });
 });
 
@@ -154,8 +203,27 @@ describe('every answer is one a person could act on', () => {
     { ...base, ranked: [] },
     { ...base, ranked: [row('A', null)], excluded: [{ reason: 'no_category' }] },
     { ...base, ranked: [row('A', 80.7, 5, true), row('B', 70)] },
-    { ...base, recommendation: { versionN: 1, evaluatorOutcome: 'passed' } },
-    { ...base, recommendation: { versionN: 1, evaluatorOutcome: 'published_with_objections' } },
+    { ...base, recommendation: { versionN: 1, evaluatorOutcome: 'passed', humanMark: null } },
+    {
+      ...base,
+      recommendation: {
+        versionN: 1,
+        evaluatorOutcome: 'published_with_objections',
+        humanMark: null,
+      },
+    },
+    {
+      ...base,
+      recommendation: { versionN: 2, evaluatorOutcome: 'passed', humanMark: 'accepted' },
+    },
+    {
+      ...base,
+      recommendation: { versionN: 2, evaluatorOutcome: 'passed', humanMark: 'rejected' },
+    },
+    {
+      ...base,
+      recommendation: { versionN: 2, evaluatorOutcome: 'passed', humanMark: 'needs_work' },
+    },
     { ...base, compareHref: null },
   ];
 

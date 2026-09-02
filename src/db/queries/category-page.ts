@@ -2,6 +2,7 @@ import { desc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { loadShortlist } from '@/db/queries/shortlist';
+import { versionToShowFrom } from '@/jobs/publish';
 import { categoryAnswer } from '@/domain/category-answer';
 import { parseViewState } from '@/lib/view-state';
 import { DEFAULT_WEIGHTS } from '@/domain/score';
@@ -47,7 +48,7 @@ export async function loadCategoryPage(
 
   const recommendation = await db.query.recommendation.findFirst({
     where: eq(t.recommendation.categoryId, categoryId),
-    with: { versions: { orderBy: [desc(t.recommendationVersion.n)], limit: 1 } },
+    with: { versions: { orderBy: [desc(t.recommendationVersion.n)] } },
   });
 
   const scoredLine = category.hsLines.find((l) => l.isDefault);
@@ -58,7 +59,15 @@ export async function loadCategoryPage(
     .innerJoin(t.entity, eq(t.entity.id, t.lead.entityId))
     .where(eq(t.lead.categoryId, categoryId));
 
-  const version = recommendation?.versions[0];
+  /**
+   * **The same version the Recommendation page shows** (SPEC §12.5), through
+   * the same rule: the most recent accepted one if a person accepted one,
+   * otherwise the latest. This card is a summary of a page one click away, and
+   * a summary naming a different version from the page it links to is two
+   * answers to one question.
+   */
+  const { shown: version } = versionToShowFrom(recommendation?.versions ?? []);
+
   const answers = categoryAnswer({
     categoryName: category.name,
     // The UNFILTERED shortlist, always: a filtered set would let the crop
@@ -72,7 +81,13 @@ export async function loadCategoryPage(
     })),
     excluded: shortlist.excluded.map((e) => ({ reason: e.reason })),
     recommendation: version
-      ? { versionN: version.n, evaluatorOutcome: version.evaluatorOutcome }
+      ? {
+          versionN: version.n,
+          evaluatorOutcome: version.evaluatorOutcome,
+          // The human's mark leads the answer when there is one: what a person
+          // decided is newer news than what the reviewer thought.
+          humanMark: version.humanMark,
+        }
       : undefined,
     recommendationHref: `/program/${programId}/category/${categoryId}/recommendation`,
     compareHref: null,
