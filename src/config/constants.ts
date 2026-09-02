@@ -50,8 +50,32 @@ export const FAMILY_TRAVERSAL_LIMIT = 50;
  */
 export const PREPASS_CANDIDATES = 5;
 
-/** A person-triggered expansion beyond the automatic one hop (SPEC §8.5). */
-export const DEEP_TRAVERSAL_MAX_HOPS = 3;
+/**
+ * A person-triggered expansion of the ownership graph (SPEC §8.5).
+ *
+ * **The rule: a Deep Traversal must never be shallower than the automatic
+ * read.** It exists to extend the Corporate family, and a cap that stops short
+ * of what the family read already returns would make the on-demand expansion
+ * *lose* members a page view gets for free — an expansion that contracts.
+ *
+ * The automatic read sends no depth at all, so it is answered at the server's
+ * own default of `max_depth: 4` (measured on the recorded Yazaki body:
+ * `maxDepth: 4`, `limit: 50`, `next: true`, `explored_count: 5047`). The cap
+ * therefore **tracks that default** at 4 rather than sitting at a number of our
+ * own choosing. It was 3, which is where the rule came from: at 3 the deep walk
+ * was shallower per path than the read it extends.
+ *
+ * So depth is not what makes a Deep Traversal deep, and the vocabulary that
+ * says it is — *"beyond one hop of ownership"* — is describing something the
+ * family read never was. The family is *"subsidiaries, their subsidiaries, and
+ * branches"*, which is already multi-hop; what it stops at is its **first page
+ * of fifty**. What a Deep Traversal buys is the three things below it: the
+ * cursor, the node cap, and the upward direction.
+ *
+ * If Sayari's default moves, this number is wrong again, and the fix is to
+ * follow it rather than to argue with it.
+ */
+export const DEEP_TRAVERSAL_MAX_HOPS = 4;
 export const DEEP_TRAVERSAL_MAX_NODES = 200;
 
 /**

@@ -42,11 +42,13 @@ import {
  *    downward-only by measurement (SPEC §8.1), and CONTEXT says so; the owners
  *    above a Profile are exactly what an on-demand expansion is asked for.
  *
- * It is also **shallower per path**, at `max_depth: 3`, because
- * `DEEP_TRAVERSAL_MAX_HOPS` is this app's stated hop cap and a cap that the
- * request does not carry is not a cap. That is worth saying plainly: against
- * the automatic read this walk trades one hop of depth for four times the
- * nodes and a second direction.
+ * It is **not deeper per path**, and it must never be shallower: the walk sends
+ * `max_depth` explicitly at `DEEP_TRAVERSAL_MAX_HOPS`, which tracks the server
+ * default the automatic read is answered at. A cap the request does not carry
+ * is not a cap, and a cap below that default would make the on-demand expansion
+ * lose members a page view gets for free. So depth is the one axis on which
+ * these two reads agree, and the cursor, the node cap and the upward direction
+ * are the whole of the difference.
  *
  * ## Deterministic
  *
