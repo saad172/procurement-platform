@@ -18,10 +18,11 @@ const T1 = new Date('2026-08-15T00:00:00Z');
 const T2 = new Date('2026-08-20T00:00:00Z');
 
 const frozen = (overrides: Partial<FrozenInputs> = {}): FrozenInputs => ({
-  weights: { compliance_risk: 28, proximity: 11 },
+  effectiveWeights: { compliance_risk: 28, proximity: 11 },
   criterionValues: { 'supplier-a:compliance_risk': 100 },
   scores: { 'supplier-a': 84.2 },
-  shortlistOrder: ['supplier-a', 'supplier-b'],
+  shortlistOrder: { 'category-har': ['supplier-a', 'supplier-b'] },
+  shortlistRanks: { 'supplier-a:category-har': 1, 'supplier-b:category-har': 2 },
   supplierVerdicts: { 'supplier-a': { verdict: 'recommend', evaluatorOutcome: 'passed' } },
 
   tariffFlags: [],
@@ -52,23 +53,56 @@ describe('inputs moved — the causal indicator', () => {
     const s = computeStaleness({
       frozenAt: T0,
       frozen: frozen(),
-      current: frozen({ weights: { compliance_risk: 40, proximity: 11 } }),
+      current: frozen({ effectiveWeights: { compliance_risk: 40, proximity: 11 } }),
       candidateRows: [],
       citedSubjects: new Set(),
     });
     expect(s.inputsMoved.lit).toBe(true);
-    expect(s.inputsMoved.changes).toEqual([{ path: 'weights.compliance_risk', from: 28, to: 40 }]);
+    expect(s.inputsMoved.changes).toEqual([
+      { path: 'effectiveWeights.compliance_risk', from: 28, to: 40 },
+    ]);
   });
 
-  it('lights when the Shortlist order moved', () => {
+  it('lights when the Shortlist order moved, and names the Category it moved in', () => {
     const s = computeStaleness({
       frozenAt: T0,
       frozen: frozen(),
-      current: frozen({ shortlistOrder: ['supplier-b', 'supplier-a'] }),
+      current: frozen({
+        shortlistOrder: { 'category-har': ['supplier-b', 'supplier-a'] },
+        shortlistRanks: { 'supplier-a:category-har': 2, 'supplier-b:category-har': 1 },
+      }),
       candidateRows: [],
       citedSubjects: new Set(),
     });
     expect(s.inputsMoved.lit).toBe(true);
+    expect(s.inputsMoved.changes.map((c) => c.path)).toEqual([
+      'shortlistOrder.category-har',
+      'shortlistRanks.supplier-a:category-har',
+      'shortlistRanks.supplier-b:category-har',
+    ]);
+  });
+
+  it('lights on a re-rank in ONE Category, leaving the others alone', () => {
+    // A Shortlist is per Category, so a Supplier that moved in wire harnesses
+    // and stayed put in connectors has moved one order, not "the" order.
+    const two = frozen({
+      shortlistOrder: {
+        'category-har': ['supplier-a', 'supplier-b'],
+        'category-con': ['supplier-a', 'supplier-b'],
+      },
+      shortlistRanks: {},
+    });
+    const s = computeStaleness({
+      frozenAt: T0,
+      frozen: two,
+      current: {
+        ...two,
+        shortlistOrder: { ...two.shortlistOrder, 'category-con': ['supplier-b', 'supplier-a'] },
+      },
+      candidateRows: [],
+      citedSubjects: new Set(),
+    });
+    expect(s.inputsMoved.changes.map((c) => c.path)).toEqual(['shortlistOrder.category-con']);
   });
 
   it('lights when a Supplier’s VERDICT moved, though no number did', () => {
@@ -218,7 +252,7 @@ describe('a dismissal is a watermark, not a boolean', () => {
 
   it('re-lights the banner on an inputs delta it was not dismissed against', () => {
     const dismissedAgainst = frozen();
-    const movedAgain = frozen({ weights: { compliance_risk: 35, proximity: 11 } });
+    const movedAgain = frozen({ effectiveWeights: { compliance_risk: 35, proximity: 11 } });
     const s = computeStaleness({
       frozenAt: T0,
       frozen: frozen(),
@@ -231,8 +265,8 @@ describe('a dismissal is a watermark, not a boolean', () => {
   });
 
   it('hashes stably regardless of key order', () => {
-    const a: FrozenInputs = frozen({ weights: { compliance_risk: 28, proximity: 11 } });
-    const b: FrozenInputs = frozen({ weights: { proximity: 11, compliance_risk: 28 } });
+    const a: FrozenInputs = frozen({ effectiveWeights: { compliance_risk: 28, proximity: 11 } });
+    const b: FrozenInputs = frozen({ effectiveWeights: { proximity: 11, compliance_risk: 28 } });
     expect(hashFrozenInputs(a)).toBe(hashFrozenInputs(b));
   });
 });

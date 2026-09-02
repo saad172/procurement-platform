@@ -3,7 +3,7 @@ import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { JOB_CAPS } from '@/config/constants';
 import { DEFAULT_WEIGHTS, WEIGHTED_CRITERIA } from '@/domain/score';
-import { loadSupplierSnapshots, scoreSnapshot } from '@/db/queries/shortlist';
+import { loadShortlist, loadSupplierSnapshots, scoreSnapshot } from '@/db/queries/shortlist';
 import type { FrozenInputs } from '@/domain/staleness';
 import {
   checkAssessment,
@@ -53,24 +53,108 @@ export async function buildFrozenInputs(
   db: Database,
   args: { programId: string; supplierIds: string[] },
 ): Promise<FrozenInputs> {
-  const weights = await loadCriterionWeights(db, args.programId);
+  const stored = await loadCriterionWeights(db, args.programId);
+
+  /**
+   * **One vector, and it is the one the Scores were computed with.**
+   *
+   * This used to freeze the stored rows alone while `scores` was computed from
+   * `{ ...DEFAULT_WEIGHTS, ...stored }` — so a Program that had saved five of
+   * the six weights froze a vector that could not reproduce its own frozen
+   * Scores, and the *inputs moved* banner compared a vector nothing had used.
+   * A frozen input is what the argument was made from; anything else in this
+   * object is a second answer to the same question.
+   *
+   * Key order is prompt bytes a fixture replays against, and it is stable:
+   * `DEFAULT_WEIGHTS`' six keys in the constant's own order, then any stored
+   * key outside them in the query's `ORDER BY criterion_key`.
+   */
+  const effectiveWeights = {
+    ...DEFAULT_WEIGHTS,
+    ...Object.fromEntries(stored.map((w) => [w.criterionKey, Number(w.weight)])),
+  };
+
   const perSupplier = await loadPerSupplierFrozenFacts(db, args.supplierIds);
-  const scores = await computeFrozenScores(db, args, weights, perSupplier.categoriesBySupplier);
+  const categoryIds = [...perSupplier.categoryIds].sort();
+  const scores = await computeFrozenScores(
+    db,
+    args,
+    effectiveWeights,
+    perSupplier.categoriesBySupplier,
+  );
+  const shortlists = await freezeShortlists(db, {
+    programId: args.programId,
+    supplierIds: args.supplierIds,
+    categoryIds,
+    weights: effectiveWeights,
+    categoriesBySupplier: perSupplier.categoriesBySupplier,
+  });
 
   return {
-    /**
-     * Left as the **stored rows alone**, not `scoringWeights`. Filling absent
-     * keys from the constant here would reorder this object, and its key order
-     * is prompt bytes a fixture replays against.
-     */
-    weights: Object.fromEntries(weights.map((w) => [w.criterionKey, Number(w.weight)])),
+    effectiveWeights,
     criterionValues: perSupplier.criterionValues,
     scores,
-    shortlistOrder: args.supplierIds,
+    shortlistOrder: shortlists.order,
+    shortlistRanks: shortlists.ranks,
     supplierVerdicts: perSupplier.supplierVerdicts,
     rosterRows: perSupplier.rosterRows,
-    tariffFlags: await tariffFlagsFor(db, [...perSupplier.categoryIds].sort()),
+    tariffFlags: await tariffFlagsFor(db, categoryIds),
   };
+}
+
+/**
+ * The Shortlist order, as a Shortlist actually orders it.
+ *
+ * `shortlistOrder` was `args.supplierIds` — which for a Recommendation is the
+ * bidder list in `supplier_id` order, an order nothing on screen has ever been
+ * in. Both the schema comment and `staleness.ts` call this field the Shortlist
+ * order and compare it as one, so a re-rank moved no banner while a re-import
+ * that renumbered nothing would have.
+ *
+ * **Per Category, because a Shortlist is per Category** (SPEC §13.1): the same
+ * Supplier sits at a different rank in each one it bids on, so a single flat
+ * list could only ever be one Category's answer.
+ *
+ * The ranks are frozen beside the order because a rank is a **figure a sentence
+ * quotes** — *"second of nine"* — and an array of ids carries no number the
+ * fidelity check can match it against.
+ */
+async function freezeShortlists(
+  db: Database,
+  args: {
+    programId: string;
+    supplierIds: string[];
+    categoryIds: string[];
+    weights: Record<string, number>;
+    categoriesBySupplier: Map<string, string[]>;
+  },
+): Promise<{ order: FrozenInputs['shortlistOrder']; ranks: FrozenInputs['shortlistRanks'] }> {
+  const order: FrozenInputs['shortlistOrder'] = {};
+  const ranks: FrozenInputs['shortlistRanks'] = {};
+  const rankOf = new Map<string, number | null>();
+
+  for (const categoryId of args.categoryIds) {
+    // The same `loadShortlist` the Category page calls, with the same vector
+    // the Scores were computed with — a frozen order that disagreed with the
+    // ranking on screen would be worse than no frozen order at all.
+    const shortlist = await loadShortlist(db, {
+      programId: args.programId,
+      categoryId,
+      weights: args.weights,
+    });
+    order[categoryId] = shortlist.ranked.map((row) => row.supplierId);
+    for (const row of shortlist.ranked) rankOf.set(`${row.supplierId}:${categoryId}`, row.rank);
+  }
+
+  for (const supplierId of args.supplierIds) {
+    for (const categoryId of args.categoriesBySupplier.get(supplierId) ?? []) {
+      // Null where the Supplier bids on the Category and reaches no rank —
+      // excluded is never ranked low (SPEC §13.3).
+      ranks[`${supplierId}:${categoryId}`] = rankOf.get(`${supplierId}:${categoryId}`) ?? null;
+    }
+  }
+
+  return { order, ranks };
 }
 
 async function loadCriterionWeights(db: Database, programId: string) {
@@ -187,14 +271,10 @@ async function loadPerSupplierFrozenFacts(
 async function computeFrozenScores(
   db: Database,
   args: { programId: string; supplierIds: string[] },
-  weights: Awaited<ReturnType<typeof loadCriterionWeights>>,
+  scoringWeights: Record<string, number>,
   categoriesBySupplier: Map<string, string[]>,
 ): Promise<Record<string, number | null>> {
   const scores: Record<string, number | null> = {};
-  const scoringWeights = {
-    ...DEFAULT_WEIGHTS,
-    ...Object.fromEntries(weights.map((w) => [w.criterionKey, Number(w.weight)])),
-  };
   const snapshots = await loadSupplierSnapshots(db, {
     programId: args.programId,
     supplierIds: args.supplierIds,

@@ -29,10 +29,27 @@ import { createHash } from 'node:crypto';
  * comparison rather than with a third indicator.
  */
 export type FrozenInputs = {
-  weights: Record<string, number>;
+  /**
+   * **The vector the Scores were computed with**, not the stored rows.
+   *
+   * A Program saves only the weights it has changed, and `score.ts` fills the
+   * rest from `DEFAULT_WEIGHTS` — so the stored rows are not a weight vector,
+   * they are a diff against one. Freezing the diff meant freezing a set of
+   * numbers that could not reproduce the Scores frozen beside them, and
+   * comparing it here answered "did the saved rows move" rather than "was this
+   * argument made under different weights".
+   */
+  effectiveWeights: Record<string, number>;
   criterionValues: Record<string, number | null>;
   scores: Record<string, number | null>;
-  shortlistOrder: string[];
+  /**
+   * The ranked Supplier ids of each Category, **in Shortlist order**, keyed by
+   * Category — because a Shortlist is per Category and the same Supplier holds
+   * a different rank in each one it bids on.
+   */
+  shortlistOrder: Record<string, string[]>;
+  /** `${supplierId}:${categoryId}` → the rank it held, or null where it reached none. */
+  shortlistRanks: Record<string, number | null>;
   supplierVerdicts: Record<string, { verdict: string | null; evaluatorOutcome: string }>;
   /**
    * The roster row each Supplier was imported as.
@@ -136,11 +153,17 @@ export function hashFrozenInputs(inputs: FrozenInputs): string {
 /** Flattens one level of the frozen inputs into comparable paths. */
 function flatten(inputs: FrozenInputs): Map<string, unknown> {
   const out = new Map<string, unknown>();
-  for (const [key, value] of Object.entries(inputs.weights)) out.set(`weights.${key}`, value);
+  for (const [key, value] of Object.entries(inputs.effectiveWeights))
+    out.set(`effectiveWeights.${key}`, value);
   for (const [key, value] of Object.entries(inputs.criterionValues))
     out.set(`criterionValues.${key}`, value);
   for (const [key, value] of Object.entries(inputs.scores)) out.set(`scores.${key}`, value);
-  out.set('shortlistOrder', inputs.shortlistOrder.join('|'));
+  // Per Category, so a re-rank inside one Category names that Category rather
+  // than reporting that "the shortlist order" moved.
+  for (const [categoryId, order] of Object.entries(inputs.shortlistOrder))
+    out.set(`shortlistOrder.${categoryId}`, order.join('|'));
+  for (const [key, rank] of Object.entries(inputs.shortlistRanks))
+    out.set(`shortlistRanks.${key}`, rank);
   for (const [key, value] of Object.entries(inputs.supplierVerdicts)) {
     out.set(`verdicts.${key}.verdict`, value.verdict);
     out.set(`verdicts.${key}.evaluatorOutcome`, value.evaluatorOutcome);
