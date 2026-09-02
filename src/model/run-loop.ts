@@ -10,6 +10,7 @@ import * as t from '@/db/schema';
  * writer of the same two columns.
  */
 import { jobCountersSoFar, recordJobCounters } from '@/jobs/runs';
+import { CACHE_CONTROL } from './caching';
 import { getAnthropicClient } from './client';
 import { describeModelError } from './describe-model-error';
 import { takeFatalToolError } from './tool-adapter';
@@ -178,6 +179,18 @@ export async function runLoop(params: RunLoopParams, ctx: ModelContext): Promise
   return { status: 'done', finalMessage: lastMessage, toolUses, turns, toolCalls, tokens };
 }
 
+/**
+ * The tool list with a breakpoint on its last definition.
+ *
+ * Copied rather than marked in place: the caller's array is reused across a
+ * Round's free retries, and a marker written into it would be written twice.
+ */
+function withCacheBreakpoint(tools: RunLoopParams['tools']): RunLoopParams['tools'] {
+  if (tools.length === 0) return [...tools];
+  const last = { ...tools[tools.length - 1]!, cache_control: CACHE_CONTROL };
+  return [...tools.slice(0, -1), last as RunLoopParams['tools'][number]];
+}
+
 /** Constructs the Tool Runner and the controller that aborts it — the setup the loop runs on. */
 function buildRunner(params: RunLoopParams, ctx: ModelContext) {
   const settings = LOOP_SETTINGS[params.loop];
@@ -195,7 +208,30 @@ function buildRunner(params: RunLoopParams, ctx: ModelContext) {
       max_tokens: MAX_TOKENS,
       system: params.system,
       messages: params.messages,
-      tools: params.tools as never,
+      /**
+       * **The static prefix ends on the last tool definition** (SPEC §17.4).
+       *
+       * Nothing marked anything before this: `system` and `tools` went to the
+       * SDK unmarked and `cache_read_input_tokens` was zero on every turn of
+       * every Job ever run — 30 turns of the measured recommend Job included.
+       * A Job's prefix is the app's best cache by a distance, because 50
+       * resolve Jobs share one `system` plus tool digest and the stateless
+       * evaluator shares a third across every Supplier.
+       *
+       * The list is **not sorted here**. `finalizeRegistry()`'s digest order is
+       * already deterministic, and re-ordering it would change the bytes of
+       * every recorded request body for no cache anybody was getting.
+       */
+      tools: withCacheBreakpoint(params.tools) as never,
+      /**
+       * Top-level `cache_control` **carries the tail**: it applies a marker to
+       * the last cacheable block of the request automatically, which is what
+       * makes the growing end of the conversation cacheable without this file
+       * knowing where a Round boundary is. The Tool Runner constrains nothing
+       * here — it hands the parameter straight to `messages.create` — so this
+       * was never a decision about the runner (SPEC §17.1).
+       */
+      cache_control: CACHE_CONTROL,
       thinking: THINKING,
       output_config: { effort: settings.effort },
       /**
