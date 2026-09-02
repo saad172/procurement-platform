@@ -1,10 +1,9 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { computeFamilyExposure, unionRiskFactors } from '@/domain/family';
 import { nearestPlant } from '@/domain/geo';
-import { normaliseCountryToIso3 } from '@/domain/match/address-ladder';
-import type { DiscriminatorName } from '@/domain/match/discriminators';
+import type { CountrySource } from '@/domain/match/settle-match';
 import { scoreSupplier } from '@/domain/score';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
 import type { SupplierScoringInput } from '@/domain/scoring/types';
@@ -77,12 +76,10 @@ type ResolvedProfile = {
   profileRow: typeof t.entity.$inferSelect;
   /**
    * The country everything country-derived is fetched and scored against
-   * (finding 107) — the roster's, normalised, where the settled candidate's
-   * `country` Discriminator passed; the Profile's own otherwise. See
-   * `deriveSiteCountry`.
+   * (SPEC §9.4) — the one the Match settled on. See `siteCountryOf`.
    */
   siteCountry: string | undefined;
-  countrySource: 'site' | 'profile';
+  countrySource: CountrySource;
 };
 
 /**
@@ -131,12 +128,7 @@ async function loadResolvedProfile(
   if (!profileRow) throw new Error(`profile entity ${match.entityId} is not stored`);
 
   const acceptedMatch = { ...match, entityId: match.entityId };
-  const { siteCountry, countrySource } = await deriveSiteCountry(
-    db,
-    acceptedMatch,
-    supplier,
-    profileRow,
-  );
+  const { siteCountry, countrySource } = siteCountryOf(acceptedMatch, profileRow);
 
   return {
     result: null,
@@ -145,75 +137,34 @@ async function loadResolvedProfile(
 }
 
 /**
- * **The settled site's country** (finding 107, SPEC §9.2 / `types.ts`).
+ * **The country this Supplier is scored on**, read off the Match (SPEC §9.4).
  *
- * The roster's `country`, normalised to ISO3, when the persisted `country`
- * Discriminator verdict for the settled candidate is `pass` — the Discriminator
- * already agreed the roster's country describes this site, so that is the
- * country everything country-derived reads. Otherwise the Profile's own
- * `country`, exactly as before this finding.
+ * The Match decided it at settle time and wrote it down
+ * (`deriveSettledCountry`, `src/domain/match/settle-match.ts`): GLEIF's
+ * legal-address country where the settled Candidate has an LEI, else the
+ * country of the address the Discriminators anchored on, else the Profile's
+ * own.
+ *
+ * This function used to *derive* it here, from the persisted `country`
+ * Discriminator verdicts, and score the roster's country whenever that verdict
+ * read `pass`. Two things were wrong with that. It scored what the roster
+ * **claimed** rather than what any source **witnessed** — the roster is the
+ * question, not an answer. And it made the scored country a function of rows
+ * that get re-recorded: re-running a Match moved the country of an already
+ * enriched Supplier without anything having said so.
+ *
+ * The fallback stays: a Match settled before this column existed, a promoted
+ * Lead, or a settlement with no evidence, all read the Profile's own country
+ * and say `'profile'` — which is the honest source for all three.
  */
-export async function deriveSiteCountry(
-  db: Database,
+export function siteCountryOf(
   match: AcceptedMatch,
-  supplier: typeof t.supplier.$inferSelect,
   profileRow: typeof t.entity.$inferSelect,
-): Promise<{ siteCountry: string | undefined; countrySource: 'site' | 'profile' }> {
-  const profileCountry = profileRow.country ?? undefined;
-  const passed = supplier.rosterCountry ? await settledCandidateCountryPasses(db, match) : false;
-  if (!passed || !supplier.rosterCountry)
-    return { siteCountry: profileCountry, countrySource: 'profile' };
-
-  const iso3 = normaliseCountryToIso3(supplier.rosterCountry);
-  return iso3
-    ? { siteCountry: iso3, countrySource: 'site' }
-    : { siteCountry: profileCountry, countrySource: 'profile' };
-}
-
-/** The country rung of the eight Discriminators; typed off the closed union rather than a bare literal. */
-const COUNTRY_DISCRIMINATOR: DiscriminatorName = 'country';
-
-/**
- * Whether **any** persisted verdict for the settled candidate's `country`
- * Discriminator reads `pass` — across every `match_attempt`, since a rules
- * settlement and an agent settlement both record it under `match_candidate`.
- * `runDiscriminators` is pure over the roster row and the candidate, so the
- * `rules`, `resolver` and `evaluator` rows for one candidate never disagree.
- */
-async function settledCandidateCountryPasses(db: Database, match: AcceptedMatch): Promise<boolean> {
-  const attempts = await db
-    .select({ id: t.matchAttempt.id })
-    .from(t.matchAttempt)
-    .where(eq(t.matchAttempt.matchId, match.id));
-  if (attempts.length === 0) return false;
-
-  const candidates = await db
-    .select({ id: t.matchCandidate.id })
-    .from(t.matchCandidate)
-    .where(
-      and(
-        inArray(
-          t.matchCandidate.matchAttemptId,
-          attempts.map((a) => a.id),
-        ),
-        eq(t.matchCandidate.entityId, match.entityId),
-      ),
-    );
-  if (candidates.length === 0) return false;
-
-  const verdicts = await db
-    .select({ verdict: t.matchCandidateVerdict.verdict })
-    .from(t.matchCandidateVerdict)
-    .where(
-      and(
-        inArray(
-          t.matchCandidateVerdict.matchCandidateId,
-          candidates.map((c) => c.id),
-        ),
-        eq(t.matchCandidateVerdict.discriminator, COUNTRY_DISCRIMINATOR),
-      ),
-    );
-  return verdicts.some((v) => v.verdict === 'pass');
+): { siteCountry: string | undefined; countrySource: CountrySource } {
+  if (match.settledCountry && match.settledCountrySource) {
+    return { siteCountry: match.settledCountry, countrySource: match.settledCountrySource };
+  }
+  return { siteCountry: profileRow.country ?? undefined, countrySource: 'profile' };
 }
 
 type FanOutResult = {
@@ -246,8 +197,8 @@ async function fanOutEnrichments(
   written.push(family.enrichmentId);
 
   // ── 3. Country indicators, shared across every Supplier in the country ───
-  // Fetched for the SITE country (finding 107): the roster's where the
-  // country Discriminator agreed, else the Profile's own.
+  // Fetched for the country the Match settled on (SPEC §9.4), so the World Bank
+  // rows a Supplier holds and the country its Criteria score are the same one.
   if (siteCountry) {
     const country = await enrichCountry(ctx, { country: siteCountry });
     written.push(...country.enrichmentIds);
@@ -365,8 +316,8 @@ async function assembleScoringInput(
   const plants = await loadPlants(db, args.programId);
   const nearest = nearestPlant(lat != null && lon != null ? { lat, lon } : undefined, plants);
 
-  // Read for the SITE country (finding 107) — the same country `fanOutEnrichments`
-  // fetched, so a fetch and its read never disagree.
+  // Read for the settled country — the same one `fanOutEnrichments` fetched, so
+  // a fetch and its read never disagree.
   const indicators = siteCountry
     ? await db.select().from(t.countryIndicator).where(eq(t.countryIndicator.country, siteCountry))
     : [];
@@ -392,7 +343,7 @@ async function assembleScoringInput(
     profile: {
       entityId: match.entityId,
       legalName: profileRow.label,
-      // The SITE country (finding 107) — see `deriveSiteCountry`. `profileCountry`
+      // The country the Match settled on — see `siteCountryOf`. `profileCountry`
       // and `countrySource` ride along so a Criterion can show both.
       country: siteCountry,
       profileCountry: profileRow.country ?? undefined,

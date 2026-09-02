@@ -61,8 +61,8 @@ const VALUE = (
 
 /**
  * **`profileCountry` and `countrySource` render only where they diverge**
- * from `country` (finding 107) — the settled site and Sayari's Profile
- * agreeing is not a fact a reader needs restated beside every number, and
+ * from `country` (SPEC §9.4) — the country the Match settled on and Sayari's
+ * Profile agreeing is not a fact a reader needs restated beside every number, and
  * adding it unconditionally would ripple into every already-recorded
  * Assessment and Recommendation replay for a Supplier whose two countries
  * simply agree, for no reader benefit.
@@ -320,13 +320,14 @@ function worstLevel(factors: readonly RiskFactor[]) {
 }
 
 /**
- * **Country resilience** — six World Bank indicators for the **settled site's**
- * country (finding 107), which is the roster's when the settled candidate's
- * `country` Discriminator passed, and the Profile's own otherwise.
+ * **Country resilience** — six World Bank indicators for the country the
+ * **Match settled on** (SPEC §9.4): GLEIF's legal-address country where the
+ * settled Candidate has an LEI, else the anchored address's, else the Profile's
+ * own.
  *
- * When the settled site's country differs from Sayari's own (finding 107),
- * `rawInputs` carries both — `country` is the one scored, `profileCountry` is
- * Sayari's — so a reader sees the two apart rather than trusting one silently.
+ * When that country differs from Sayari's own, `rawInputs` carries both —
+ * `country` is the one scored, `profileCountry` is Sayari's — so a reader sees
+ * the two apart rather than trusting one silently.
  * There is deliberately no human override: an override would write an
  * unsourced fact straight into a Score.
  */
@@ -387,8 +388,8 @@ export function countryResilience(input: SupplierScoringInput): CriterionOutcome
 }
 
 /**
- * **Tariff exposure** — the Category's default HS line × the settled site's
- * country as origin (finding 107) × importer USA.
+ * **Tariff exposure** — the Category's default HS line × the settled
+ * country as origin (SPEC §9.4) × importer USA.
  *
  * **A Supplier with no Category has no Score at all**, not an unknown Criterion
  * here — that case is handled by the assembler, because it is a property of the

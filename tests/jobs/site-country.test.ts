@@ -1,43 +1,117 @@
 import { describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import * as t from '@/db/schema';
-import { deriveSiteCountry } from '@/jobs/enrich-supplier';
+import { deriveSettledCountry, settleMatch } from '@/domain/match/settle-match';
+import { siteCountryOf } from '@/jobs/enrich-supplier';
 import { getTestDb, testDatabaseIsUp } from '../support/test-db';
 import { resetDerived } from '../support/reset';
 import { seededProgram } from '../support/seeded-program';
 
 /**
- * `deriveSiteCountry` (SPEC §9.2/§9.4, finding 107).
+ * **The country a Supplier is scored on** (SPEC §9.4).
  *
- * **Rule:** when the settled candidate's persisted `country` Discriminator
- * verdict is `pass`, the site is scored on the roster's country, normalised to
- * ISO3; otherwise on the Profile's own — exactly as before this finding.
+ * The Match decides it at settle time and writes it to
+ * `match.settled_country` / `match.settled_country_source`; enrichment reads
+ * the row and never re-derives it.
  *
  * Sumitomo Electric is the measured case this exists for: settled by rules to
  * the right entity, whose `entity.country` reads `SWE` against a Japanese
  * roster address, because the Profile's country and the settled site's country
- * are two different facts (CONTEXT.md, *Profile*; `src/domain/scoring/types.ts`).
- * These tests build the same shape from scratch rather than depending on that
- * live data, so they run offline and keyless.
+ * are two different facts (CONTEXT.md, *Profile*). Its own LEI is registered in
+ * Japan, and that is now what decides.
+ *
+ * The rule this replaces scored the **roster's** country whenever the `country`
+ * Discriminator passed. It was right about Sumitomo Electric and wrong in
+ * principle: the roster is the claim under test, not a witness to it — and a
+ * value derived from Discriminator verdicts moves whenever a Match is
+ * re-recorded, silently rescoring a Supplier nobody touched.
  */
-
-type Setup = {
-  supplierId: string;
-  entityId: string;
-  matchId: string;
-};
 
 const TEST_ROSTER_NAME = 'Site Country Test Co';
 
 /**
- * One accepted Match, with an `entity` row and a `supplier` row of our own.
+ * `deriveSettledCountry` is pure, so the three sources are tested directly and
+ * the database level below only has to show that what it decided is what gets
+ * stored and read back.
+ */
+describe('deriveSettledCountry — three sources, in order of what each witnesses', () => {
+  it("prefers GLEIF's legal-address country when the settled Candidate has an LEI", () => {
+    // Sumitomo Electric, measured: LEI 5493005SP87FL5TOS202, GLEIF legal
+    // address country JP, Sayari's `countries[0]` SWE.
+    expect(
+      deriveSettledCountry({
+        evidence: {
+          lei: '5493005SP87FL5TOS202',
+          gleifLegalCountry: 'JP',
+          anchoredAddressCountry: 'JPN',
+        },
+        profileCountry: 'SWE',
+      }),
+    ).toEqual({ country: 'JPN', source: 'gleif' });
+  });
+
+  it('falls to the anchored address when there is an LEI but no GLEIF country', () => {
+    // The GLEIF join can miss or return a record with no legal address; absence
+    // is not evidence, so the next witness answers rather than the fallback.
+    expect(
+      deriveSettledCountry({
+        evidence: {
+          lei: 'SOMELEI000000000000',
+          gleifLegalCountry: null,
+          anchoredAddressCountry: 'DEU',
+        },
+        profileCountry: 'BEL',
+      }),
+    ).toEqual({ country: 'DEU', source: 'matched_address' });
+  });
+
+  it('uses the anchored address when the record carries no LEI at all', () => {
+    // A company with no LEI can never be auto-accepted, but the agents settle
+    // plenty of them — Draexlmaier, Yazaki, NSK — and the building the
+    // Discriminators anchored on is still the site.
+    expect(
+      deriveSettledCountry({
+        evidence: { lei: null, gleifLegalCountry: null, anchoredAddressCountry: 'JPN' },
+        profileCountry: 'USA',
+      }),
+    ).toEqual({ country: 'JPN', source: 'matched_address' });
+  });
+
+  it("falls back to the Profile's own country when there is no evidence at all", () => {
+    // A human override and a promoted Lead both arrive with no Discriminator
+    // run behind them, and `'profile'` is the honest source for both.
+    expect(deriveSettledCountry({ profileCountry: 'SWE' })).toEqual({
+      country: 'SWE',
+      source: 'profile',
+    });
+  });
+
+  it('reads whatever spelling a source gives it, and refuses what it cannot place', () => {
+    // GLEIF is ISO2, Sayari is ISO3, and a country name occasionally arrives.
+    expect(
+      deriveSettledCountry({
+        evidence: { lei: 'X', gleifLegalCountry: 'Germany', anchoredAddressCountry: null },
+        profileCountry: null,
+      }).country,
+    ).toBe('DEU');
+    expect(deriveSettledCountry({ profileCountry: 'Ruritania' })).toEqual({
+      country: null,
+      source: null,
+    });
+  });
+});
+
+type Setup = { supplierId: string; entityId: string };
+
+/**
+ * One Supplier and one entity of our own.
  *
  * `supplier` is authored data (`src/db/schema/authored.ts`) — `resetDerived`
  * leaves it alone by design — so a leftover row from a prior run of this same
  * test is deleted by name first, rather than by picking an ever-larger roster
  * index to dodge it.
  */
-async function seedAcceptedMatch(
+async function seedSupplierAndEntity(
   db: Awaited<ReturnType<typeof getTestDb>>,
   args: { rosterCountry: string | null; profileCountry: string | null },
 ): Promise<Setup> {
@@ -66,156 +140,128 @@ async function seedAcceptedMatch(
     })
     .returning({ id: t.supplier.id });
 
-  const [match] = await db
-    .insert(t.match)
-    .values({
-      supplierId: supplier!.id,
-      status: 'accepted',
-      entityId,
-      settledBy: 'rules',
-    })
-    .returning({ id: t.match.id });
-
-  return { supplierId: supplier!.id, entityId, matchId: match!.id };
+  return { supplierId: supplier!.id, entityId };
 }
 
-/** One Candidate on the settled entity, carrying one `country` verdict. */
-async function recordCountryVerdict(
-  db: Awaited<ReturnType<typeof getTestDb>>,
-  setup: Setup,
-  verdict: 'pass' | 'fail' | 'unavailable',
-): Promise<void> {
-  const [attempt] = await db
-    .insert(t.matchAttempt)
-    .values({
-      matchId: setup.matchId,
-      attemptN: 1,
-      outcomeStatus: 'accepted',
-      outcomeEntityId: setup.entityId,
-      settledBy: 'rules',
-    })
-    .returning({ id: t.matchAttempt.id });
-
-  const [candidate] = await db
-    .insert(t.matchCandidate)
-    .values({ matchAttemptId: attempt!.id, entityId: setup.entityId, foundByRung: 'R1' })
-    .returning({ id: t.matchCandidate.id });
-
-  await db.insert(t.matchCandidateVerdict).values({
-    matchCandidateId: candidate!.id,
-    discriminator: 'country',
-    verdict,
-    reasoning: 'seeded for the site-country unit test',
-    reportedBy: 'rules',
-  });
-}
-
-/** Loads the accepted `match` row the way `enrich-supplier.ts` narrows it. */
-async function acceptedMatchRow(db: Awaited<ReturnType<typeof getTestDb>>, matchId: string) {
-  const match = await db.query.match.findFirst({ where: eq(t.match.id, matchId) });
+async function settledMatchRow(db: Awaited<ReturnType<typeof getTestDb>>, supplierId: string) {
+  const match = await db.query.match.findFirst({ where: eq(t.match.supplierId, supplierId) });
   return { ...match!, entityId: match!.entityId! };
 }
 
-describe('deriveSiteCountry', () => {
-  it('a pass verdict scores the roster country, given as ISO3', async () => {
+describe('settleMatch writes the country, and enrichment reads it back', () => {
+  it("stores GLEIF's country on the Match — Sumitomo Electric's shape", async () => {
     if (!(await testDatabaseIsUp())) return;
     const db = await getTestDb();
     await resetDerived(db);
 
-    const setup = await seedAcceptedMatch(db, { rosterCountry: 'JPN', profileCountry: 'SWE' });
-    await recordCountryVerdict(db, setup, 'pass');
-    const supplier = await db.query.supplier.findFirst({
-      where: eq(t.supplier.id, setup.supplierId),
+    const setup = await seedSupplierAndEntity(db, { rosterCountry: 'JPN', profileCountry: 'SWE' });
+    await settleMatch(db, {
+      supplierId: setup.supplierId,
+      status: 'accepted',
+      entityId: setup.entityId,
+      settledBy: 'rules',
+      settledEvidence: {
+        lei: '5493005SP87FL5TOS202',
+        gleifLegalCountry: 'JP',
+        anchoredAddressCountry: 'JPN',
+      },
     });
-    const profileRow = await db.query.entity.findFirst({ where: eq(t.entity.id, setup.entityId) });
-    const match = await acceptedMatchRow(db, setup.matchId);
 
-    const result = await deriveSiteCountry(db, match, supplier!, profileRow!);
-    expect(result).toEqual({ siteCountry: 'JPN', countrySource: 'site' });
+    const match = await settledMatchRow(db, setup.supplierId);
+    expect(match.settledCountry).toBe('JPN');
+    expect(match.settledCountrySource).toBe('gleif');
+
+    // What the enrich fan-out and the Score will read. The Profile's own SWE is
+    // still on the entity row, which is the point: both facts survive.
+    const profileRow = await db.query.entity.findFirst({ where: eq(t.entity.id, setup.entityId) });
+    expect(siteCountryOf(match, profileRow!)).toEqual({
+      siteCountry: 'JPN',
+      countrySource: 'gleif',
+    });
+    expect(profileRow!.country).toBe('SWE');
   });
 
-  it('a pass verdict scores the roster country, given as prose', async () => {
+  it('stores the anchored address’s country where there is no LEI', async () => {
     if (!(await testDatabaseIsUp())) return;
     const db = await getTestDb();
     await resetDerived(db);
 
-    const setup = await seedAcceptedMatch(db, { rosterCountry: 'Japan', profileCountry: 'SWE' });
-    await recordCountryVerdict(db, setup, 'pass');
-    const supplier = await db.query.supplier.findFirst({
-      where: eq(t.supplier.id, setup.supplierId),
+    const setup = await seedSupplierAndEntity(db, { rosterCountry: 'JPN', profileCountry: 'SWE' });
+    await settleMatch(db, {
+      supplierId: setup.supplierId,
+      status: 'accepted',
+      entityId: setup.entityId,
+      settledBy: 'agents',
+      settledEvidence: { lei: null, gleifLegalCountry: null, anchoredAddressCountry: 'JPN' },
     });
-    const profileRow = await db.query.entity.findFirst({ where: eq(t.entity.id, setup.entityId) });
-    const match = await acceptedMatchRow(db, setup.matchId);
 
-    const result = await deriveSiteCountry(db, match, supplier!, profileRow!);
-    expect(result).toEqual({ siteCountry: 'JPN', countrySource: 'site' });
+    const match = await settledMatchRow(db, setup.supplierId);
+    expect(match.settledCountry).toBe('JPN');
+    expect(match.settledCountrySource).toBe('matched_address');
   });
 
-  it('a fail verdict falls back to the Profile country', async () => {
+  it("falls back to the Profile's own country on a settlement with no evidence", async () => {
     if (!(await testDatabaseIsUp())) return;
     const db = await getTestDb();
     await resetDerived(db);
 
-    const setup = await seedAcceptedMatch(db, { rosterCountry: 'JPN', profileCountry: 'SWE' });
-    await recordCountryVerdict(db, setup, 'fail');
-    const supplier = await db.query.supplier.findFirst({
-      where: eq(t.supplier.id, setup.supplierId),
+    // A human override: a person picked a Candidate, and no Discriminator run
+    // stands behind the pick.
+    const setup = await seedSupplierAndEntity(db, { rosterCountry: 'JPN', profileCountry: 'SWE' });
+    await settleMatch(db, {
+      supplierId: setup.supplierId,
+      status: 'accepted',
+      entityId: setup.entityId,
+      settledBy: 'human',
     });
-    const profileRow = await db.query.entity.findFirst({ where: eq(t.entity.id, setup.entityId) });
-    const match = await acceptedMatchRow(db, setup.matchId);
 
-    const result = await deriveSiteCountry(db, match, supplier!, profileRow!);
-    expect(result).toEqual({ siteCountry: 'SWE', countrySource: 'profile' });
+    const match = await settledMatchRow(db, setup.supplierId);
+    expect(match.settledCountry).toBe('SWE');
+    expect(match.settledCountrySource).toBe('profile');
   });
 
-  it('an unavailable verdict falls back to the Profile country', async () => {
+  it('leaves both columns null on a parked Match, which has no site', async () => {
     if (!(await testDatabaseIsUp())) return;
     const db = await getTestDb();
     await resetDerived(db);
 
-    const setup = await seedAcceptedMatch(db, { rosterCountry: 'JPN', profileCountry: 'SWE' });
-    await recordCountryVerdict(db, setup, 'unavailable');
-    const supplier = await db.query.supplier.findFirst({
-      where: eq(t.supplier.id, setup.supplierId),
+    const setup = await seedSupplierAndEntity(db, { rosterCountry: 'JPN', profileCountry: 'SWE' });
+    await settleMatch(db, {
+      supplierId: setup.supplierId,
+      status: 'needs_review',
+      entityId: null,
+      settledBy: 'agents',
     });
-    const profileRow = await db.query.entity.findFirst({ where: eq(t.entity.id, setup.entityId) });
-    const match = await acceptedMatchRow(db, setup.matchId);
 
-    const result = await deriveSiteCountry(db, match, supplier!, profileRow!);
-    expect(result).toEqual({ siteCountry: 'SWE', countrySource: 'profile' });
+    const match = await db.query.match.findFirst({
+      where: eq(t.match.supplierId, setup.supplierId),
+    });
+    expect(match?.settledCountry).toBeNull();
+    expect(match?.settledCountrySource).toBeNull();
   });
 
-  it('no verdict at all (a promoted Lead, zero candidates) falls back to the Profile country', async () => {
+  it("reads the Profile's own country for a Match settled before the column existed", async () => {
     if (!(await testDatabaseIsUp())) return;
     const db = await getTestDb();
     await resetDerived(db);
 
-    // No `recordCountryVerdict` call: zero `match_attempt` rows, exactly like a
-    // promoted Lead's pre-settled Match (`settleDiscoveredLead`).
-    const setup = await seedAcceptedMatch(db, { rosterCountry: 'JPN', profileCountry: 'SWE' });
-    const supplier = await db.query.supplier.findFirst({
-      where: eq(t.supplier.id, setup.supplierId),
-    });
+    // Every accepted Match in the development database is one of these until it
+    // is re-run, and `'profile'` is exactly what it was scored on before.
+    const setup = await seedSupplierAndEntity(db, { rosterCountry: 'JPN', profileCountry: 'SWE' });
+    const [match] = await db
+      .insert(t.match)
+      .values({
+        supplierId: setup.supplierId,
+        status: 'accepted',
+        entityId: setup.entityId,
+        settledBy: 'rules',
+      })
+      .returning();
     const profileRow = await db.query.entity.findFirst({ where: eq(t.entity.id, setup.entityId) });
-    const match = await acceptedMatchRow(db, setup.matchId);
 
-    const result = await deriveSiteCountry(db, match, supplier!, profileRow!);
-    expect(result).toEqual({ siteCountry: 'SWE', countrySource: 'profile' });
-  });
-
-  it('a pass verdict with no roster country at all falls back to the Profile country', async () => {
-    if (!(await testDatabaseIsUp())) return;
-    const db = await getTestDb();
-    await resetDerived(db);
-
-    const setup = await seedAcceptedMatch(db, { rosterCountry: null, profileCountry: 'SWE' });
-    const supplier = await db.query.supplier.findFirst({
-      where: eq(t.supplier.id, setup.supplierId),
+    expect(siteCountryOf({ ...match!, entityId: match!.entityId! }, profileRow!)).toEqual({
+      siteCountry: 'SWE',
+      countrySource: 'profile',
     });
-    const profileRow = await db.query.entity.findFirst({ where: eq(t.entity.id, setup.entityId) });
-    const match = await acceptedMatchRow(db, setup.matchId);
-
-    const result = await deriveSiteCountry(db, match, supplier!, profileRow!);
-    expect(result).toEqual({ siteCountry: 'SWE', countrySource: 'profile' });
   });
 });
