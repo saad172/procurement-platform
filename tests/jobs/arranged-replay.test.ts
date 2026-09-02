@@ -3,7 +3,8 @@ import { and, eq } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { runResolveJob } from '@/jobs/resolve-job';
 import { resetAnthropicClients } from '@/model/client';
-import { replayFetch } from '@/fixtures/replay-fetch';
+import { replayFetch, type ReplayFetch } from '@/fixtures/replay-fetch';
+import type { Fixture } from '@/fixtures/types';
 import { loadFixture } from '@/fixtures/load';
 import { replayUpstream, seedUpstream } from '@/fixtures/replay-upstream';
 import { seedTestProgram } from '@/db/seed-test-program';
@@ -23,6 +24,27 @@ import { openJob } from '../support/pipeline';
  * They live in their own Program so the approved seed stays untouched —
  * `seed-facts.test.ts` asserts three published findings about exactly those
  * fifty rows, and a fifty-first would make them wrong.
+ *
+ * ## Every test here asserts the replay served every turn
+ *
+ * **Both fixtures currently miss, and `resolve/not-found` was green anyway.**
+ * A replay miss is handed to the SDK as a `400`, so what the Job sees is a
+ * Round that produced no submission — and for `not_found` that is a legal
+ * outcome. The assertions read `not_found`, no entity, no Candidates, three
+ * Rounds; a replay that served nothing at all produces exactly that. The
+ * fixture was passing by coincidence, on eighteen misses.
+ *
+ * So each test now reads `replay.misses` off the fetch and requires zero. That
+ * turns *"the outcome still looks right"* into *"every recorded turn was
+ * served, and none drifted"*, which is the claim a fixture exists to make.
+ *
+ * **These tests are red until the fixtures are re-recorded**, and that is the
+ * truthful state: the Discriminator changes on this branch moved the resolver's
+ * own first prompt — `summarise()` prints `addresses=N` per Candidate and
+ * `toCandidateFacts` now keeps address blocks carrying only a line — so turn 1
+ * no longer matches. Re-record with `pnpm fixtures:record-replayable not-found`
+ * and `… sanctioned`, then read what the recording actually did rather than
+ * re-rolling for the outcome the old assertions expected (finding 79).
  */
 
 async function arrange(fixtureName: string, rosterName: string) {
@@ -51,6 +73,9 @@ async function arrange(fixtureName: string, rosterName: string) {
   const jobId = await openJob(db, run!.id, 'resolve', supplier.id);
   const upstream = replayUpstream(db, run!.id, jobId);
 
+  // Held rather than inlined, so the test can read what the replay actually did.
+  const replay = replayFetch(fixture);
+
   const outcome = await runResolveJob(
     {
       db,
@@ -68,7 +93,7 @@ async function arrange(fixtureName: string, rosterName: string) {
           db,
           runId: run!.id,
           jobId,
-          credentials: { apiKey: 'not-a-key', fetch: replayFetch(fixture) },
+          credentials: { apiKey: 'not-a-key', fetch: replay },
         },
       },
       jobId,
@@ -76,16 +101,34 @@ async function arrange(fixtureName: string, rosterName: string) {
     { supplierId: supplier.id },
   );
 
-  return { db, supplier, outcome };
+  return { db, supplier, outcome, replay, fixture };
+}
+
+/**
+ * **The replay served every recorded turn, and drifted on none.**
+ *
+ * Asserted first in every test here, because an outcome assertion alone cannot
+ * tell a faithful replay from a fixture that served nothing — see the file
+ * header for the eighteen-miss case that made this necessary.
+ */
+function expectFaithfulReplay(replay: ReplayFetch, fixture: Fixture): void {
+  expect(
+    replay.misses,
+    `the replay drifted ${replay.misses} time(s); it served turns ${replay.served.join(', ') || '(none)'} of ${fixture.turns.length} recorded`,
+  ).toBe(0);
+  expect(replay.served).toHaveLength(fixture.turns.length);
 }
 
 describe('resolve/not-found replays', () => {
   it('settles not_found, with no entity and no candidate in the roster country', async () => {
     if (!(await testDatabaseIsUp())) return;
-    const { db, supplier, outcome } = await arrange(
+    const { db, supplier, outcome, replay, fixture } = await arrange(
       'resolve/not-found',
       'Nordhavn Präzisionsteile Vertriebsgesellschaft',
     );
+
+    // First, because "no pick" and "not found" are indistinguishable downstream.
+    expectFaithfulReplay(replay, fixture);
 
     expect(outcome.status).toBe('not_found');
     expect(outcome.entityId).toBeNull();
@@ -132,7 +175,12 @@ describe('resolve/not-found replays', () => {
 describe('resolve/sanctioned replays', () => {
   it('matches a sanctioned company and stores the badge as a fact from the graph', async () => {
     if (!(await testDatabaseIsUp())) return;
-    const { db, supplier, outcome } = await arrange('resolve/sanctioned', 'Rosoboronexport');
+    const { db, supplier, outcome, replay, fixture } = await arrange(
+      'resolve/sanctioned',
+      'Rosoboronexport',
+    );
+
+    expectFaithfulReplay(replay, fixture);
 
     expect(outcome.status).toBe('accepted');
     expect(outcome.entityId).toBeTruthy();

@@ -32,6 +32,22 @@ import { JOB_CAPS } from '@/config/constants';
  * read. A wrapper built without credentials cannot fall through to a live call:
  * it stops and names the key it missed. So a lookup the recording never made
  * fails loudly instead of quietly costing a credit.
+ *
+ * ## And the replay has to have served every turn
+ *
+ * A miss reaches the SDK as a `400`, so a drifted fixture reads downstream as a
+ * Round that produced no submission — which for some resolve outcomes is legal
+ * (`arranged-replay.test.ts` documents a sibling fixture that stayed green on
+ * eighteen misses). `replay.misses` is asserted first here for the same reason,
+ * even though this test's `accepted` / `settled_by = 'agents'` assertions could
+ * not survive a miss on their own.
+ *
+ * **This test is red until the fixture is re-recorded.** The Discriminator
+ * changes on this branch moved the resolver's own first prompt: `summarise()`
+ * prints `addresses=N` per Candidate and `toCandidateFacts` now keeps address
+ * blocks carrying only a line, so turn 1 no longer matches. Re-record with
+ * `pnpm fixtures:record-replayable agree-r1` and follow what the recording did
+ * rather than re-rolling for the old outcome (finding 79).
  */
 
 const FIXTURE = 'resolve/agree-r1';
@@ -74,6 +90,8 @@ describe('resolve/agree-r1 replays', () => {
       .returning({ id: t.job.id });
 
     const upstream = replayUpstream(db, run!.id, job!.id);
+    // Held rather than inlined, so the replay's own bookkeeping is readable.
+    const replay = replayFetch(fixture);
     const outcome = await runResolveJob(
       {
         db,
@@ -91,13 +109,24 @@ describe('resolve/agree-r1 replays', () => {
             db,
             runId: run!.id,
             jobId: job!.id,
-            credentials: { apiKey: 'not-a-key', fetch: replayFetch(fixture) },
+            credentials: { apiKey: 'not-a-key', fetch: replay },
           },
         },
         jobId: job!.id,
       },
       { supplierId: supplier.id },
     );
+
+    /**
+     * **Every recorded turn was served, and none drifted.** Asserted before the
+     * outcome, because an outcome alone cannot tell a faithful replay from a
+     * fixture that served nothing.
+     */
+    expect(
+      replay.misses,
+      `the replay drifted ${replay.misses} time(s); it served turns ${replay.served.join(', ') || '(none)'} of ${fixture.turns.length} recorded`,
+    ).toBe(0);
+    expect(replay.served).toHaveLength(fixture.turns.length);
 
     expect(outcome.status).toBe('accepted');
     expect(outcome.settledBy).toBe('agents');

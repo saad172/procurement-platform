@@ -596,6 +596,111 @@ describe('the gate refuses when nothing rules the rival out', () => {
     expect(outcome.accepted).toBe(false);
     expect(outcome.reason).toMatch(/Samvardhana Motherson International Ltd\./);
     expect(outcome.reason).toMatch(/failed none of them either/);
+    // The refusal names WHICH checks placed the rival, so a reader can see the
+    // claim rather than take the refusal on trust.
+    expect(outcome.reason).toMatch(/country, locality, street/);
+  });
+
+  it('does NOT count a rival that nothing places at the roster address', () => {
+    /**
+     * **A rival needs zero `fail` verdicts *and* something placing it at the
+     * roster address** — one of `country`, `locality`, `street` or
+     * `lei_witness` returning `pass`.
+     *
+     * The second half is the Identity Standard rather than a convenience: the
+     * right answer is *the legal entity registered at the roster address*, so a
+     * record that says nothing about where it is has not made a competing claim
+     * to be that entity. It is a record with no evidence, not a candidate with
+     * contrary evidence.
+     */
+    const unplaced = candidate({
+      entityId: 'unplaced',
+      label: 'ROBERT BOSCH',
+      country: null,
+      // No country, no city, no postcode, no line: nothing to place it.
+      addresses: [{ city: null, postcode: null, country: null, line: null }],
+      aliases: ['Bosch'],
+      lei: null,
+      gleif: undefined,
+      latestStatus: null,
+      owners: [],
+    });
+    const verdicts = runDiscriminators(BOSCH_ROW, unplaced);
+
+    // The shape the rule turns on: nothing failed, and nothing placed it.
+    expect(verdicts.some((v) => v.verdict === 'fail')).toBe(false);
+    for (const name of ['country', 'locality', 'street', 'lei_witness']) {
+      expect(verdictFor(verdicts, name).verdict, name).toBe('unavailable');
+    }
+
+    const outcome = evaluateAutoAccept([
+      { candidate: candidate({}), verdicts: runDiscriminators(BOSCH_ROW, candidate({})) },
+      { candidate: unplaced, verdicts },
+    ]);
+    expect(outcome.accepted).toBe(true);
+  });
+
+  it('DOES count Sayari’s real ROBERT BOSCH record, because the street rung places it', () => {
+    /**
+     * **Measured, and it contradicts what this rule was expected to fix.**
+     *
+     * The intent behind requiring a placing verdict was that Sayari's second
+     * Bosch record — `ROBERT BOSCH`, entity `45y20w00TGt2FpimbCEbdA` — should
+     * stop blocking row 1's zero-token settlement. It does not, and the reason
+     * is worth having written down where the rule is:
+     *
+     * That record is an Indonesian trade-derived company with sixty-odd Jakarta
+     * addresses. Most carry `country: IDN`, which fails against a DEU roster
+     * row, so `compareAddresses` anchors instead on one of the addresses whose
+     * country is **null** — and the one it picks has the line
+     * `BUILDING TECHNOLOGIES, (BT-AI/SAL2) ROBERT BOSCH (SOUTH EAST ASIA) PTE`.
+     *
+     * The roster line is `Robert-Bosch-Platz 1 70839 Gerlingen`. Strip the city,
+     * the postcode and the generic street word `platz` and the roster's
+     * "street-level tokens" are `robert`, `bosch`, `1` — **the company's own
+     * name**, because the street is named after the company. They match the
+     * company's own name in the candidate's address line, so `street` returns
+     * `pass` and the record counts as placed.
+     *
+     * That is name evidence laundered through the street rung, not location
+     * evidence, and no part of the rival rule can see the difference. Fixing it
+     * belongs in the street rung — which should not treat a token it shares
+     * with the roster *name* as street-level agreement — and that is a separate
+     * decision from this one.
+     */
+    const tradeRecord = candidate({
+      entityId: 'bosch-idn',
+      label: 'ROBERT BOSCH',
+      country: null,
+      addresses: [
+        { city: null, postcode: null, country: 'IDN', line: 'JL.PASAR BARU NO.125 JAKARTA' },
+        {
+          city: null,
+          postcode: null,
+          country: null,
+          line: 'BUILDING TECHNOLOGIES, (BT-AI/SAL2) ROBERT BOSCH (SOUTH EAST ASIA) PTE',
+        },
+      ],
+      aliases: ['Bosch'],
+      lei: null,
+      gleif: undefined,
+      latestStatus: null,
+      owners: [],
+    });
+    const verdicts = runDiscriminators(BOSCH_ROW, tradeRecord);
+
+    expect(verdictFor(verdicts, 'country').verdict).toBe('unavailable');
+    expect(verdictFor(verdicts, 'locality').verdict).toBe('unavailable');
+    // The one that places it, on the brand tokens out of `Robert-Bosch-Platz`.
+    expect(verdictFor(verdicts, 'street').verdict).toBe('pass');
+    expect(verdicts.some((v) => v.verdict === 'fail')).toBe(false);
+
+    const outcome = evaluateAutoAccept([
+      { candidate: candidate({}), verdicts: runDiscriminators(BOSCH_ROW, candidate({})) },
+      { candidate: tradeRecord, verdicts },
+    ]);
+    expect(outcome.accepted).toBe(false);
+    expect(outcome.reason).toMatch(/ROBERT BOSCH \(street\)/);
   });
 
   it('still accepts when every rival carries a reason it is not the company', () => {

@@ -20,7 +20,7 @@ import {
  * roster of trade names few rows clear this bar, and **that count is a result
  * to report**, not a defect to fix.
  *
- * ## And no rival free of a fail
+ * ## And no rival that is placed at the roster address and failed nothing
  *
  * *Exactly one candidate passed all eight* is a weaker statement than it looks,
  * because `unavailable` is not a `fail`. A rival whose eight verdicts are all
@@ -32,9 +32,29 @@ import {
  * address — lost it on one `unavailable` liveness verdict. The gate settled
  * silently on the smaller company.
  *
- * So a clean winner is accepted only when every other candidate carries at
- * least one **`fail`**: a reason it is not the company, rather than an absence
- * of reasons that it is.
+ * **A rival is a Candidate with zero `fail` verdicts *and* something placing it
+ * at the roster address** — at least one of `country`, `locality`, `street` or
+ * `lei_witness` returning `pass`. Both halves are needed, and the second half is
+ * the Identity Standard rather than a convenience: the right answer is *the
+ * legal entity registered at the roster address*, so a record that says nothing
+ * about where it is has not made a competing claim to be that entity. It is a
+ * record with no evidence, not a candidate with contrary evidence.
+ *
+ * Both halves are measured on the roster, on rows that disagree about them:
+ *
+ * - `Samvardhana Motherson International Ltd.` passes `country`, `locality`
+ *   **and** `street` against the roster's own Noida address and fails nothing.
+ *   It is a rival, and the gate refuses.
+ * - Sayari's second Bosch record is labelled `ROBERT BOSCH` and carries no
+ *   country, no city, no postcode, no LEI and no status. Four of its eight
+ *   verdicts are `pass` — name cover, alias context, business purpose, and a
+ *   street rung reading the brand tokens out of `Robert-Bosch-Platz` — and the
+ *   other four are `can't tell`. Nothing places it anywhere. Counting it as a
+ *   rival cost `ROBERT BOSCH GMBH` a zero-token settlement it had earned on
+ *   evidence, in favour of a record that had produced none.
+ *
+ * The refusal names which of the four placed the rival, so a reader can see the
+ * claim rather than take the refusal on trust.
  */
 
 export type AutoAcceptOutcome =
@@ -45,6 +65,24 @@ export type CandidateAssessment = {
   candidate: CandidateFacts;
   verdicts: DiscriminatorResult[];
 };
+
+/**
+ * The four Discriminators that can put a Candidate **at the roster address**.
+ *
+ * Three are the address ladder itself; the fourth is GLEIF corroborating the
+ * roster's own jurisdiction and city, which is a claim about where the company
+ * is registered rather than about what it is called. `name_cover`,
+ * `alias_context`, `business_purpose` and `liveness` are all true of a company
+ * in the wrong country, so none of them can place one.
+ */
+const PLACING_DISCRIMINATORS = ['country', 'locality', 'street', 'lei_witness'] as const;
+
+/** Which of the four placed this Candidate, empty when nothing did. */
+function placedBy(verdicts: readonly DiscriminatorResult[]): string[] {
+  return PLACING_DISCRIMINATORS.filter((name) =>
+    verdicts.some((v) => v.discriminator === name && v.verdict === 'pass'),
+  );
+}
 
 /** True only when every one of the eight returned `pass` — `unavailable` is not a pass. */
 export function passesAllEight(verdicts: readonly DiscriminatorResult[]): boolean {
@@ -91,23 +129,28 @@ export function evaluateAutoAccept(assessments: readonly CandidateAssessment[]):
   const only = clean[0]!;
 
   /**
-   * Every other candidate has to have been **ruled out**, not merely
-   * out-scored. A rival with no `fail` verdict is one the code could not tell
-   * apart from the winner, and settling between them is exactly the judgement
-   * the agents exist to make.
+   * Every other candidate that is **placed at the roster address** has to have
+   * been ruled out, not merely out-scored. Such a rival is one the code could
+   * not tell apart from the winner, and settling between them is exactly the
+   * judgement the agents exist to make.
    */
-  const undismissed = assessments.filter(
-    (a) =>
-      a !== only &&
-      a.verdicts.length === DISCRIMINATOR_NAMES.length &&
-      a.verdicts.every((v) => v.verdict !== 'fail'),
-  );
-  if (undismissed.length > 0) {
-    const names = undismissed.map((a) => a.candidate.label).join(', ');
-    const them = undismissed.length === 1 ? 'it' : 'them';
+  const rivals = assessments
+    .filter((a) => a !== only)
+    .map((a) => ({ assessment: a, placedBy: placedBy(a.verdicts) }))
+    .filter(
+      (r) =>
+        r.assessment.verdicts.length === DISCRIMINATOR_NAMES.length &&
+        r.assessment.verdicts.every((v) => v.verdict !== 'fail') &&
+        r.placedBy.length > 0,
+    );
+  if (rivals.length > 0) {
+    const named = rivals
+      .map((r) => `${r.assessment.candidate.label} (${r.placedBy.join(', ')})`)
+      .join('; ');
+    const them = rivals.length === 1 ? 'it' : 'them';
     return {
       accepted: false,
-      reason: `${only.candidate.label} passed all eight discriminators, but ${names} failed none of them either — every verdict against ${them} is a pass or a "can't tell", so nothing here rules ${them} out. The agents decide.`,
+      reason: `${only.candidate.label} passed all eight discriminators, but ${named} failed none of them either, and the checks in brackets place ${them} at the roster address too. Every other verdict against ${them} is a pass or a "can't tell", so nothing here rules ${them} out. The agents decide.`,
     };
   }
 
