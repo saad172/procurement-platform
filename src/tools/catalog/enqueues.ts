@@ -84,6 +84,7 @@ const FILTER_CAVEAT =
 
 const enqueueEnrichment = defineTool({
   name: 'enqueue_enrichment',
+  enqueues: 'enrich',
   description:
     'Re-fetch the six enrichment sources for one supplier, and re-compute its criterion values.',
   input: z.object({ supplierId: z.string(), refresh: z.boolean().optional() }),
@@ -131,6 +132,7 @@ const enqueueEnrichment = defineTool({
 
 const enqueueReassess = defineTool({
   name: 'enqueue_reassess',
+  enqueues: 'assess',
   description: 'Re-run the assessment for one supplier against the current numbers.',
   input: z.object({ supplierId: z.string() }),
   surfaces: ['chat'],
@@ -167,6 +169,7 @@ const enqueueReassess = defineTool({
 
 const enqueueRerunRecommendation = defineTool({
   name: 'enqueue_rerun_recommendation',
+  enqueues: 'recommend',
   description: 'Re-run the recommendation for one category against the current shortlist.',
   input: z.object({ programId: z.string(), categoryId: z.string() }),
   surfaces: ['chat'],
@@ -208,6 +211,7 @@ const enqueueRerunRecommendation = defineTool({
  */
 const enqueueDeepTraversal = defineTool({
   name: 'enqueue_deep_traversal',
+  enqueues: 'traverse',
   description: 'Expand one company’s ownership graph beyond the automatic single hop.',
   input: z.object({ entityId: z.string(), programId: z.string() }),
   surfaces: ['chat'],
@@ -241,6 +245,7 @@ const enqueueDeepTraversal = defineTool({
 
 const enqueueDiscover = defineTool({
   name: 'enqueue_discover',
+  enqueues: 'discover',
   description:
     'Search trade data for companies shipping this category’s HS lines that are on no imported list.',
   input: z.object({ programId: z.string(), categoryId: z.string() }),
@@ -282,6 +287,7 @@ const enqueueDiscover = defineTool({
  */
 const enqueueDossier = defineTool({
   name: 'enqueue_dossier',
+  enqueues: 'dossier',
   description:
     'Commission an in-depth research write-up on one supplier, cited like an assessment.',
   input: z.object({ supplierId: z.string() }),
@@ -335,6 +341,7 @@ const enqueueDossier = defineTool({
  */
 const enqueueMatchSettlement = defineTool({
   name: 'enqueue_match_settlement',
+  enqueues: 'resolve',
   description:
     'Settle a supplier’s match on a chosen company, or mark it not found. This enqueues the same job the Needs Review page’s button does.',
   input: z.object({

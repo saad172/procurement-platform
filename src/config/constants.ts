@@ -82,6 +82,35 @@ export const JOB_CAPS = {
 export type JobKind = keyof typeof JOB_CAPS;
 
 /**
+ * The Job kinds a worker can actually run (SPEC §2.2).
+ *
+ * `JOB_CAPS` names eight kinds because it sizes a ceiling for each; the worker
+ * registers a handler for six. The two that are not here — `traverse` and
+ * `dossier` — have `enqueue_*` tools that chat can propose, so an accepted
+ * proposal produced a Job that dequeued and failed with *"no handler registered
+ * for job kind"*: a red row in a Run, from a button a person deliberately
+ * pressed, for work the app never had.
+ *
+ * One list, read by two places that had no idea they were describing the same
+ * set: `buildJobHandlers` types its dispatch table against it, so a kind added
+ * here without a handler is a compile error, and `finalizeRegistry()` checks
+ * every `enqueue_*` tool's declared kind against it at boot.
+ *
+ * `traverse` is expected to join this list when the Deep Traversal handler
+ * lands; `dossier` is flag-gated and deliberately outside it.
+ */
+export const RUNNABLE_JOB_KINDS = [
+  'enrich',
+  'fetch_entity',
+  'discover',
+  'resolve',
+  'assess',
+  'recommend',
+] as const satisfies readonly JobKind[];
+
+export type RunnableJobKind = (typeof RUNNABLE_JOB_KINDS)[number];
+
+/**
  * The run budget is a spending decision a person may revise; a per-Job ceiling
  * is a correctness backstop they may not (SPEC §18.2).
  *

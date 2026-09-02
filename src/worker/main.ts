@@ -13,7 +13,8 @@ import { runResolveJob } from '@/jobs/resolve-job';
 import { checkRunBudget, enqueueJob } from '@/jobs/runs';
 import { assessSupplier } from '@/jobs/assess';
 import { recommendCategory } from '@/jobs/recommend';
-import { runWorker, type JobHandler, type WorkerOptions } from './poll';
+import type { RunnableJobKind } from '@/config/constants';
+import { runWorker, type JobHandler } from './poll';
 
 /**
  * The worker process (SPEC §2.2).
@@ -109,8 +110,15 @@ function registerSignalHandlers(): void {
 /**
  * Dispatch phase: one `JobHandler` per kind, each closing over `env` so it can
  * build its own upstream and model context.
+ *
+ * **Typed against `RUNNABLE_JOB_KINDS`, so the list and the table cannot
+ * drift.** They already had: the constant now names the six kinds a worker
+ * runs, and `finalizeRegistry()` checks every `enqueue_*` tool's declared kind
+ * against the same list — so a Job kind chat can propose and the worker cannot
+ * run is caught at boot rather than when the Job dequeues. A kind added to the
+ * constant without a handler here is a compile error.
  */
-function buildJobHandlers(env: Env): WorkerOptions['handlers'] {
+function buildJobHandlers(env: Env): Record<RunnableJobKind, JobHandler> {
   return {
     enrich: (job, database) => enrichJobHandler(job, database, env),
     fetch_entity: (job, database) => fetchEntityJobHandler(job, database, env),

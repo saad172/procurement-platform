@@ -1,4 +1,5 @@
 import type { z } from 'zod/v4';
+import type { JobKind } from '@/config/constants';
 import type { Database } from '@/db/client';
 import type { Upstream } from '@/upstream';
 
@@ -110,6 +111,17 @@ export type ToolDefinition<TInput extends z.ZodType = z.ZodType, TOutput = unkno
   latency: ToolLatency;
   /** **Presence IS the gate.** A tool with a `confirm` is confirm-gated. */
   confirm?: (input: z.infer<TInput>, ctx: ToolContext) => Promise<Estimate>;
+  /**
+   * The Job kind an `enqueue_*` tool queues, **declared rather than inferred**.
+   *
+   * The kind used to live only inside the handler, where nothing could check
+   * it — so `enqueue_deep_traversal` queued `traverse` and `enqueue_dossier`
+   * queued `dossier`, neither of which the worker has a handler for, and an
+   * accepted proposal became a Job that failed on being dequeued. Declaring it
+   * is what lets `finalizeRegistry()` compare it against `RUNNABLE_JOB_KINDS`
+   * at boot, before a person is ever offered the button.
+   */
+  enqueues?: JobKind;
   handler: (input: z.infer<TInput>, ctx: ToolContext) => Promise<ToolResult<TOutput>>;
 };
 
