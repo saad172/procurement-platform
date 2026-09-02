@@ -337,11 +337,18 @@ function streetDiscriminator(address: AddressComparison): DiscriminatorResult {
             )}. This is never sufficient alone: an investment arm often sits at its parent's exact address.`
         : address.street === 'fail'
           ? `"${candidateLine}" carries none of the roster line's street-level tokens (${distinctiveStreetTokens.slice(0, 4).join(', ')}), so this is a different building in the same place.`
-          : rosterStreetTokens.length === 0
-            ? 'The roster line carries no street-level tokens beyond the city and the postcode.'
-            : distinctiveStreetTokens.length === 0
-              ? `The roster's street is named after the company itself (${rosterStreetTokens.slice(0, 4).join(', ')}), so its street-level tokens say nothing about which building this is.`
-              : 'This address has no line to read a street from, so there is nothing to compare.',
+          : streetTokensMatched.length > 0
+            ? `"${candidateLine}" does share the roster line's street-level token${streetTokensMatched.length === 1 ? '' : 's'} ${streetTokensMatched
+                .slice(0, 4)
+                .map((t) => `"${t}"`)
+                .join(
+                  ', ',
+                )}, but the locality does not agree on this address, so that is a coincidence rather than a building in common. Street may never accept alone.`
+            : rosterStreetTokens.length === 0
+              ? 'The roster line carries no street-level tokens beyond the city and the postcode.'
+              : distinctiveStreetTokens.length === 0
+                ? `The roster's street is named after the company itself (${rosterStreetTokens.slice(0, 4).join(', ')}), so its street-level tokens say nothing about which building this is.`
+                : 'This address has no line to read a street from, so there is nothing to compare.',
   };
 }
 

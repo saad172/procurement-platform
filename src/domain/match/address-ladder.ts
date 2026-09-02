@@ -285,6 +285,110 @@ export function compareAddresses(args: {
   };
 }
 
+/**
+ * Rung 3 — the street, extracted so `compareAddress` stays readable.
+ *
+ * Everything the rung needs and nothing else: the roster's tokens, the anchored
+ * address's own city, postcode and line, the locality verdict it is subordinate
+ * to, and the company's name tokens.
+ */
+function streetRung(args: {
+  rosterTokens: readonly string[];
+  city: string | null;
+  postcode: string | null;
+  line: string | null;
+  locality: LadderVerdict;
+  nameTokens?: readonly string[] | undefined;
+}): {
+  verdict: LadderVerdict;
+  rosterStreetTokens: string[];
+  distinctiveStreetTokens: string[];
+  streetTokensMatched: string[];
+} {
+  /**
+   * **Real tokens on both sides**, which this rung did not have until the
+   * address line was carried alongside the city and the postcode. It used to
+   * return whatever the locality returned, and say "street-level tokens agree"
+   * when it passed — a sentence about a comparison that never happened.
+   *
+   * Both sides are the same subtraction: everything that is not the anchored
+   * address's own city, its postcode, or a generic street word. What is left is
+   * the house number and the street name, which is the only thing this rung was
+   * ever meant to be about.
+   */
+  const cityTokens = new Set(tokens(args.city ?? ''));
+  const postcodeTokens = new Set(tokens(args.postcode ?? ''));
+  const streetward = (token: string) =>
+    !cityTokens.has(token) && !postcodeTokens.has(token) && !STREET_STOPWORDS.has(token);
+
+  const rosterStreetTokens = args.rosterTokens.filter(streetward);
+  const addressStreetTokens = tokens(args.line ?? '').filter(streetward);
+
+  /**
+   * **A street named after the company is not evidence about the company.**
+   *
+   * Roster row 1 is `Robert-Bosch-Platz 1 70839 Gerlingen`. Subtract the city,
+   * the postcode and the stopword `platz` and the "street-level tokens" are
+   * `robert`, `bosch`, `1` — two thirds of which are the company's own name,
+   * because the street is named after it. Any record whose address line
+   * mentions Bosch then matched on the street rung, and one did.
+   *
+   * So a token that also appears in the roster name or in the Candidate's own
+   * label is dropped before comparing — **unless it is a number**, because a
+   * house number is a real street token whatever the company is called, and
+   * `Gestamp 2020 SL` should not be able to spend the roster's house number.
+   */
+  const nameTokenSet = new Set(args.nameTokens ?? []);
+  const distinctive = (token: string) => /^\d+$/.test(token) || !nameTokenSet.has(token);
+  const distinctiveStreetTokens = rosterStreetTokens.filter(distinctive);
+
+  const streetTokensMatched = distinctiveStreetTokens.filter((token) =>
+    addressStreetTokens.includes(token),
+  );
+
+  // `unavailable` where either side offers nothing to compare — absent evidence
+  // is not contrary evidence. Three ways that happens, and the third is new:
+  // a roster line whose every street-level token is the company's own name has
+  // not described a building, so no address can agree or disagree with it.
+  const compared: LadderVerdict =
+    rosterStreetTokens.length === 0 ||
+    distinctiveStreetTokens.length === 0 ||
+    addressStreetTokens.length === 0
+      ? 'unavailable'
+      : streetTokensMatched.length > 0
+        ? 'pass'
+        : 'fail';
+
+  /**
+   * **Street may never accept alone**, and this is where that stops being a
+   * sentence in a reasoning line and becomes a rule.
+   *
+   * A street agrees only inside a town that agrees: `pass` requires `locality`
+   * to be `pass` **on this same address**. A token match under a locality that
+   * could not be read is not a building in common, it is a coincidence — and
+   * because the anchor is chosen over the *whole* address set, it is a
+   * coincidence with as many chances to fire as the record has addresses.
+   *
+   * Measured on row 1. Once the company's own name is dropped,
+   * `Robert-Bosch-Platz 1` has exactly one distinctive token left — the bare
+   * digit `1` — and an Indonesian trade record with **sixty-three** addresses
+   * had one reading `JL. TMN. TEKNO V SEKTOR XI BLOK.A/1`, which tokenises to
+   * include it. Locality was `unavailable` on that address and street was
+   * `pass`: precisely a street claiming agreement on its own, and it cost the
+   * right company a settlement it had earned on its own Gerlingen line.
+   *
+   * A computed `fail` is left alone. "This is a different building" is a claim
+   * about the street and is not weakened by the town being unreadable, and
+   * suppressing it would turn a Candidate that had been rejected into one that
+   * had merely not been placed. The ceiling is on *agreement*, which is the
+   * half that was dangerous.
+   */
+  const verdict: LadderVerdict =
+    compared === 'pass' && args.locality !== 'pass' ? 'unavailable' : compared;
+
+  return { verdict, rosterStreetTokens, distinctiveStreetTokens, streetTokensMatched };
+}
+
 /** Compares ONE address, whole. `compareAddresses` is what callers should use. */
 export function compareAddress(args: {
   rosterAddress: string | null;
@@ -328,62 +432,12 @@ export function compareAddress(args: {
       : 'fail';
 
   // ── Rung 3: street ───────────────────────────────────────────────────────
-  //
-  // **Real tokens on both sides**, which this rung did not have until the
-  // address line was carried alongside the city and the postcode. It used to
-  // return whatever the locality returned, and say "street-level tokens agree"
-  // when it passed — a sentence about a comparison that never happened.
-  //
-  // Both sides are the same subtraction: everything that is not the anchored
-  // address's own city, its postcode, or a generic street word. What is left is
-  // the house number and the street name, which is the only thing this rung was
-  // ever meant to be about.
-  const cityTokens = new Set(tokens(city ?? ''));
-  const postcodeTokens = new Set(tokens(postcode ?? ''));
-  const streetward = (token: string) =>
-    !cityTokens.has(token) && !postcodeTokens.has(token) && !STREET_STOPWORDS.has(token);
-
-  const rosterStreetTokens = rosterTokens.filter(streetward);
-  const addressStreetTokens = tokens(line ?? '').filter(streetward);
-
-  /**
-   * **A street named after the company is not evidence about the company.**
-   *
-   * Roster row 1 is `Robert-Bosch-Platz 1 70839 Gerlingen`. Subtract the city,
-   * the postcode and the stopword `platz` and the "street-level tokens" are
-   * `robert`, `bosch`, `1` — two thirds of which are the company's own name,
-   * because the street is named after it. Any record whose address line
-   * mentions Bosch then matched on the street rung, and one did: an Indonesian
-   * trade-derived record whose only country-less address reads
-   * `BUILDING TECHNOLOGIES, (BT-AI/SAL2) ROBERT BOSCH (SOUTH EAST ASIA) PTE`
-   * passed `street` against a Gerlingen roster row and, failing nothing else,
-   * counted as a rival that cost the right company its settlement.
-   *
-   * So a token that also appears in the roster name or in the Candidate's own
-   * label is dropped before comparing — **unless it is a number**, because a
-   * house number is a real street token whatever the company is called, and
-   * `Gestamp 2020 SL` should not be able to spend the roster's house number.
-   */
-  const nameTokenSet = new Set(args.nameTokens ?? []);
-  const distinctive = (token: string) => /^\d+$/.test(token) || !nameTokenSet.has(token);
-  const distinctiveStreetTokens = rosterStreetTokens.filter(distinctive);
-
-  const streetTokensMatched = distinctiveStreetTokens.filter((token) =>
-    addressStreetTokens.includes(token),
-  );
-
-  // `unavailable` where either side offers nothing to compare — absent evidence
-  // is not contrary evidence. Three ways that happens, and the third is new:
-  // a roster line whose every street-level token is the company's own name has
-  // not described a building, so no address can agree or disagree with it.
-  const street: LadderVerdict =
-    rosterStreetTokens.length === 0 ||
-    distinctiveStreetTokens.length === 0 ||
-    addressStreetTokens.length === 0
-      ? 'unavailable'
-      : streetTokensMatched.length > 0
-        ? 'pass'
-        : 'fail';
+  const {
+    verdict: street,
+    rosterStreetTokens,
+    distinctiveStreetTokens,
+    streetTokensMatched,
+  } = streetRung({ rosterTokens, city, postcode, line, locality, nameTokens: args.nameTokens });
 
   return {
     country,

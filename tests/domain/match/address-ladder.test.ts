@@ -216,19 +216,32 @@ describe("the street rung drops the company's own name", () => {
     expect(result.street).toBe('fail');
   });
 
-  it('would have passed that record without the drop, which is the bug', () => {
-    // Same two inputs, no `nameTokens`: the rung matches on `robert` and
-    // `bosch` — the company's name on both sides, and nothing about a building.
-    const result = compareAddress({
+  it('would have matched on the company name without the drop, which is the bug', () => {
+    /**
+     * The same comparison with and without `nameTokens`, on an address whose
+     * locality *does* agree — so the locality ceiling below is not what is
+     * being measured and the name drop is isolated.
+     *
+     * Without it, a line that names the company and describes no building
+     * matches on `robert` and `bosch` and the rung reports street agreement.
+     */
+    const line = 'ROBERT BOSCH GMBH, Gerlingen';
+    const at = { candidateCountry: 'DEU', candidateCity: 'Gerlingen', candidatePostcode: '70839' };
+
+    const withoutDrop = compareAddress({
       rosterAddress: bosch.rosterAddress,
       rosterCountry: bosch.rosterCountry,
-      candidateCountry: null,
-      candidateCity: null,
-      candidatePostcode: null,
-      candidateLine: 'BUILDING TECHNOLOGIES, (BT-AI/SAL2) ROBERT BOSCH (SOUTH EAST ASIA) PTE',
+      ...at,
+      candidateLine: line,
     });
-    expect(result.street).toBe('pass');
-    expect(result.evidence.streetTokensMatched).toEqual(['robert', 'bosch']);
+    expect(withoutDrop.locality).toBe('pass');
+    expect(withoutDrop.street).toBe('pass');
+    expect(withoutDrop.evidence.streetTokensMatched).toEqual(['robert', 'bosch']);
+
+    const withDrop = compareAddress({ ...bosch, ...at, candidateLine: line });
+    expect(withDrop.locality).toBe('pass');
+    expect(withDrop.evidence.distinctiveStreetTokens).toEqual(['1']);
+    expect(withDrop.street).toBe('fail');
   });
 
   it('returns unavailable when the street is ONLY the company name', () => {
@@ -260,6 +273,91 @@ describe("the street rung drops the company's own name", () => {
     });
     expect(result.evidence.distinctiveStreetTokens).toEqual(['2020', '16']);
     expect(result.street).toBe('pass');
+  });
+});
+
+/**
+ * **Street may never accept alone**, which the reasoning line has always said
+ * and the rung did not enforce.
+ *
+ * `pass` requires `locality` to be `pass` **on the same anchored address**. A
+ * token match under a locality that could not be read is not a building in
+ * common, it is a coincidence — and because the anchor is chosen over the whole
+ * address set, it is a coincidence with as many chances to fire as the record
+ * has addresses.
+ */
+describe('street may never accept alone', () => {
+  const bosch = {
+    rosterAddress: 'Robert-Bosch-Platz 1 70839 Gerlingen',
+    rosterCountry: 'DEU',
+    nameTokens: ['bosch', 'robert', 'bosch'],
+  };
+
+  it('suppresses a token match when the locality could not be read', () => {
+    /**
+     * **The measured coincidence, at address 42 of 63.** Once the company's own
+     * name is dropped, `Robert-Bosch-Platz 1` has exactly one distinctive street
+     * token left — the bare digit `1` — and the Indonesian trade record's
+     * `BLOK.A/1` tokenises to include it. Locality is `unavailable` on that
+     * address, so the match is a digit collision rather than a building.
+     */
+    const result = compareAddress({
+      ...bosch,
+      candidateCountry: null,
+      candidateCity: null,
+      candidatePostcode: null,
+      candidateLine: 'JL. TMN. TEKNO V SEKTOR XI BLOK.A/1, SETU, KEL.,KEC., KOTA TANGERANG SAL',
+    });
+    expect(result.locality).toBe('unavailable');
+    // The comparison still happened and is still reported, so a reader can see
+    // that "1" matched and why it did not count.
+    expect(result.evidence.streetTokensMatched).toEqual(['1']);
+    expect(result.street).toBe('unavailable');
+  });
+
+  it('still passes the same house number where the locality agrees', () => {
+    // The other half: the ceiling must not cost the right building its street.
+    const result = compareAddress({
+      ...bosch,
+      candidateCountry: 'DEU',
+      candidateCity: 'Gerlingen',
+      candidatePostcode: '70839',
+      candidateLine: 'Robert-Bosch-Platz 1, 70839 Gerlingen, DE',
+    });
+    expect(result.locality).toBe('pass');
+    expect(result.street).toBe('pass');
+    expect(result.evidence.streetTokensMatched).toEqual(['1']);
+  });
+
+  it('leaves a mismatch as fail, because that is a claim about the street', () => {
+    // A ceiling on agreement, not on rejection: suppressing this would turn a
+    // Candidate that had been rejected into one that had merely not been placed.
+    const result = compareAddress({
+      rosterAddress: 'Pragstraße 26-46 70376 Stuttgart',
+      rosterCountry: 'DEU',
+      candidateCountry: 'DEU',
+      candidateCity: null,
+      candidatePostcode: null,
+      candidateLine: 'MAUSERSTR. 3 MUEHLACKER DE',
+    });
+    expect(result.locality).toBe('unavailable');
+    expect(result.street).toBe('fail');
+  });
+
+  it('anchors away from a coincidence, over the whole address set', () => {
+    // The record that made this necessary, in miniature: no address can be
+    // placed at Gerlingen, so none of them may be placed by a digit either.
+    const result = compareAddresses({
+      rosterAddress: bosch.rosterAddress,
+      rosterCountry: bosch.rosterCountry,
+      nameTokens: bosch.nameTokens,
+      addresses: [
+        { city: null, postcode: null, country: 'IDN', line: 'JL.PASAR BARU NO.125 JAKARTA' },
+        { city: null, postcode: null, country: null, line: 'BLOK.A/1, SETU, KOTA TANGERANG' },
+      ],
+    });
+    expect(result.street).not.toBe('pass');
+    expect(result.locality).not.toBe('pass');
   });
 });
 
