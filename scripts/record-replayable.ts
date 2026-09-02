@@ -3,9 +3,12 @@ import 'dotenv/config';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { eq } from 'drizzle-orm';
+import { JOB_CAPS } from '@/config/constants';
 import * as t from '@/db/schema';
-import { loadEnv } from '@/config/env';
+import { loadEnv, type Env } from '@/config/env';
 import { assessSupplier } from '@/jobs/assess';
+import { runDeepTraversal } from '@/jobs/traverse';
+import { createUpstream } from '@/upstream';
 import { recommendCategory } from '@/jobs/recommend';
 import { loadFixture } from '@/fixtures/load';
 import { replayFetch } from '@/fixtures/replay-fetch';
@@ -62,6 +65,7 @@ const CATEGORY_CODE = 'HAR';
 const RECIPES = {
   assess: 'assess/published-with-objections',
   recommend: 'recommend/one-category',
+  traverse: 'traverse/yazaki',
 } as const;
 
 type Recipe = keyof typeof RECIPES;
@@ -75,7 +79,8 @@ async function main(): Promise<void> {
         `  recipes: ${Object.keys(RECIPES).join(', ')}`,
         '',
         '  Records from the state the replay reconstructs, against the TEST database.',
-        '  It spends Anthropic tokens and no Sayari credits.',
+        '  assess/recommend spend Anthropic tokens and no Sayari credits.',
+        '  traverse is the other way round: no model turn, a handful of Sayari calls.',
       ].join('\n'),
     );
     process.exitCode = 1;
@@ -98,15 +103,13 @@ async function main(): Promise<void> {
     const { supplierId, programId, runId } = await buildAssessableSupplier(db, ROSTER_NAME);
     resetAnthropicClients();
 
+    const args = { supplierId, programId, runId, apiKey: env.ANTHROPIC_API_KEY, env };
     const jobId =
       recipe === 'assess'
-        ? await recordAssess(db, { supplierId, programId, runId, apiKey: env.ANTHROPIC_API_KEY })
-        : await recordRecommend(db, {
-            supplierId,
-            programId,
-            runId,
-            apiKey: env.ANTHROPIC_API_KEY,
-          });
+        ? await recordAssess(db, args)
+        : recipe === 'recommend'
+          ? await recordRecommend(db, args)
+          : await recordTraverse(db, args);
 
     const fixture = await recordFixture(db, {
       name,
@@ -133,7 +136,14 @@ async function main(): Promise<void> {
   }
 }
 
-type Args = { supplierId: string; programId: string; runId: string; apiKey: string };
+type Args = {
+  supplierId: string;
+  programId: string;
+  runId: string;
+  apiKey: string;
+  /** Only the traverse recipe needs it: it is the one that spends Sayari. */
+  env: Env;
+};
 type Db = Awaited<ReturnType<typeof getTestDb>>;
 
 const toolCtx = (db: Db, runId: string, jobId: string) => ({
@@ -205,6 +215,55 @@ async function recordRecommend(db: Db, args: Args): Promise<string> {
     { programId: args.programId, categoryId: category.id },
   );
   console.warn(`  version ${result.n} · ${result.evaluatorOutcome}`);
+  return jobId;
+}
+
+/**
+ * The **Deep Traversal**, recorded live against the Yazaki Profile.
+ *
+ * The odd one out in this file, and the difference is the point: `assess` and
+ * `recommend` spend Anthropic tokens and read Sayari from cache, while this
+ * spends **Sayari credits and no tokens at all** — it runs no model. So the
+ * recording is a handful of real traversal calls, and what the fixture carries
+ * is their bodies rather than any turns.
+ *
+ * It still records from the state its replay reconstructs, for exactly the
+ * reason the rest of this file exists: `buildAssessableSupplier` leaves the
+ * Yazaki Supplier with a settled Match and its **one-hop Corporate family
+ * already written**, which is the state that makes the interesting assertion
+ * possible — that a deep walk adds members without disturbing the provenance of
+ * the rows that were there first.
+ */
+async function recordTraverse(db: Db, args: Args): Promise<string> {
+  const match = await db.query.match.findFirst({
+    where: eq(t.match.supplierId, args.supplierId),
+  });
+  const entityId = match?.entityId;
+  if (!entityId) throw new Error(`"${ROSTER_NAME}" has no settled Match to traverse from`);
+
+  const jobId = await openJob(db, args.runId, 'traverse', entityId);
+  console.warn(`  traversing ${entityId} live — this spends Sayari calls`);
+
+  const upstream = createUpstream({
+    db,
+    runId: args.runId,
+    jobId,
+    credentials: {
+      sayariClientId: args.env.SAYARI_CLIENT_ID,
+      sayariClientSecret: args.env.SAYARI_CLIENT_SECRET,
+      nominatimUserAgent: args.env.NOMINATIM_USER_AGENT,
+    },
+    toolCallCap: JOB_CAPS.traverse.toolCalls,
+  });
+
+  const walk = await runDeepTraversal({ db, upstream, jobId }, { entityId });
+  console.warn(
+    `  ${walk.explored} member(s) to hop ${walk.deepestHop} in ${walk.pagesRead} call(s) — ` +
+      `${walk.stoppedBy}, ${walk.truncated ? 'truncated' : 'complete'}` +
+      `${walk.reachable == null ? '' : `, ${walk.reachable} reachable`}` +
+      ` · down ${walk.downward.pagesRead}/${walk.downward.stoppedBy}` +
+      ` · up ${walk.upward.pagesRead}/${walk.upward.stoppedBy}`,
+  );
   return jobId;
 }
 

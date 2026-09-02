@@ -109,7 +109,14 @@ export async function buildAssessableSupplier(
   return { supplierId: supplier.id, programId: program.id, runId: run!.id };
 }
 
-/** A Job row, because caps and `job_id` are what the bookkeeping hangs off. */
+/**
+ * A Job row, because caps and `job_id` are what the bookkeeping hangs off.
+ *
+ * The subject type is derived from the kind, because each kind is about exactly
+ * one sort of thing: a Category for `recommend`, a **company** for `traverse`
+ * and `fetch_entity` — a Deep Traversal is about an entity in the graph, and a
+ * Twin or an owner is on nobody's roster — and a Supplier for the rest.
+ */
 export async function openJob(
   db: TestDb,
   runId: string,
@@ -121,7 +128,12 @@ export async function openJob(
     .values({
       runId,
       kind,
-      subjectType: kind === 'recommend' ? 'category' : 'supplier',
+      subjectType:
+        kind === 'recommend'
+          ? 'category'
+          : kind === 'traverse' || kind === 'fetch_entity'
+            ? 'entity'
+            : 'supplier',
       subjectId,
       state: 'running',
       toolCallCap: JOB_CAPS[kind].toolCalls,

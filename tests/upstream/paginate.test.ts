@@ -20,12 +20,9 @@ import type { SayariTraversal } from '@/upstream/projections/sayari';
  */
 
 /** One page, in the projection's own snake_case shape. */
-function page(args: {
-  ids: string[];
-  next: boolean;
-  offset?: number;
-  limit?: number;
-}): { data: SayariTraversal } {
+function page(args: { ids: string[]; next: boolean; offset?: number; limit?: number }): {
+  data: SayariTraversal;
+} {
   return {
     data: {
       data: args.ids.map((id) => ({ target: { id, label: id.toUpperCase() }, path: [] })),

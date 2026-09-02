@@ -67,10 +67,19 @@ async function loadRecordableJob(db: Database, jobId: string) {
 }
 
 /**
+ * The Job kinds that run **no model at all**, and therefore have no turns.
+ *
+ * Read as a set rather than as one name, because there are three: `enrich`'s
+ * fan-out, `fetch_entity`'s single call, and the Deep Traversal's paged walk
+ * are all our code calling upstreams. CONTEXT draws the line for the last one —
+ * a Deep Traversal *"expands the ownership graph and involves no agent"*.
+ */
+const MODEL_FREE_KINDS = new Set(['enrich', 'fetch_entity', 'traverse']);
+
+/**
  * A Job with **no turns** is recordable, and that is not a loophole.
  *
- * `enrich` runs no model at all — the fan-out is our code calling five
- * upstreams — so it has no turns by design, and refusing it would be refusing
+ * A deterministic Job has no turns by design, and refusing it would be refusing
  * a Job for behaving exactly as specified. What such a fixture carries is its
  * **upstream bodies**, which is precisely what a later Job's replay needs:
  * `assess` reads enrichments, and enrichments come from those bodies.
@@ -89,7 +98,7 @@ async function loadTurnRows(
     .where(eq(t.traceTurn.jobId, jobId))
     .orderBy(asc(t.traceTurn.n));
 
-  if (turnRows.length === 0 && jobKind !== 'enrich') {
+  if (turnRows.length === 0 && !MODEL_FREE_KINDS.has(jobKind)) {
     throw new UnrecordableJobError(
       jobId,
       `it has no trace turns, and "${jobKind}" is a model-driven kind that should have produced some`,
