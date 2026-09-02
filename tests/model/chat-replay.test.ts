@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import * as t from '@/db/schema';
-import { runChatTurn } from '@/chat/turn';
+import { runChatTurn, type ChatDone } from '@/chat/turn';
 import { resetAnthropicClients } from '@/model/client';
 import { replayFetch } from '@/fixtures/replay-fetch';
 import { loadFixture } from '@/fixtures/load';
@@ -15,7 +15,8 @@ import { resetDerived } from '../support/reset';
  *
  * 1. a widget **freezes onto a message**;
  * 2. a confirm **freezes onto a message**, with its estimate;
- * 3. **no `job` row exists until the confirm is accepted**.
+ * 3. **no `job` row exists until the confirm is accepted**;
+ * 4. **each proposal carries the id of the row it froze onto**.
  *
  * The third is the one worth a fixture. Everything else in this app is bounded
  * by counting after the fact; the confirm gate is the one control that stops a
@@ -35,6 +36,14 @@ import { resetDerived } from '../support/reset';
 const FIXTURE = 'chat/one-turn';
 
 describe('chat/one-turn replays', () => {
+  /**
+   * The `done` event of the one replay below. The tests after it assert about
+   * the same turn rather than replaying again — the second already reads the
+   * rows the first left behind, and a second replay would double the fixture's
+   * cost for no additional claim.
+   */
+  let replayed: ChatDone | undefined;
+
   it('freezes a widget and a confirm, and creates no job', async () => {
     if (!(await testDatabaseIsUp())) return;
     const db = await getTestDb();
@@ -73,13 +82,9 @@ describe('chat/one-turn replays', () => {
     expect(events.filter((entry) => entry.event === 'done')).toHaveLength(1);
     expect(events.filter((entry) => entry.event === 'error')).toHaveLength(0);
 
-    const done = events.at(-1)!.data as {
-      threadId: string;
-      text: string;
-      widgets: { toolName: string }[];
-      proposals: { toolName: string; estimate: { what: string } }[];
-    };
+    const done = events.at(-1)!.data as ChatDone;
     expect(events.at(-1)!.event).toBe('done');
+    replayed = done;
 
     // ── Frozen onto messages, not merely returned ───────────────────────────
     const messages = await db
@@ -112,6 +117,40 @@ describe('chat/one-turn replays', () => {
 
     const jobs = await db.select().from(t.job).where(eq(t.job.runId, run!.id));
     expect(jobs, 'the model proposed a job and the gate created none').toHaveLength(0);
+  });
+
+  /**
+   * The claim the confirm gate is wired on: **a proposal names the row it was
+   * written to**.
+   *
+   * `/api/chat/confirm` takes a `messageId` and reads the frozen estimate off
+   * that row, so a `done` event whose proposals carried no id left the gate on
+   * screen with nothing to post — two buttons that set a colour and enqueued
+   * nothing.
+   *
+   * Asserted against the stored rows rather than against the event alone: an id
+   * that matched no `proposed` row in this Thread is one the route answers 404
+   * to, which is the same bug wearing a value.
+   */
+  it('carries, on each proposal, the id of the proposed row it was written to', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const db = await getTestDb();
+    expect(replayed, 'the replay above is what this asserts about').toBeDefined();
+
+    const proposedRows = await db
+      .select({ id: t.threadMessage.id })
+      .from(t.threadMessage)
+      .where(
+        and(
+          eq(t.threadMessage.threadId, replayed!.threadId),
+          eq(t.threadMessage.confirmState, 'proposed'),
+        ),
+      );
+
+    expect(replayed!.proposals.length).toBeGreaterThan(0);
+    expect(new Set(replayed!.proposals.map((proposal) => proposal.messageId))).toStrictEqual(
+      new Set(proposedRows.map((row) => row.id)),
+    );
   });
 
   it('spends nothing on the model, because every turn came from the fixture', async () => {

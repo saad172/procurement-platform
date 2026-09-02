@@ -58,6 +58,32 @@ export type ChatTurnDeps = {
 export type ChatEmit = (event: 'open' | 'delta' | 'done' | 'error', data: unknown) => void;
 
 /**
+ * A proposal as `done` carries it: the frozen proposal, plus the id of the
+ * `thread_message` row it was written to.
+ *
+ * **The id travels because the person's answer has to name the row it answers.**
+ * `/api/chat/confirm` takes a `messageId`, and a gate on screen holding only an
+ * estimate could not say which stored proposal its buttons belong to.
+ *
+ * A type of its own rather than a field on `PendingProposal`, because a pending
+ * proposal exists before any row does — an id on it would be a field that is
+ * empty for half its life.
+ */
+export type StoredProposal = PendingProposal & { messageId: string };
+
+/**
+ * The `done` event's payload: the turn as it was **stored**, not as it
+ * streamed. Named here because this function owns the event ordering, so the
+ * shape a client parses and the shape this file emits are the same declaration.
+ */
+export type ChatDone = {
+  threadId: string;
+  text: string;
+  widgets: { toolName: string; widget: unknown }[];
+  proposals: StoredProposal[];
+};
+
+/**
  * The spine. Reads top to bottom as the phases named above: the Thread, the
  * Run, the tools a turn may call, the turn itself, and the transcript it
  * leaves behind.
@@ -123,9 +149,18 @@ export async function runChatTurn(
       : `That did not work: ${'error' in outcome ? outcome.error : outcome.status}`;
 
   // ── The transcript is written before `done` is emitted ─────────────────────
-  await writeTranscript(db, { threadId, widgets, proposals, text, pageRef: request.pageRef });
+  // Which is also what makes the ids on the proposals below real: the rows
+  // exist by the time the client is told about them.
+  const stored = await writeTranscript(db, {
+    threadId,
+    widgets,
+    proposals,
+    text,
+    pageRef: request.pageRef,
+  });
 
-  emit('done', { threadId, text, widgets, proposals });
+  const done: ChatDone = { threadId, text, widgets, proposals: stored };
+  emit('done', done);
 }
 
 /**
@@ -247,6 +282,9 @@ function buildChatTools(
  *
  * Text deltas are *display*; these rows are the record. A client that
  * re-reads the Thread on `done` therefore cannot see a half-written turn.
+ *
+ * Returns the proposals it wrote, each carrying the id of its row, because the
+ * insert is the only place that knows it.
  */
 async function writeTranscript(
   db: Database,
@@ -257,7 +295,7 @@ async function writeTranscript(
     text: string;
     pageRef: string;
   },
-): Promise<void> {
+): Promise<StoredProposal[]> {
   const { threadId, widgets, proposals, text, pageRef } = turn;
 
   // Every tool call is its own row, which is what makes the transcript the
@@ -273,20 +311,28 @@ async function writeTranscript(
   }
 
   // A proposal is stored with its estimate FROZEN, in the state `proposed`.
-  // Nothing has run.
+  // Nothing has run. The row's id comes back and travels out with it, because
+  // the person's answer has to name the row it answers — the confirm route
+  // takes a `messageId`, and a gate holding only an estimate has nothing to
+  // post.
+  const stored: StoredProposal[] = [];
   for (const proposal of proposals) {
-    await db.insert(t.threadMessage).values({
-      threadId,
-      role: 'assistant',
-      text: proposal.estimate.what,
-      confirm: {
-        toolName: proposal.toolName,
-        input: proposal.input,
-        estimate: proposal.estimate,
-      } as never,
-      confirmState: 'proposed',
-      pageRef,
-    });
+    const [row] = await db
+      .insert(t.threadMessage)
+      .values({
+        threadId,
+        role: 'assistant',
+        text: proposal.estimate.what,
+        confirm: {
+          toolName: proposal.toolName,
+          input: proposal.input,
+          estimate: proposal.estimate,
+        } as never,
+        confirmState: 'proposed',
+        pageRef,
+      })
+      .returning({ id: t.threadMessage.id });
+    stored.push({ ...proposal, messageId: row!.id });
   }
 
   await db.insert(t.threadMessage).values({
@@ -295,4 +341,6 @@ async function writeTranscript(
     text,
     pageRef,
   });
+
+  return stored;
 }
