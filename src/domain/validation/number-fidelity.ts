@@ -13,6 +13,20 @@
  *
  * An unmatched token is **named**, because "a number does not check out" is not
  * something a model can act on and "824 does not appear in your evidence" is.
+ *
+ * **The rounding is a tolerance, not an equality on a rounded float.** It was
+ * written as `Math.round(v * 10 ** d) / 10 ** d === written`, and equality on
+ * floats fails at high precision. Measured on a live Assessment (Faurecia,
+ * twice): the model wrote the proximity Criterion's value exactly as stored,
+ * `20.190218190717246`, and the check refused it — `v * 1e15` is
+ * 20190218190717250, and dividing back gives `20.19021819071725`, which is not
+ * `===` the parsed figure. So a figure copied as stored was rejected for not
+ * being as stored, which is the opposite of what the objection asks for, and
+ * the more decimals the model copied the more certainly it failed. A candidate
+ * now matches when it **prints** as what the sentence wrote, or when it sits
+ * **within half a unit of the last decimal the sentence used** — which is
+ * what "rounded to the decimals the sentence used" means, and is exact for
+ * 48 against 47.6 and 71.3 against 71.28.
  */
 
 export type NumberCandidate = {
@@ -112,9 +126,9 @@ function decimalsOf(fraction: string | undefined): number {
   return fraction ? fraction.length : 0;
 }
 
-function roundTo(value: number, decimals: number): number {
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
+/** Half a unit in the last decimal the sentence wrote. */
+function toleranceFor(decimals: number): number {
+  return 0.5 * 10 ** -decimals;
 }
 
 /**
@@ -172,13 +186,17 @@ export function checkNumberFidelity(
     if (!fraction && !isPercent && PROSE_NUMBERS.has(written)) continue;
 
     const decimals = decimalsOf(fraction);
+    const tolerance = toleranceFor(decimals);
     const matched = candidates.numbers.some((candidate) => {
-      // Rounded to the decimals the SENTENCE used: 48 matches 47.6, and
-      // 71.3 matches 71.28.
-      if (roundTo(candidate.value, decimals) === value) return true;
+      // The stored value printed the way JavaScript prints it, at whatever
+      // length that takes: a figure copied as stored is as stored.
+      if (String(candidate.value) === written) return true;
+      // Otherwise, within half a unit of the last decimal the SENTENCE used:
+      // 48 matches 47.6, and 71.3 matches 71.28.
+      if (Math.abs(candidate.value - value) <= tolerance) return true;
       // A percentage matches either the percent figure or its decimal fraction:
       // "2.5%" matches a stored 2.5 or a stored 0.025.
-      if (isPercent && roundTo(candidate.value * 100, decimals) === value) return true;
+      if (isPercent && Math.abs(candidate.value * 100 - value) <= tolerance) return true;
       return false;
     });
 
