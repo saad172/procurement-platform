@@ -162,6 +162,23 @@ function projectSupplierCard(loaded: NonNullable<Awaited<ReturnType<typeof loadS
       rosterAddress: supplier.rosterAddress,
       rosterCountry: supplier.rosterCountry,
       origin: supplier.origin,
+      /**
+       * **Still the Category's code and name, not its id.**
+       *
+       * A Shortlist citation is the pair `{programId, categoryId}` and neither
+       * half is here — which is the gap that let a Recommendation cite
+       * `programId: "MY2029-CROSSOVER-BEV-NA"`, a readable slug in no table
+       * (finding 73). Both halves now reach both narrative loops through their
+       * briefs, which are job-only.
+       *
+       * They are deliberately **not** added here as well. `get_supplier` is on
+       * every surface and is one of the five tools every Match Round holds, so
+       * a field added to this payload changes the request body of the resolve
+       * loop and of chat — two fixtures re-recorded for a reason that has
+       * nothing to do with either. Worth doing, and worth doing where the
+       * recording cost is understood rather than as a side effect of an
+       * Assessment needing an id.
+       */
       categories: supplier.categories.map((link) => ({
         code: link.category.code,
         name: link.category.name,
@@ -689,7 +706,8 @@ export const getUsage = defineTool({
 /** Job-only: the brief the assess loop argues from. */
 const getAssessmentBrief = defineTool({
   name: 'get_assessment_brief',
-  description: "Everything one supplier's assessment is written from, as rows rather than prose.",
+  description:
+    "Everything one supplier's assessment is written from, as rows rather than prose. Every id here is a citation target: the match id, each criterion value id, and the program and category ids that together cite a shortlist.",
   input: z.object({ supplierId: z.string(), programId: z.string() }),
   surfaces: ['job'],
   effect: 'read',
@@ -708,7 +726,7 @@ const getAssessmentBrief = defineTool({
 const getRecommendationBrief = defineTool({
   name: 'get_recommendation_brief',
   description:
-    'Everything one recommendation is written from: the shortlist, each supplier’s criterion values and verdict, as row ids rather than prose.',
+    'Everything one recommendation is written from: the shortlist, each supplier’s criterion values and verdict, as row ids rather than prose. Every id here is a citation target, including the program and category ids that together cite a shortlist.',
   input: z.object({ programId: z.string(), categoryId: z.string() }),
   surfaces: ['job'],
   effect: 'read',
@@ -728,6 +746,12 @@ const getRecommendationBrief = defineTool({
 async function briefFor(ctx: ToolContext, supplierId: string) {
   const supplier = await ctx.db.query.supplier.findFirst({ where: eq(t.supplier.id, supplierId) });
   const match = await ctx.db.query.match.findFirst({ where: eq(t.match.supplierId, supplierId) });
+  const categories = await ctx.db
+    .select({ categoryId: t.supplierCategory.categoryId })
+    .from(t.supplierCategory)
+    .where(eq(t.supplierCategory.supplierId, supplierId))
+    // Ordered, because the brief is prompt bytes a fixture replays against.
+    .orderBy(asc(t.supplierCategory.categoryId));
   const values = await ctx.db
     .select()
     .from(t.criterionValue)
@@ -740,6 +764,18 @@ async function briefFor(ctx: ToolContext, supplierId: string) {
   return {
     supplierId,
     supplierName: supplier?.rosterName ?? '(promoted lead)',
+    /**
+     * **The two ids a Shortlist citation is made of.**
+     *
+     * A Citation to a Shortlist is the pair `{programId, categoryId}`, and this
+     * brief carried neither — so an Assessment arguing about where its Supplier
+     * ranks had no way to cite the ranking, and the one attempt at it named the
+     * Program by a slug the model invented (finding 73). The Categories are the
+     * ones this Supplier bids on, which is also what says whether a `tariff`
+     * section is legal at all.
+     */
+    programId: supplier?.programId ?? null,
+    categoryIds: categories.map((c) => c.categoryId),
     matchId: match?.id ?? null,
     matchStatus: match?.status ?? null,
     entityId: match?.entityId ?? null,
