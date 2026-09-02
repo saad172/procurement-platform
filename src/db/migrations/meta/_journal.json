@@ -71,6 +71,13 @@
       "when": 1788377393126,
       "tag": "0009_colorful_gauntlet",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788378832515,
+      "tag": "0010_lame_doctor_spectrum",
+      "breakpoints": true
     }
   ]
 }
