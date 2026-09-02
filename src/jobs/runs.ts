@@ -1,7 +1,13 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, lt, notExists, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
-import { JOB_CAPS, RUN_BUDGET_USD_PER_SUPPLIER, type JobKind } from '@/config/constants';
+import {
+  JOB_CAPS,
+  RUN_BUDGET_USD_PER_SUPPLIER,
+  STALE_LOCK_MINUTES,
+  STALE_SILENCE_MINUTES,
+  type JobKind,
+} from '@/config/constants';
 import { priceOf } from '@/lib/price';
 
 /**
@@ -321,6 +327,82 @@ export async function requeueJobs(db: Database, jobIds: readonly string[]): Prom
       attempt: sql`${t.job.attempt} + 1`,
     })
     .where(inArray(t.job.id, [...jobIds]));
+}
+
+/**
+ * Puts back the Jobs whose worker went away (SPEC §2.2).
+ *
+ * A worker killed mid-Job leaves its row `running` with a `locked_at` that
+ * nothing ever clears — no heartbeat, no expiry — so the Job was stuck until a
+ * person noticed and pressed Retry, which is the one thing an automatic
+ * recovery is for.
+ *
+ * **Silence is half the test.** A long lock alone is not evidence: a real
+ * recommend Job ran 62 minutes and would have been taken away from the worker
+ * still spending on it. A Job that has written no turn and no usage row for
+ * fifteen minutes has stopped doing anything, and that is the difference
+ * between slow and gone.
+ *
+ * Unlike `requeueJobs` this **keeps the Round checkpoints**: the Job lost its
+ * worker, it did not run away, so it resumes at the Round boundary it reached.
+ * `attempt` still counts up, because *"this has been tried twice"* is the fact
+ * a person reading the row needs.
+ *
+ * It does not settle the Runs — the caller does, for the same reason
+ * `requeueJobs` does not.
+ */
+export async function requeueStaleJobs(
+  db: Database,
+  now = new Date(),
+): Promise<{ id: string; kind: JobKind; runId: string; lockedAt: Date | null }[]> {
+  const lockedBefore = new Date(now.getTime() - STALE_LOCK_MINUTES * 60_000);
+  const silentSince = new Date(now.getTime() - STALE_SILENCE_MINUTES * 60_000);
+
+  const stale = await db
+    .select({
+      id: t.job.id,
+      kind: t.job.kind,
+      runId: t.job.runId,
+      lockedAt: t.job.lockedAt,
+    })
+    .from(t.job)
+    .where(
+      and(
+        eq(t.job.state, 'running'),
+        lt(t.job.lockedAt, lockedBefore),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(t.traceTurn)
+            .where(and(eq(t.traceTurn.jobId, t.job.id), gt(t.traceTurn.createdAt, silentSince))),
+        ),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(t.usageEvent)
+            .where(and(eq(t.usageEvent.jobId, t.job.id), gt(t.usageEvent.createdAt, silentSince))),
+        ),
+      ),
+    );
+
+  if (stale.length === 0) return [];
+
+  await db
+    .update(t.job)
+    .set({
+      state: 'queued',
+      lockedAt: null,
+      startedAt: null,
+      attempt: sql`${t.job.attempt} + 1`,
+    })
+    .where(
+      inArray(
+        t.job.id,
+        stale.map((job) => job.id),
+      ),
+    );
+
+  return stale;
 }
 
 /**

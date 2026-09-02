@@ -155,6 +155,28 @@ export const CHAT_TOOL_CALL_CAP = 20;
 
 export const RUN_BUDGET_USD_PER_SUPPLIER = 8.0;
 
+/**
+ * When a `running` Job is taken to have lost its worker (SPEC §2.2, §5.3).
+ *
+ * A worker killed mid-Job leaves the row `running` for ever: there is no
+ * heartbeat and no lock expiry, so recovery was a person noticing and pressing
+ * Retry. The Job is not stuck in any way it can recover from — the process that
+ * held it is gone — but nothing said so, and the Run sat at *running* with a
+ * spinner over it.
+ *
+ * **Two conditions, because either alone is wrong.** A lock older than the
+ * ceiling is not evidence on its own: the measured recommend Job ran 62 minutes
+ * legitimately, and a sweep that only read `locked_at` would have taken it away
+ * from a worker that was still spending on it. So silence is required as well —
+ * no `trace_turn` and no `usage_event` in the last fifteen minutes — and the
+ * longest gap between turns a real Job has shown is a fraction of that.
+ *
+ * A swept Job **keeps its checkpoint**: it lost its worker, it did not run away,
+ * so it resumes at the Round boundary it reached rather than starting again.
+ */
+export const STALE_LOCK_MINUTES = 30;
+export const STALE_SILENCE_MINUTES = 15;
+
 /** The Dossier's own dollar budget, enforced by Managed Agents (SPEC §18.3). */
 export const DOSSIER_BUDGET_USD = 2.0;
 
