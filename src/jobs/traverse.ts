@@ -6,7 +6,7 @@ import {
 } from '@/config/constants';
 import { paginateTraversal, type TraversalStop, type TraversalWalk } from '@/upstream';
 import type { UpstreamResult } from '@/upstream';
-import type { SayariTraversal } from '@/upstream/projections/sayari';
+import type { SayariTraversal, SayariTraversalPath } from '@/upstream/projections/sayari';
 import { recordEnrichment, type EnrichContext } from './enrich';
 import {
   ownershipHopDepth,
@@ -246,17 +246,34 @@ async function absorbPage(
     result: page,
   });
   state.enrichmentIds.push(enrichmentId);
-  state.byEnrichment.push({ enrichmentId, members: collect(state, envelope) });
+  state.byEnrichment.push({
+    enrichmentId,
+    members: mergeMembers({
+      rootEntityId: state.rootEntityId,
+      held: state.found,
+      paths: envelope.data ?? [],
+      maxNodes: DEEP_TRAVERSAL_MAX_NODES,
+      maxHops: DEEP_TRAVERSAL_MAX_HOPS,
+    }),
+  });
   return state.found.size;
 }
 
 /**
- * The members one page carries that this walk does not already hold.
+ * Merges one page of paths into what the walk already holds, and answers with
+ * the members that page **added**.
+ *
+ * Exported and given its bounds as arguments rather than reading the constants,
+ * because this is the whole of the walk's arithmetic — merge, dedupe, hop
+ * accounting and the node cap — and it is worth being able to prove over
+ * synthetic envelopes with no database, no credential and no cap of 200.
  *
  * **First find wins**, which is what makes the two directions compose: a
  * company reached downward at hop 1 and again upward at hop 2 is one Family
  * member at hop 1, and re-collecting it would spend the node cap on a row that
- * already exists.
+ * already exists. `held` is mutated on purpose — a merge that returned a new
+ * map would leave the caller deciding when the two directions start sharing a
+ * cap, which is the one thing they must never disagree about.
  *
  * A path deeper than the hop cap is dropped rather than trusted. The request
  * carries `max_depth`, so this should never fire; it is here because
@@ -264,19 +281,25 @@ async function absorbPage(
  * `possibly_same_as` steps — and a cap the app states in CONTEXT should be true
  * of what the app stores, not only of what it asked for.
  */
-function collect(state: WalkState, envelope: SayariTraversal): FamilyMemberWrite[] {
-  const collected: FamilyMemberWrite[] = [];
-  for (const path of envelope.data ?? []) {
-    if (state.found.size >= DEEP_TRAVERSAL_MAX_NODES) break;
-    const entity = terminalEntityOf(path, state.rootEntityId);
-    if (!entity || state.found.has(entity.id)) continue;
+export function mergeMembers(args: {
+  rootEntityId: string;
+  held: Map<string, FamilyMemberWrite>;
+  paths: readonly SayariTraversalPath[];
+  maxNodes: number;
+  maxHops: number;
+}): FamilyMemberWrite[] {
+  const added: FamilyMemberWrite[] = [];
+  for (const path of args.paths) {
+    if (args.held.size >= args.maxNodes) break;
+    const entity = terminalEntityOf(path, args.rootEntityId);
+    if (!entity || args.held.has(entity.id)) continue;
     const hopDepth = ownershipHopDepth(path.path);
-    if (hopDepth > DEEP_TRAVERSAL_MAX_HOPS) continue;
+    if (hopDepth > args.maxHops) continue;
     const member = { entity, path: summarisePath(path.path), hopDepth };
-    state.found.set(entity.id, member);
-    collected.push(member);
+    args.held.set(entity.id, member);
+    added.push(member);
   }
-  return collected;
+  return added;
 }
 
 /**
