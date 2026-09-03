@@ -146,6 +146,53 @@ describe('parseTypedOwnerEdges: a traversal path read as an edge', () => {
     };
     expect(parseTypedOwnerEdges(body, ROOT)).toEqual([]);
   });
+
+  /**
+   * **The record id, dates and shares off the path's own relationships
+   * group** (PR #19 review item P3). Without a `sourceRecordId`,
+   * `storeRelationships`' unique key `(from, to, type, source_record_id)`
+   * treats a re-sighting of an already-stored edge as a NEW row — Postgres
+   * does not treat two NULLs as equal for a unique constraint, so every
+   * typed read of the same owner duplicated it. Shaped like a group entry
+   * `traversalPathRelationshipsSchema` projects, one `values[]` entry per
+   * occurrence, the same shape `path[].relationships` carries on the
+   * Corporate family read.
+   */
+  it('carries the record id, dates and shares off the path relationships group', () => {
+    const body = {
+      data: [
+        {
+          path: [
+            {
+              field: 'has_shareholder',
+              entity: { id: 'PARENT', label: 'Parent Co', type: 'company' },
+              relationships: {
+                has_shareholder: {
+                  values: [
+                    {
+                      record: 'parent-rec-1',
+                      from_date: '2020-01-01',
+                      to_date: null,
+                      attributes: { shares: [{ percentage: 60 }] },
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+          target: { id: 'PARENT', label: 'Parent Co', type: 'company' },
+        },
+      ],
+    };
+    const edges = parseTypedOwnerEdges(body, ROOT);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({
+      sourceRecordId: 'parent-rec-1',
+      startDate: '2020-01-01',
+      endDate: null,
+      attributes: { shares: [{ percentage: 60 }] },
+    });
+  });
 });
 
 describe.skipIf(!up)(
@@ -328,6 +375,81 @@ describe.skipIf(!up)(`the typed owner-edge read (needs: ${START_TEST_DB_HINT})`,
       ),
     });
     expect(enrichmentRow).toBeTruthy();
+  });
+
+  /**
+   * **The typed read re-echoing an owner the window already stored must not
+   * duplicate it** (PR #19 review item P3). `ownerEdgeGap` fires per TYPE,
+   * not per target — so a window short one `has_shareholder` edge triggers a
+   * traversal that legitimately answers with every `has_shareholder` edge it
+   * finds, `KNOWN_PARENT_ID` among them, even though the window already held
+   * that one. Before the fix this produced a second `entity_relationship`
+   * row for it (no record id meant the unique key never caught the repeat)
+   * and a duplicated "Current owners" row on the Entity page.
+   */
+  it('does not duplicate a stored owner the typed read re-echoes', async () => {
+    const db = await getTestDb();
+    await resetDerived(db);
+    await db.insert(t.entity).values({ id: ROOT_ID, label: 'FIXTURE SUBJECT CO' });
+
+    const reEchoingBody = {
+      data: [
+        // Genuinely new.
+        {
+          path: [{ field: 'has_shareholder', entity: { id: RECOVERED_PARENT_ID } }],
+          target: {
+            id: RECOVERED_PARENT_ID,
+            label: 'Recovered Parent Ltd',
+            type: 'company',
+            risk: {},
+          },
+        },
+        // The window's own KNOWN_PARENT_ID, re-returned by the type-filtered
+        // traversal because the gap is per TYPE, not per target.
+        {
+          path: [{ field: 'has_shareholder', entity: { id: KNOWN_PARENT_ID } }],
+          target: { id: KNOWN_PARENT_ID, label: 'Known Parent Ltd', type: 'company', risk: {} },
+        },
+      ],
+    };
+
+    const ctx: EnrichContext = {
+      db,
+      upstream: {
+        sayari: {
+          traversal: async () => {
+            const [payload] = await testSql()`
+              INSERT INTO upstream_response (source, endpoint, params_hash, params, body, body_hash, via)
+              VALUES ('sayari', 'traversal.traversal', 'owner-edges-fixture-2', '{}'::jsonb, '{}'::jsonb, 'owner-edges-fixture-2', 'sdk')
+              RETURNING id`;
+            return {
+              data: reEchoingBody,
+              cacheHit: false,
+              via: 'sdk' as const,
+              fetchedAt: new Date(),
+              upstreamResponseId: payload!.id as string,
+              bodyHash: 'owner-edges-fixture-2',
+            };
+          },
+        },
+      } as never,
+      jobId: undefined,
+    };
+
+    const owners = await readOwnerEdges(ctx, { entityId: ROOT_ID, entity: ownPayload });
+
+    // One rendered owner per company — the re-echoed KNOWN_PARENT_ID must not
+    // appear twice.
+    expect(owners.filter((o) => o.entityId === KNOWN_PARENT_ID)).toHaveLength(1);
+
+    // And one stored row, not two.
+    const stored = await db.query.entityRelationship.findMany({
+      where: and(
+        eq(t.entityRelationship.fromEntityId, ROOT_ID),
+        eq(t.entityRelationship.toEntityId, KNOWN_PARENT_ID),
+      ),
+    });
+    expect(stored).toHaveLength(1);
   });
 
   it('asks for nothing extra when the window already accounts for every claimed owner edge', async () => {

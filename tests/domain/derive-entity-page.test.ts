@@ -167,6 +167,29 @@ describe('deriveOwnerEdges', () => {
     const unnamed = deriveOwnerEdges(edges as never, 'SUBJECT', new Map());
     expect(unnamed[0]!.targetLabel).toBeNull();
   });
+
+  /**
+   * **Defensive collapse by (type, target)** (PR #19 review item P3). Two
+   * rows for the same owner can reach `entity_relationship` — a `record`-less
+   * typed traversal edge stored alongside the window's own, or a stale
+   * duplicate from before the writer-side fix — and rendering both would show
+   * one owner twice with colliding React keys on the Entity page.
+   */
+  it('collapses two stored rows for the same (type, target) into one owner', () => {
+    const edges = [
+      edge({
+        relationshipType: 'has_shareholder',
+        fromEntityId: 'SUBJECT',
+        toEntityId: 'PARENT',
+        attributes: { shares: [{ percentage: 51 }] },
+      }),
+      edge({ relationshipType: 'has_shareholder', fromEntityId: 'SUBJECT', toEntityId: 'PARENT' }),
+    ];
+    const owners = deriveOwnerEdges(edges as never, 'SUBJECT', new Map());
+    expect(owners).toHaveLength(1);
+    // The first-seen row's own share survives — nothing is invented.
+    expect(owners[0]!.sharePercentage).toBe(51);
+  });
 });
 
 /**

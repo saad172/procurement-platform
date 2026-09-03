@@ -613,7 +613,24 @@ export async function readOwnerEdges(
       });
 
       const typedEdges = parseTypedOwnerEdges(typed.data, args.entityId);
-      await storeRelationships(ctx.db, typedEdges, ctx.jobId, {
+
+      /**
+       * **Skip a typed edge the window already stored, by (from, to, type)**
+       * (P3). `ownerEdgeGap` fires per relationship TYPE, not per target —
+       * a window short one `has_shareholder` edge asks the traversal for
+       * every `has_shareholder` edge it can find, which legitimately
+       * re-returns owners the window already named alongside the one it was
+       * missing. Storing those re-echoes anyway is what duplicated a
+       * "Current owner" row before this fix, even with `record` now carried
+       * (some traversal paths still answer with none of their own).
+       */
+      const windowKeys = new Set(
+        edges.map((e) => `${e.subjectId}:${e.targetId}:${e.relationshipType}`),
+      );
+      const newTypedEdges = typedEdges.filter(
+        (e) => !windowKeys.has(`${e.subjectId}:${e.targetId}:${e.relationshipType}`),
+      );
+      await storeRelationships(ctx.db, newTypedEdges, ctx.jobId, {
         hopDepth: 1,
         source: 'traversal',
       });
@@ -622,7 +639,7 @@ export async function readOwnerEdges(
       // typed read only fills in owner-type edges the window missed. A target
       // both already named is not counted twice.
       const seen = new Set(ownersOf(edges).map((e) => `${e.relationshipType}:${e.targetId}`));
-      for (const edge of ownersOf(typedEdges)) {
+      for (const edge of ownersOf(newTypedEdges)) {
         const key = `${edge.relationshipType}:${edge.targetId}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -677,6 +694,15 @@ export function ownerEdgeGap(entity: SayariEntity, edges: readonly ParsedEdge[])
   });
 }
 
+/** One occurrence of a typed traversal path's own `relationships[type].values[]` entry. */
+type TypedRelationshipValue = {
+  record?: string | null;
+  from_date?: string | null;
+  to_date?: string | null;
+  former?: boolean | null;
+  attributes?: unknown;
+};
+
 /**
  * Turns a type-filtered `traversal.traversal` response into edges shaped like
  * `parseRelationships`'s, so the typed read can share `storeRelationships` and
@@ -685,11 +711,16 @@ export function ownerEdgeGap(entity: SayariEntity, edges: readonly ParsedEdge[])
  * A traversal path names the relationship from the root's own side — the same
  * convention `parseRelationships`'s header documents for the entity payload —
  * so a one-hop path's `field` is exactly what `relationshipType` would have
- * been had the window included this edge. Occurrence-level detail (shares,
- * dates, `source_record_id`) is not attempted here: it lives on the entity
- * payload's own `relationships.data`, which item C already surfaces, and a
- * traversal path's `relationships` sub-object is shaped differently again —
- * reading it is future work, not a claim this function makes.
+ * been had the window included this edge.
+ *
+ * **Occurrence-level detail comes off the same step's own `relationships`
+ * group** (P3, PR #19 review): one row per `values[]` entry, exactly the
+ * "one row per occurrence" rule `parseRelationships` applies to the entity
+ * payload. This is not optional — `record` is what lets `storeRelationships`'
+ * unique key `(from, to, type, source_record_id)` recognise a re-sighting of
+ * an edge the window already stored as the SAME row rather than a new one:
+ * Postgres does not treat two NULLs as equal for that constraint, so leaving
+ * `sourceRecordId` null duplicated every typed-read owner.
  */
 export function parseTypedOwnerEdges(
   traversal: { data?: unknown },
@@ -700,21 +731,37 @@ export function parseTypedOwnerEdges(
   for (const path of paths) {
     const target = terminalEntityOf(path, rootEntityId);
     if (!target) continue;
-    const relationshipType = path.path?.[0]?.field;
+    const step = path.path?.[0];
+    const relationshipType = step?.field;
     if (typeof relationshipType !== 'string') continue;
-    edges.push({
-      subjectId: rootEntityId,
-      targetId: target.id,
-      targetLabel: target.label ?? null,
-      targetType: target.type ?? null,
-      relationshipType,
-      former: false,
-      startDate: null,
-      endDate: null,
-      sourceRecordId: null,
-      attributes: null,
-      targetEntity: target as unknown as Record<string, unknown>,
-    });
+
+    const bag = step?.relationships;
+    const group =
+      bag && typeof bag === 'object' && !Array.isArray(bag)
+        ? (bag as Record<string, { values?: readonly TypedRelationshipValue[] | null } | null>)[
+            relationshipType
+          ]
+        : undefined;
+    const values = group?.values && group.values.length > 0 ? group.values : [undefined];
+
+    for (const value of values) {
+      edges.push({
+        subjectId: rootEntityId,
+        targetId: target.id,
+        targetLabel: target.label ?? null,
+        targetType: target.type ?? null,
+        relationshipType,
+        former: value?.former === true,
+        startDate: value?.from_date ?? null,
+        endDate: value?.to_date ?? null,
+        sourceRecordId: value?.record ?? null,
+        attributes:
+          value?.attributes && typeof value.attributes === 'object'
+            ? (value.attributes as Record<string, unknown>)
+            : null,
+        targetEntity: target as unknown as Record<string, unknown>,
+      });
+    }
   }
   return edges;
 }

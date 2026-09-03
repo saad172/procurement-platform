@@ -91,25 +91,39 @@ export type OwnerEdgeRow = {
  * `targetOwnsSubject`, the same test `ownersOf` applies to a freshly-parsed
  * payload — an owner edge read off a stored row is the identical question
  * asked of a different source.
+ *
+ * **Collapsed by (type, target), defensively** (P3, PR #19 review). The
+ * writer side (`readOwnerEdges`, `src/jobs/enrich.ts`) now skips a typed
+ * traversal edge the window already stored, but this is the render path, and
+ * a second row for one owner — from a stale pre-fix write, or from any future
+ * writer that does not go through that same care — must not become two
+ * "Current owner" rows with colliding React keys. First-seen wins, in the
+ * order the rows arrived.
  */
 export function deriveOwnerEdges(
   edges: readonly (typeof t.entityRelationship.$inferSelect)[],
   entityId: string,
   labelById: ReadonlyMap<string, string>,
 ): OwnerEdgeRow[] {
-  return edges
-    .filter(
-      (edge) =>
-        edge.fromEntityId === entityId && !edge.former && targetOwnsSubject(edge.relationshipType),
-    )
-    .map((edge) => ({
+  const seen = new Set<string>();
+  const owners: OwnerEdgeRow[] = [];
+  for (const edge of edges) {
+    if (edge.fromEntityId !== entityId || edge.former || !targetOwnsSubject(edge.relationshipType)) {
+      continue;
+    }
+    const key = `${edge.relationshipType}::${edge.toEntityId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    owners.push({
       relationshipType: edge.relationshipType,
       targetId: edge.toEntityId,
       targetLabel: labelById.get(edge.toEntityId) ?? null,
       sharePercentage: sharePercentageOf(edge.attributes),
       startDate: edge.startDate,
       endDate: edge.endDate,
-    }));
+    });
+  }
+  return owners;
 }
 
 /** The Supplier fields the "known as" line needs — never the whole row. */
