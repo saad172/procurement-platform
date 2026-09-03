@@ -247,11 +247,12 @@ export const riskLevel = pgEnum('risk_level', ['high', 'elevated', 'relevant']);
  * family read has always produced — `family_member` migrates into `graph_path`
  * rows of this kind. `watchlist` and `deep_traversal` come from the same
  * automatic and on-demand traversal reads (network spec §4.1, §4.4);
- * `shortest_path` is the recommend Job's Concentration check (§4.2, §7);
+ * `shortest_path` is the recommend Job's pairwise check for whether an award
+ * and another Pick share a parent or one owns the other (§4.2, §7);
  * `supply_chain` is the trade Job's upstream tiers (§4.3). A Path's `kind` is
  * part of its identity — `graph_path`'s unique key is (root, terminal, kind),
- * not (root, terminal) — because the same two entities can be joined by a
- * family Path and, separately, a shortest-path Concentration.
+ * not (root, terminal) — because the same two entities can be joined by both
+ * a family Path and a separate shortest path found for that pairwise check.
  */
 export const graphPathKind = pgEnum('graph_path_kind', [
   'family',

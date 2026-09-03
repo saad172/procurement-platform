@@ -1,6 +1,7 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   doublePrecision,
   index,
   integer,
@@ -248,10 +249,10 @@ export const geocode = pgTable('geocode', {
  * One route from a Profile to one entity — an ordered list of cited edges
  * (CONTEXT.md, *Path*; network spec §6, ticket 02).
  *
- * `graph_path` replaces `family_member`: a Family member, a Listed entity
- * reached over the watchlist read, a shortest path between two Picks, and a
- * supply-chain upstream tier are all Paths from a root to a terminal — only
- * the first used to get its own table. One shape now holds all five `kind`s,
+ * `graph_path` replaces `family_member`: a Family member, the terminal of a
+ * watchlist Path, a shortest path between two Picks, and a supply-chain
+ * upstream tier are all Paths from a root to a terminal — only the first used
+ * to get its own table. One shape now holds all five `kind`s,
  * and `SupplierFamilyWidget`, `computeFamilyExposure`, `get_supplier_family`
  * and the Supplier page's Corporate family section read Paths of kind
  * `family` rather than rows of a family-only table.
@@ -284,12 +285,20 @@ export const graphPath = pgTable(
     /**
      * The ordered `entity_relationship.id`s this Path cites, one per hop.
      *
-     * A jsonb array of uuid strings rather than a Postgres array column,
-     * matching this schema's existing convention for id lists carried
-     * alongside a row (`entity.sourceCount`, `entity.relationshipCount`):
-     * jsonb everywhere an array of ids or a keyed count needs to travel with
-     * a row that is not itself keyed on it. Empty for a Path with no
-     * citable edge yet — see the migration note on `family_member` rows.
+     * A jsonb array of uuid strings, not a Postgres array column — and,
+     * despite the resemblance, **not** an instance of an existing convention:
+     * `entity.sourceCount` and `entity.relationshipCount` are jsonb too, but
+     * they are objects keyed by source hash or relation type, not arrays of
+     * ids. This is the first jsonb-array-of-ids column in this schema.
+     *
+     * Empty for a Path with no citable edge yet. In particular, every row
+     * migrated from `family_member` (migration 0013) holds `edge_ids: []`
+     * alongside a nonzero `hop_depth` — `family_member` never recorded which
+     * `entity_relationship` rows its path ran through, only Sayari's raw
+     * traversal JSON, so there is nothing to backfill. That combination — a
+     * real hop depth with no edges — is the documented legacy-migration gap,
+     * not a write bug; the next automatic enrich pass replaces the row with
+     * real `edge_ids`.
      */
     edgeIds: jsonb('edge_ids').$type<string[]>().notNull().default([]),
     /** How much of the reachable set this read actually walked. */
@@ -313,18 +322,33 @@ export const graphPath = pgTable(
     /** Set when a Deep Traversal, rather than the automatic read, found it. */
     discoveredByJob: uuid('discovered_by_job'),
     /**
-     * True on the filtered page of an automatic read — the second page of
-     * the same `kind`, over the same root, carrying only Paths that matched
-     * the read's risk/sanctions/PEP filters (network spec §4.1). Distinct
-     * rows from the unfiltered first page, not a flag flipped on them: the
-     * unique key is (root, terminal, kind), so a terminal reached by both
-     * pages is two Paths, one `filtered: false` and one `filtered: true`.
+     * True once this (root, terminal, kind) row has been confirmed by the
+     * filtered, risk/sanctions/PEP-focused page of an automatic read (network
+     * spec §4.1) rather than only by the unfiltered first page.
+     *
+     * **This is a flag on the one row the unique key below identifies, never
+     * a second row.** The key is (root, terminal, kind) — it does not include
+     * `filtered` — so a terminal reached by both the unfiltered and the
+     * filtered page upserts into the same row, once. The write side (ticket
+     * 02b) must therefore make `filtered` **sticky-true on conflict**:
+     * `filtered = filtered OR excluded.filtered` (equivalently, only ever set
+     * it `true`, never back to `false`) — so a Path the filtered read has ever
+     * confirmed stays `filtered: true` even when a later unfiltered-only read
+     * touches the same row.
      */
     filtered: boolean('filtered').notNull().default(false),
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    index('graph_path_root_idx').on(t.rootEntityId),
+    /**
+     * Composite rather than a standalone `(root_entity_id)` index: every
+     * real root-only query site (`supplier-page.ts`, `catalog/reads.ts`,
+     * `discover.ts`, `publish.ts`) filters by root alone today, and every
+     * documented future caller narrows by `kind` too once a root's rows mix
+     * all five — so `(root, kind)` serves both, as a leftmost prefix, and a
+     * separate root-only index would only duplicate it.
+     */
+    index('graph_path_root_kind_idx').on(t.rootEntityId, t.kind),
     index('graph_path_terminal_idx').on(t.terminalEntityId),
     /**
      * **One row per (root, terminal, kind).**
@@ -336,14 +360,29 @@ export const graphPath = pgTable(
      * rows for 50 distinct members before that constraint existed, doubling
      * both the count and the "n of m explored" badge. `kind` joins the key
      * here because the same (root, terminal) pair can legitimately carry two
-     * Paths of different kinds — a family Path and, separately, a
-     * shortest-path Concentration — and those are not duplicates of each
-     * other.
+     * Paths of different kinds — a family Path and, separately, a shortest
+     * path found for the recommend Job's award/Pick pairwise check — and
+     * those are not duplicates of each other.
      */
     uniqueIndex('graph_path_root_terminal_kind_key').on(
       t.rootEntityId,
       t.terminalEntityId,
       t.kind,
+    ),
+    /**
+     * `kind` and `direction` are not independent: `family` is always `down`
+     * (the Corporate family read never walks up) and `supply_chain` is always
+     * `upstream` (the trade Job's tiers, network spec §4.3) — facts the
+     * `graphPathKind`/`graphPathDirection` doc comments already state, but
+     * that nothing enforced until now. `watchlist` and `deep_traversal` are
+     * left unconstrained: a watchlist Path is `either` by the read's own
+     * design, and a Deep Traversal can walk either way depending on what was
+     * asked for.
+     */
+    check(
+      'graph_path_kind_direction_invariant',
+      sql`(${t.kind} <> 'family' OR ${t.direction} = 'down')
+        AND (${t.kind} <> 'supply_chain' OR ${t.direction} = 'upstream')`,
     ),
   ],
 );
