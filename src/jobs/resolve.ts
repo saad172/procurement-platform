@@ -1,12 +1,13 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
-import { MAX_ROUNDS } from '@/config/constants';
+import { MAX_ROUNDS, PREPASS_CANDIDATES } from '@/config/constants';
 import { evaluateAutoAccept, type CandidateAssessment } from '@/domain/match/auto-accept';
 import {
   nameTokensOf,
   runDiscriminators,
   type CandidateFacts,
+  type ResolutionEvidence,
   type RosterRow,
 } from '@/domain/match/discriminators';
 import { sameCountry } from '@/domain/match/address-ladder';
@@ -25,6 +26,7 @@ import {
   attributeTexts,
   matchStrengthValue,
   type SayariEntity,
+  type SayariResolutionCandidate,
 } from '@/upstream/projections/sayari';
 
 /**
@@ -272,26 +274,35 @@ export async function resolveSupplier(
   args: {
     supplierId: string;
     roster: RosterRow;
-    /** Entity ids from the batch pre-pass (rung R1). */
-    prepassEntityIds: string[];
     /**
-     * What the batch pre-pass's own resolution row said about each of
-     * `prepassEntityIds` — its `score`, `match_strength`, `explanation` and
-     * `highlight` (ticket 01 item A). Keyed by entity id; a candidate absent
-     * here carries none of the four, which is the honest state for one an
-     * agent found by climbing a query rung rather than one the pre-pass
-     * scored.
+     * Every row the batch pre-pass returned (rung R1), ranked, and NOT
+     * sliced to the first `PREPASS_CANDIDATES` here (Reuse 5: one argument
+     * where `prepassEntityIds` and `prepassInfo` used to be two projections
+     * of the same array). Only the first `PREPASS_CANDIDATES` are fetched via
+     * `getEntity` for the auto-accept gate and the opening Round — but the
+     * Map keyed off ALL of them stays available to `absorbCandidates`, for a
+     * Candidate an agent surfaces later from further down the pre-pass list,
+     * which used to settle with null evidence (C4).
      */
-    prepassInfo?: Map<string, PrepassCandidateInfo> | undefined;
+    prepassCandidates: PrepassCandidateInfo[];
     jobId?: string | undefined;
   },
 ): Promise<ResolveOutcome> {
-  const candidates = await gatherPrepassCandidates(deps, args);
+  // Keyed by entity id; a candidate absent here carries none of the four
+  // evidence fields, which is the honest state for one an agent found by
+  // climbing a query rung rather than one the pre-pass scored (ticket 01
+  // item A). Built from the UNSLICED list (C4).
+  const prepassInfo = new Map(args.prepassCandidates.map((c) => [c.entityId, c]));
+  const prepassEntityIds = args.prepassCandidates
+    .slice(0, PREPASS_CANDIDATES)
+    .map((c) => c.entityId);
+
+  const candidates = await gatherPrepassCandidates(deps, { prepassEntityIds, prepassInfo });
 
   const gate = await runAutoAcceptGate(deps.db, args, candidates);
   if (gate.outcome) return gate.outcome;
 
-  const rounds = await runAgentRounds(deps, args, candidates, gate);
+  const rounds = await runAgentRounds(deps, args, candidates, gate, prepassInfo);
   if (rounds.outcome) return rounds.outcome;
 
   return settleNonConvergence(deps.db, args, rounds.state);
@@ -309,26 +320,11 @@ async function gatherPrepassCandidates(
   const candidates: CandidateFacts[] = [];
   for (const entityId of args.prepassEntityIds) {
     /**
-     * **Still `getEntity`, not `entitySummary`** (ticket 01 item D). The swap
-     * is verified safe on data-shape grounds — checked field by field against
-     * 01a's `entitySummarySchemaInner` and the SDK's own
-     * `EntitySummaryResponse`/`EntityDetails` types
-     * (`node_modules/@sayari/sdk/dist/api/resources/entity/types/`,
-     * `.../sharedTypes/types/EntityDetails.d.ts`): the parsed address blocks
-     * `toCandidateFacts` reads (`attributes.address.data[].properties.city/
-     * postcode/country/value`), name aliases (`attributes.name`), business
-     * purposes, `company_type`, `closed`, `latest_status`, the LEI (off
-     * `identifiers`) and `relationship_count` all survive. Only
-     * `relationships` itself does not, which is why 01a's own comment on
-     * `entitySummarySchemaInner` does not declare that key.
-     *
-     * It compiles: `SayariEntitySummary` typechecks everywhere `toCandidateFacts`
-     * and `upsertEntity` need a `SayariEntity`. It was tried and reverted
-     * because trying it breaks every recorded `resolve` fixture's replay —
-     * `rules-r0`, `agree-r1`, `sanctioned` and `not-found` all hold
-     * `entity.getEntity` bodies for the pre-pass Candidates, not
-     * `entity.entitySummary` ones, and there is no credential in this
-     * worktree to record the missing calls. See the PR's Re-record list.
+     * **Still `getEntity`, not `entitySummary`** (ticket 01 item D; S7). The
+     * swap is verified data-shape-safe and was tried and reverted because
+     * every recorded `resolve` fixture holds `entity.getEntity` bodies for
+     * the pre-pass Candidates, and there is no credential in this worktree to
+     * re-record them as `entity.entitySummary` — see the PR's Re-record list.
      */
     const fetched = await upstream.sayari.getEntity({ id: entityId });
     const facts = toCandidateFacts(fetched.data);
@@ -356,7 +352,7 @@ async function gatherPrepassCandidates(
       };
     }
     candidates.push(facts);
-    await upsertEntity(db, fetched.data, fetched.upstreamResponseId);
+    await upsertEntity(db, fetched.data, fetched.upstreamResponseId, 'getEntity');
   }
   return candidates;
 }
@@ -388,10 +384,9 @@ async function runAutoAcceptGate(
     entityId: a.candidate.entityId,
     foundByRung: 'R1',
     queryProvenance: 'batch resolution pre-pass over the roster row',
-    score: a.candidate.resolution?.score,
-    matchStrength: a.candidate.resolution?.matchStrength,
-    explanation: a.candidate.resolution?.explanation,
-    highlight: a.candidate.resolution?.highlight,
+    // Reuse 3: spread, not a four-line copy — the two builder sites drifted
+    // once already (see `candidateRecords`'s own doc comment below).
+    ...a.candidate.resolution,
     verdicts: [{ reportedBy: 'rules', results: a.verdicts }],
   }));
 
@@ -402,10 +397,9 @@ async function runAutoAcceptGate(
       status: 'accepted',
       entityId: gate.entityId,
       settledBy: 'rules',
-      // Sayari's own `matchStrength` for the accepted Candidate — the gate
-      // itself never reads it (auto-accept.test.ts asserts as much); this is
-      // only carried onto the settled `match` row once code already decided.
-      matchStrength: settled.resolution?.matchStrength,
+      // `settleMatch` derives `match.match_strength` from `ruleCandidateRecords`
+      // itself (A2) — the gate never reads it (auto-accept.test.ts asserts as
+      // much), and there is no longer a hand-passed value to carry.
       jobId: args.jobId,
       rungsUsed: ['R1'],
       note: gate.reason,
@@ -450,10 +444,11 @@ async function runAgentRounds(
   args: { supplierId: string; roster: RosterRow; jobId?: string | undefined },
   candidates: CandidateFacts[],
   gate: { gateReason: string; ruleCandidateRecords: CandidateRecord[] },
+  prepassInfo: Map<string, PrepassCandidateInfo>,
 ): Promise<{ outcome: ResolveOutcome } | { outcome: null; state: NonConvergenceState }> {
   const { runRound } = deps;
   if (!runRound) return settleWithoutAgent(deps.db, args, candidates, gate);
-  return runRoundLadder(deps, runRound, args, candidates);
+  return runRoundLadder(deps, runRound, args, candidates, prepassInfo);
 }
 
 /**
@@ -523,13 +518,28 @@ async function absorbCandidates(
   deps: Pick<ResolveDeps, 'db' | 'upstream'>,
   state: LadderState,
   found: readonly { entityId: string; rung: string }[],
+  prepassInfo: Map<string, PrepassCandidateInfo>,
 ): Promise<void> {
   for (const { entityId, rung } of found) {
     if (state.seen.some((candidate) => candidate.entityId === entityId)) continue;
     try {
       const fetched = await deps.upstream.sayari.getEntity({ id: entityId });
-      await upsertEntity(deps.db, fetched.data, fetched.upstreamResponseId);
-      state.seen.push(toCandidateFacts(fetched.data));
+      await upsertEntity(deps.db, fetched.data, fetched.upstreamResponseId, 'getEntity');
+      const facts = toCandidateFacts(fetched.data);
+      // A Candidate an agent surfaced here can still be one of the batch
+      // pre-pass's own rows — just one ranked below `PREPASS_CANDIDATES`,
+      // which `gatherPrepassCandidates` never fetched. `prepassInfo` is keyed
+      // off the UNSLICED list, so its evidence reaches this Candidate too (C4).
+      const info = prepassInfo.get(entityId);
+      if (info) {
+        facts.resolution = {
+          score: info.score,
+          matchStrength: info.matchStrength,
+          explanation: info.explanation,
+          highlight: info.highlight,
+        };
+      }
+      state.seen.push(facts);
       state.foundByRung.set(entityId, rung);
     } catch (error) {
       console.error(`[resolve] could not absorb candidate ${entityId}:`, error);
@@ -556,10 +566,10 @@ async function settleAgreement(
     status: 'accepted',
     entityId: picked.entityId,
     settledBy: 'agents',
-    // Absent unless the agents' own pick happened to be one of the pre-pass
-    // Candidates — an agreement reached by climbing a rung has no resolution
-    // `match_strength` of its own, and that absence is the honest state.
-    matchStrength: picked.resolution?.matchStrength,
+    // `settleMatch` derives `match.match_strength` from `picked`'s own row in
+    // `candidateRecords` below (A2) — absent unless the agents' own pick
+    // happened to be one of the pre-pass Candidates, which is the same
+    // honest-absence rule the hand-passed value used to carry.
     jobId: args.jobId,
     rungsUsed: state.rungsUsed,
     note: `Both agents independently named ${picked.label} at round ${roundN}.`,
@@ -587,6 +597,7 @@ async function runRoundLadder(
   runRound: NonNullable<ResolveDeps['runRound']>,
   args: { supplierId: string; roster: RosterRow; jobId?: string | undefined },
   candidates: CandidateFacts[],
+  prepassInfo: Map<string, PrepassCandidateInfo>,
 ): Promise<{ outcome: ResolveOutcome } | { outcome: null; state: NonConvergenceState }> {
   const state: LadderState = {
     seen: [...candidates],
@@ -608,7 +619,7 @@ async function runRoundLadder(
     for (const [entityId, rung] of resumed.ladder.foundByRung) {
       // In the recorded order, so the resumed prompt lists the Candidates in
       // the order the paused one did — and the seeded shuffle reproduces.
-      await absorbCandidates(deps, state, [{ entityId, rung }]);
+      await absorbCandidates(deps, state, [{ entityId, rung }], prepassInfo);
     }
   }
 
@@ -654,7 +665,7 @@ async function runRoundLadder(
 
     // Each id carries the rung that surfaced it, so a Candidate an R2 search
     // returned is not recorded as having cost an R3 one.
-    await absorbCandidates(deps, state, round.entityIdsSeen);
+    await absorbCandidates(deps, state, round.entityIdsSeen, prepassInfo);
     state.rungsUsed = [...new Set([...state.rungsUsed, ...round.rungsUsed])];
 
     // AGREEMENT IS OUR CODE COMPARING TWO ENTITY IDS. Neither agent is asked
@@ -790,11 +801,9 @@ function candidateRecords(
           ? 'batch resolution pre-pass over the roster row'
           : `found by an agent during a Match round, at rung ${rung}`,
       // The pre-pass's own resolution row for this Candidate, when it has one
-      // — absent for a Candidate an agent found by climbing a rung.
-      score: candidate.resolution?.score,
-      matchStrength: candidate.resolution?.matchStrength,
-      explanation: candidate.resolution?.explanation,
-      highlight: candidate.resolution?.highlight,
+      // — absent for a Candidate an agent found by climbing a rung. Reuse 3:
+      // spread, matching `runAutoAcceptGate`'s own builder above.
+      ...candidate.resolution,
       verdicts,
     };
   });
@@ -906,33 +915,78 @@ function sawCandidateInCountry(roster: RosterRow, candidates: readonly Candidate
  * otherwise, which today is every caller outside this file's owned region
  * (see the report on ticket `01-tier-one-fixes`, item A).
  */
+/** Either the plain handle or a transaction already open on it — `writeEntityRow`
+ * runs from both (PR #19 review item P2). */
+type DbOrTx = Database | Parameters<Parameters<Database['transaction']>[0]>[0];
+
 export async function upsertEntity(
   db: Database,
   entity: SayariEntity,
-  upstreamResponseId?: string | null,
-  source: EntitySource = 'getEntity',
+  upstreamResponseId: string | null | undefined,
+  source: EntitySource,
+): Promise<{ risk: Record<string, unknown> | undefined }> {
+  if (entity.risk === undefined) {
+    return writeEntityRow(db, entity, upstreamResponseId, undefined);
+  }
+
+  /**
+   * **Per-entity advisory lock, for the one sequence here that reads before
+   * it writes** (PR #19 review item P2). Everything else this function
+   * writes is a plain "last sighting wins" column and needs no lock — but
+   * `risk`/`risk_sources` are a READ, a merge in application code, and then
+   * a WRITE, three separate steps with no lock between them. Two Jobs
+   * upserting the same entity concurrently (worker concurrency 4; FORVIA is
+   * the shared parent of Faurecia and HELLA in the seed, so this is not a
+   * hypothetical pairing) can both read the same starting `risk` blob, merge
+   * their own sighting into it, and the second write to commit throws away
+   * the first sighting's factors and sources — not because the merge logic
+   * is wrong, but because the two merges never saw each other's answer.
+   *
+   * `pg_advisory_xact_lock(hashtext(id))` serialises the read-merge-write
+   * per entity id: the second concurrent upsert of one entity blocks until
+   * the first's transaction commits (or rolls back), so its own read is
+   * guaranteed to see the first one's write. Session-scoped and
+   * auto-released at transaction end, so nothing here can leak a held lock.
+   * `hashtext` collisions are theoretically possible (a 32-bit hash) and cost
+   * nothing worse than an unrelated entity briefly serialising alongside this
+   * one — never an incorrect merge.
+   *
+   * Drizzle nests a transaction opened inside an already-open one as a
+   * SAVEPOINT rather than a second `BEGIN`, so a caller that already holds a
+   * transaction (`settleMatch`'s callers, `family-members.ts`) is unaffected.
+   */
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${entity.id}))`);
+
+    /**
+     * The merged `risk` and `risk_sources`, read back from whatever this id
+     * already holds so a factor a previous sighting reported is never dropped
+     * by this one — now guaranteed current, inside the lock above.
+     */
+    const existing = await tx.query.entity.findFirst({
+      where: eq(t.entity.id, entity.id),
+      columns: { risk: true, riskSources: true },
+    });
+    const merged = mergeRiskForUpsert(existing?.risk, existing?.riskSources, entity.risk, source);
+
+    return writeEntityRow(tx, entity, upstreamResponseId, merged);
+  });
+}
+
+/**
+ * The write half of `upsertEntity`, shared by the no-risk-read fast path and
+ * the locked, risk-merging one above.
+ */
+async function writeEntityRow(
+  db: DbOrTx,
+  entity: SayariEntity,
+  upstreamResponseId: string | null | undefined,
+  merged: ReturnType<typeof mergeRiskForUpsert>,
 ): Promise<{ risk: Record<string, unknown> | undefined }> {
   const address = entity.attributes?.address?.data?.[0];
   const properties = address?.properties;
   const sourceCount = entity.source_count ?? null;
   const lei = findLei(entity);
-
-  /**
-   * The merged `risk` and `risk_sources`, read back from whatever this id
-   * already holds so a factor a previous sighting reported is never dropped
-   * by this one. Only queried when this sighting actually says something
-   * about risk — the same "a column moves only when the incoming sighting
-   * states it" rule as every other column, applied to the one query this
-   * function runs before its write.
-   */
-  let merged: ReturnType<typeof mergeRiskForUpsert>;
-  if (entity.risk !== undefined) {
-    const existing = await db.query.entity.findFirst({
-      where: eq(t.entity.id, entity.id),
-      columns: { risk: true, riskSources: true },
-    });
-    merged = mergeRiskForUpsert(existing?.risk, existing?.riskSources, entity.risk, source);
-  }
 
   /**
    * What this sighting states, with `undefined` for everything it is silent
@@ -1017,50 +1071,43 @@ function relationshipsTruncated(entity: SayariEntity): boolean {
 /**
  * What one row of the batch pre-pass's own resolution response said about a
  * Candidate — everything `match_candidate` has columns for and, before ticket
- * 01, always left null (SPEC §6.2/§6.3).
+ * 01, always left null (SPEC §6.2/§6.3). `ResolutionEvidence` plus the
+ * entity id it is about (Reuse 2).
  */
-export type PrepassCandidateInfo = {
-  entityId: string;
-  matchStrength: string | undefined;
-  score: number | undefined;
-  /** Sayari's own per-field match-quality record. */
-  explanation: unknown;
-  /** Sayari's own per-field highlighted-match-text record. */
-  highlight: unknown;
-};
+export type PrepassCandidateInfo = ResolutionEvidence & { entityId: string };
 
-/** Reads the batch pre-pass into per-row candidate info, ids and all four evidence fields. */
+/**
+ * Reads the batch pre-pass into per-row candidate info, ids and all four
+ * evidence fields — typed from the projected `SayariResolutionCandidate`
+ * (Reuse 1) rather than a re-declared `unknown`-field row, so `score`/
+ * `explanation`/`match_strength` keep their projected types and this need not
+ * re-check `typeof` on fields the projection already guarantees.
+ *
+ * **Deduped on first occurrence, by entity id** (C6). A duplicate
+ * `entity_id` across two resolution rows used to make the caller's Map keep
+ * the LAST (lower-ranked) row's evidence, while the ladder still listed the
+ * Candidate twice and `settleMatch`'s `onConflictDoUpdate` — keyed on
+ * `(match_attempt_id, entity_id)` — silently dropped the second insert's
+ * verdicts. First occurrence is the higher-ranked row, which is the one
+ * worth keeping.
+ */
 export function prepassCandidateIds(resolution: {
-  data?:
-    | {
-        entity_id?: string;
-        match_strength?: unknown;
-        score?: unknown;
-        explanation?: unknown;
-        highlight?: unknown;
-      }[]
-    | null
-    | undefined;
+  data?: readonly SayariResolutionCandidate[] | null | undefined;
 }): PrepassCandidateInfo[] {
-  return (resolution.data ?? [])
-    .filter(
-      (
-        row,
-      ): row is {
-        entity_id: string;
-        match_strength?: unknown;
-        score?: unknown;
-        explanation?: unknown;
-        highlight?: unknown;
-      } => Boolean(row.entity_id),
-    )
-    .map((row) => ({
+  const seen = new Set<string>();
+  const out: PrepassCandidateInfo[] = [];
+  for (const row of resolution.data ?? []) {
+    if (!row.entity_id || seen.has(row.entity_id)) continue;
+    seen.add(row.entity_id);
+    out.push({
       entityId: row.entity_id,
       matchStrength: matchStrengthValue(row.match_strength as never),
       score: typeof row.score === 'number' ? row.score : undefined,
       explanation: row.explanation,
       highlight: row.highlight,
-    }));
+    });
+  }
+  return out;
 }
 
 export { eq };

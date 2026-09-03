@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import * as t from '@/db/schema';
-import { resolveSupplier, toCandidateFacts, type ResolveDeps } from '@/jobs/resolve';
+import {
+  resolveSupplier,
+  toCandidateFacts,
+  type PrepassCandidateInfo,
+  type ResolveDeps,
+} from '@/jobs/resolve';
 import { runDiscriminators } from '@/domain/match/discriminators';
 import { seedTestProgram } from '@/db/seed-test-program';
 import { TEST_PROGRAM } from '@/db/seed-data/test-program';
@@ -32,6 +37,16 @@ const CANDIDATES = [
   { id: 'AAAAAAAAAAAAAAAAAAAAAA', label: 'SUMITOMO ELECTRIC INDUSTRIES, LTD.', countries: ['JPN'] },
   { id: 'BBBBBBBBBBBBBBBBBBBBBB', label: 'SUMITOMO CORPORATION', countries: ['JPN'] },
 ];
+
+/** An id only, none of the four evidence fields (Reuse 5) — the honest shape
+ * for a Candidate this test never ran a real pre-pass over. */
+const idOnly = (entityId: string): PrepassCandidateInfo => ({
+  entityId,
+  score: undefined,
+  matchStrength: undefined,
+  explanation: undefined,
+  highlight: undefined,
+});
 
 /** Hands back the two Candidates and nothing else. */
 const upstream = {
@@ -91,7 +106,7 @@ describe('an agreed entity id has to be one this Job holds', () => {
 
     const outcome = await resolveSupplier(
       { db, upstream, runRound },
-      { supplierId: supplier.id, roster: ROSTER, prepassEntityIds: [] },
+      { supplierId: supplier.id, roster: ROSTER, prepassCandidates: [] },
     );
 
     expect(outcome.status).toBe('needs_review');
@@ -134,7 +149,7 @@ describe('each candidate row carries its own verdicts', () => {
 
     const outcome = await resolveSupplier(
       { db, upstream, runRound },
-      { supplierId: supplier.id, roster: ROSTER, prepassEntityIds: [CANDIDATES[0]!.id] },
+      { supplierId: supplier.id, roster: ROSTER, prepassCandidates: [idOnly(CANDIDATES[0]!.id)] },
     );
     expect(outcome.status).toBe('accepted');
     expect(outcome.settledBy).toBe('agents');
