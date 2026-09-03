@@ -78,7 +78,21 @@ const getCategory = defineTool({
       with: { hsLines: true, flags: true },
     });
     if (!category) return { ok: false, objections: [`no category with id ${input.categoryId}`] };
-    return { ok: true, data: widget('category_summary', category) };
+    /**
+     * `discoverTotalCount`/`discoverTotalQualifier`/`discoveredAt` (A3+C3)
+     * are excluded from what the MODEL reads — nothing renders them yet
+     * (`category.discover_total_count`'s own comment, `src/db/schema/
+     * authored.ts`), and this raw row was passed to `widget()` unprojected:
+     * a column added to a table dumped wholesale into a tool's `data` is a
+     * live prompt byte the moment it exists, the same class of surprise
+     * BUILD-NOTES 154 names for an unprojected jsonb column. `payload` still
+     * carries the whole row, so a UI that wants the three later can.
+     */
+    const { discoverTotalCount, discoverTotalQualifier, discoveredAt, ...forModel } = category;
+    void discoverTotalCount;
+    void discoverTotalQualifier;
+    void discoveredAt;
+    return { ok: true, data: widget('category_summary', forModel, category) };
   },
 });
 
