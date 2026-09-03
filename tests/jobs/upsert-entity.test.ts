@@ -103,7 +103,7 @@ describe.skipIf(!up)(`upsertEntity across partial sightings (needs: ${START_TEST
   it('writes what a full payload carries', async () => {
     const db = await getTestDb();
     await testSql()`DELETE FROM entity WHERE id = ${ID}`;
-    await upsertEntity(db, full);
+    await upsertEntity(db, full, undefined, 'getEntity');
 
     expect(await read()).toMatchObject({
       label: 'ROBERT BOSCH GMBH',
@@ -120,8 +120,8 @@ describe.skipIf(!up)(`upsertEntity across partial sightings (needs: ${START_TEST
   it('does not let a later partial sighting blank what a full one established', async () => {
     const db = await getTestDb();
     await testSql()`DELETE FROM entity WHERE id = ${ID}`;
-    await upsertEntity(db, full);
-    await upsertEntity(db, nested);
+    await upsertEntity(db, full, undefined, 'getEntity');
+    await upsertEntity(db, nested, undefined, 'getEntity');
 
     const row = await read();
     expect(row).toMatchObject({
@@ -139,9 +139,12 @@ describe.skipIf(!up)(`upsertEntity across partial sightings (needs: ${START_TEST
      * traversal payload and six from `getEntity` is not the same company as
      * one with six, whichever sighting arrives second. So the `full` body's
      * `basel_aml` survives the `nested` body's `cpi_score`. `risk` itself
-     * stays exactly Sayari's own shape; the provenance lands on the sibling
-     * `risk_sources` column (see `tests/jobs/upsert-entity.test.ts`'s "risk
-     * union by provenance" block below for that half).
+     * stays exactly `level`/`value`/`metadata` per factor — the shape does
+     * not vary by how many sightings a factor has had (P1), only what lands
+     * in it does: `level` is copied raw rather than filtered to the three
+     * `RiskLevel` values, so a `critical` factor a later ticket adds here
+     * would survive too. The provenance lands on the sibling `risk_sources`
+     * column (see this file's "risk union by provenance" block below).
      */
     expect(row?.risk).toEqual({
       basel_aml: { level: 'relevant', value: null, metadata: {} },
@@ -157,11 +160,11 @@ describe.skipIf(!up)(`upsertEntity across partial sightings (needs: ${START_TEST
   it('fills in what a first partial sighting left empty', async () => {
     const db = await getTestDb();
     await testSql()`DELETE FROM entity WHERE id = ${ID}`;
-    await upsertEntity(db, nested);
+    await upsertEntity(db, nested, undefined, 'getEntity');
 
     expect(await read()).toMatchObject({ psa_count: null, country: null, lei: null });
 
-    await upsertEntity(db, full);
+    await upsertEntity(db, full, undefined, 'getEntity');
     const row = await read();
     expect(row).toMatchObject({
       psa_count: 676,
@@ -184,10 +187,10 @@ describe.skipIf(!up)(`upsertEntity across partial sightings (needs: ${START_TEST
   it('treats a sighting that says false as having said something', async () => {
     const db = await getTestDb();
     await testSql()`DELETE FROM entity WHERE id = ${ID}`;
-    await upsertEntity(db, { ...full, sanctioned: true, closed: true } as SayariEntity);
+    await upsertEntity(db, { ...full, sanctioned: true, closed: true } as SayariEntity, undefined, 'getEntity');
     expect(await read()).toMatchObject({ sanctioned: true, closed: true });
 
-    await upsertEntity(db, { ...full, sanctioned: false, closed: false } as SayariEntity);
+    await upsertEntity(db, { ...full, sanctioned: false, closed: false } as SayariEntity, undefined, 'getEntity');
     expect(await read()).toMatchObject({ sanctioned: false, closed: false });
   });
 
@@ -205,10 +208,10 @@ describe.skipIf(!up)(`upsertEntity across partial sightings (needs: ${START_TEST
       VALUES ('sayari', 'entity.getEntity', 'h', '{}'::jsonb, '{}'::jsonb, 'bh', 'sdk')
       RETURNING id`;
 
-    await upsertEntity(db, full, payload!.id as string);
+    await upsertEntity(db, full, payload!.id as string, 'getEntity');
     expect((await read())?.upstream_response_id).toBe(payload!.id);
 
-    await upsertEntity(db, nested);
+    await upsertEntity(db, nested, undefined, 'getEntity');
     expect((await read())?.upstream_response_id).toBe(payload!.id);
 
     await testSql()`DELETE FROM entity WHERE id = ${ID}`;
@@ -223,11 +226,11 @@ describe.skipIf(!up)(`upsertEntity across partial sightings (needs: ${START_TEST
   it('leaves first_seen_at alone while moving fetched_at', async () => {
     const db = await getTestDb();
     await testSql()`DELETE FROM entity WHERE id = ${ID}`;
-    await upsertEntity(db, full);
+    await upsertEntity(db, full, undefined, 'getEntity');
     const before = await read();
 
     await new Promise((resolve) => setTimeout(resolve, 5));
-    await upsertEntity(db, nested);
+    await upsertEntity(db, nested, undefined, 'getEntity');
     const after = await read();
 
     expect(after?.first_seen_at).toEqual(before?.first_seen_at);
@@ -352,5 +355,90 @@ describe.skipIf(!up)(`risk union by provenance (needs: ${START_TEST_DB_HINT})`, 
     const { risk } = await read();
     expect(Object.keys(risk)).toHaveLength(10);
     expect(risk.basel_aml).toMatchObject({ level: 'high' });
+  });
+});
+
+/**
+ * **The merge must keep the raw factor object, not `parseRiskObject`'s
+ * lossy reconstruction of one** (PR #19 review item P1).
+ *
+ * `parseRiskObject` exists to hand `entity.risk` to a model turn verbatim
+ * (its own comment says so) and reads exactly `level`/`value`/
+ * `metadata.country`/`metadata.traversal_path` — so a `level` outside
+ * `high`/`elevated`/`relevant` becomes `undefined`, and every other
+ * `metadata` key is dropped. `mergeRiskForUpsert` used to rebuild every
+ * factor through it, which is wrong for a MERGE (as opposed to a read): a
+ * factor Sayari reports at `level: "critical"` — measured 185 times in
+ * recorded bodies, `risk.sanctioned` in `tests/fixtures/resolve/
+ * sanctioned.json` among them — got its level silently voided and its
+ * `metadata.source`/`metadata.from_date` silently dropped on the very next
+ * upsert of that entity, from any endpoint, however small the new sighting.
+ *
+ * Shaped from that recorded fixture's own `risk.sanctioned` block (SPEC
+ * §16.6's rule for a body built by hand rather than replaying a call).
+ */
+describe.skipIf(!up)(`raw risk merge keeps the factor object whole (needs: ${START_TEST_DB_HINT})`, () => {
+  const ID = 'sanctioned-fixture-entity';
+
+  const recordedRisk = {
+    sanctioned: {
+      level: 'critical',
+      value: true,
+      metadata: {
+        source: [
+          'Consolidated Canadian Autonomous Sanctions List',
+          'Japan Ministry of Finance Economic Sanctions List',
+          'Australia Consolidated Sanctions List',
+        ],
+        from_date: ['2022-03-10'],
+      },
+    },
+    basel_aml: {
+      level: 'relevant',
+      value: 8.14,
+      metadata: { country: ['MMR'] },
+    },
+  };
+
+  const firstSighting = {
+    id: ID,
+    label: 'SANCTIONED ENTITY CO',
+    risk: recordedRisk,
+  } as SayariEntity;
+
+  /**
+   * A later, SMALLER sighting from a second endpoint: only `basel_aml`, and
+   * at the SAME level — so the union has nothing to raise `basel_aml` to,
+   * and `sanctioned` is entirely this sighting's silence, which is exactly
+   * the case `parseRiskObject`'s reconstruction got wrong (it rebuilds
+   * every merged factor, touched or not).
+   */
+  const laterSighting = {
+    id: ID,
+    label: 'SANCTIONED ENTITY CO',
+    risk: { basel_aml: { level: 'relevant', value: 8.14, metadata: { country: ['MMR'] } } },
+  } as SayariEntity;
+
+  afterAll(async () => {
+    if (!up) return;
+    await testSql()`DELETE FROM entity WHERE id = ${ID}`;
+  });
+
+  it('keeps risk.sanctioned byte-equal to the recorded body after a smaller sighting merges in', async () => {
+    const db = await getTestDb();
+    await testSql()`DELETE FROM entity WHERE id = ${ID}`;
+
+    await upsertEntity(db, firstSighting, undefined, 'getEntity');
+    await upsertEntity(db, laterSighting, undefined, 'entitySummary');
+
+    const [row] = await testSql()`SELECT risk FROM entity WHERE id = ${ID}`;
+    const risk = row?.risk as Record<string, unknown>;
+
+    // Byte-equal to the recorded body. `parseRiskObject` would have rebuilt
+    // this as `{ level: null, value: true, metadata: {} }`.
+    expect(risk.sanctioned).toEqual(recordedRisk.sanctioned);
+    expect(risk.basel_aml).toEqual(recordedRisk.basel_aml);
+    // The union holds every factor the two sightings ever reported.
+    expect(Object.keys(risk).sort()).toEqual(['basel_aml', 'sanctioned']);
   });
 });
