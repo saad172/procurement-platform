@@ -57,11 +57,11 @@ export type NarrativeRole = 'proposer' | 'evaluator';
  * for the other rather than gaining a tool.
  */
 const NARRATIVE_READS: Record<NarrativeLoop, readonly string[]> = {
-  assess: ['get_supplier', 'get_supplier_family', 'get_assessment_brief', 'get_entity'],
+  assess: ['get_supplier', 'get_supplier_network', 'get_assessment_brief', 'get_entity'],
   recommend: [
     'get_shortlist',
     'get_supplier',
-    'get_supplier_family',
+    'get_supplier_network',
     'get_recommendation_brief',
     'get_category',
   ],
@@ -109,20 +109,27 @@ const MATCH_COMMON_TOOLS = [
 ];
 
 /**
- * The Dossier profile is **six**, not the "~5" originally estimated
- * (SPEC §15.3).
+ * The Dossier profile is **seven**, not the "~5" originally estimated
+ * (SPEC §15.3), and not the six it grew to before this ticket.
  *
  * The sixth — `sayari_get_record` — is load-bearing: Citations must resolve to
  * a **live local row**, and a record id seen inside `entity.attributes[].record`
  * has no local `record` row unless something fetched it. On five tools a
  * Dossier could only cite at entity granularity, while it is promised as
  * *cited like an Assessment*.
+ *
+ * The seventh — `sayari_watchlist` — is new in this ticket, alongside the
+ * renamed `sayari_ownership` (was `sayari_traversal`; network spec §9): a
+ * Dossier reads Sayari directly rather than through the automatic Network
+ * reads, so it needs its own way to walk to Listed entities, the same way it
+ * already had its own way to walk ownership.
  */
 export const DOSSIER_PROFILE = [
   'get_supplier',
   'sayari_get_entity',
   'sayari_get_record',
-  'sayari_traversal',
+  'sayari_ownership',
+  'sayari_watchlist',
   'sayari_negative_news',
   'submit_dossier',
 ] as const;
@@ -283,7 +290,7 @@ function checkEachTool(
 }
 
 function checkDossierProfile(byName: Map<string, ToolDefinition>, problems: string[]): void {
-  // 10. The Dossier profile is exactly six named tools, all present, all mcp.
+  // 10. Every tool DOSSIER_PROFILE names is present, all mcp.
   for (const name of DOSSIER_PROFILE) {
     const tool = byName.get(name);
     if (!tool) {

@@ -74,7 +74,7 @@ describe('toEntityView', () => {
     expect(view.relationshipCount).toEqual({ carrier_of: 88_221, receives_from: 70 });
     expect(view).not.toHaveProperty('relationships');
     // The rows are gone, so the payload has to name the tool that has them.
-    expect(view.omitted.join(' ')).toContain('get_supplier_family');
+    expect(view.omitted.join(' ')).toContain('get_supplier_network');
   });
 
   it('carries each risk factor with its level and traversal path', () => {

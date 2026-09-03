@@ -74,12 +74,22 @@ const submitMatchVerdict = defineTool({
   handler: async (input) => ({ ok: true, data: input }),
 });
 
-/** A sentence and the rows it cites. The pair is inseparable by construction. */
+/**
+ * A sentence and the rows it cites. The pair is inseparable by construction.
+ *
+ * `section` mirrors `sentenceSection` (`src/db/schema/enums.ts`) — the DB enum
+ * `ownership` renamed to `network` in ticket 03a, and this schema was the one
+ * place that rename missed: a model submitting `section: 'network'` (as the
+ * renamed prompt in `src/model/prompts/assess.ts` now asks for) failed this
+ * refinement, and a model still submitting `'ownership'` would have failed
+ * the DB's own enum instead. Fixed here rather than left for a later ticket
+ * because the two enums disagreeing makes every Assessment submission fail.
+ */
 const citedSentence = z.object({
   section: z.enum([
     'identity',
     'compliance',
-    'ownership',
+    'network',
     'country',
     'tariff',
     'media',

@@ -3,7 +3,12 @@ import { z } from 'zod/v4';
 import * as t from '@/db/schema';
 import { isDatabaseId, notAnIdObjection } from '../ids';
 import { defineTool, type ReadWithWidget, type ToolContext, type WidgetType } from '../define';
-import { loadFamilyPaths, terminalEdgeOf } from '@/db/queries/family-paths';
+import {
+  loadNetworkPaths,
+  terminalEdgeOf,
+  type NetworkPath,
+  type NetworkPathKind,
+} from '@/db/queries/family-paths';
 import { loadShortlist } from '@/db/queries/shortlist';
 import { DEFAULT_WEIGHTS, normaliseWeights } from '@/domain/score';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
@@ -260,17 +265,69 @@ function projectSupplierCard(loaded: NonNullable<Awaited<ReturnType<typeof loadS
 }
 
 /**
- * The Corporate family for one Supplier (SPEC §8.4).
+ * The Network for one Supplier (network spec §9 renames row 3: was
+ * `get_supplier_family`, a flat list of Corporate family members).
  *
- * The badge has **three** states and the state names carry the decision:
- * *not covered* when the ownership graph returned nobody, *no exposure found*,
- * or *exposure found*. Collapsing the first into the second would report an
- * empty ownership graph in the same ink as a genuinely clean family.
+ * **Grouped by `kind`** — `family`, `watchlist`, `shortest_path`,
+ * `deep_traversal`, `supply_chain` (network spec §6) — rather than family
+ * members alone, because a Network is every Path a Profile carries, not only
+ * the downward ownership ones. `shortest_path`, `deep_traversal` and
+ * `supply_chain` Paths do not exist for most Profiles yet — the recommend Job
+ * (ticket 04) and the trade Job (ticket 05) are what write them — so most
+ * groups come back empty today. **An empty group is a real, gracefully
+ * reported state, not a failure**: the same "not covered" vs. "no exposure
+ * found" distinction §8.4's badge always made for the family group applies
+ * per group here.
+ *
+ * Each group keeps the shape the old flat payload had — `enrichmentId`,
+ * `explored`, `reachable`, `truncated`, `members` — so a member's own
+ * citation rule is unchanged: its `recordId` is the edge that places it in
+ * ITS group, its `entityId` is what it carries as a company, and the group's
+ * `enrichmentId` is cited only for that group's own explored/truncated
+ * figures (finding 106) — never one group's envelope for another's.
  */
-const getSupplierFamily = defineTool({
-  name: 'get_supplier_family',
+const NETWORK_PATH_KINDS = [
+  'family',
+  'watchlist',
+  'shortest_path',
+  'deep_traversal',
+  'supply_chain',
+] as const satisfies readonly NetworkPathKind[];
+
+/** One kind's slice of a Network: the same envelope+members shape §8.4's family badge always returned, scoped to one `graph_path.kind`. */
+function projectNetworkGroup(paths: NetworkPath[]) {
+  const { widgetMembers, modelMembers } = projectFamilyMembers(paths);
+  const envelope = {
+    /**
+     * **The id THIS group's coverage figures cite through** (finding 106) —
+     * null, honestly, for an empty group rather than borrowed from another
+     * kind's read.
+     */
+    enrichmentId: paths[0]?.enrichmentId ?? null,
+    // Row count, not a stored counter — `graph_path`'s unique (root,
+    // terminal, kind) index (network spec §6) is what makes the two agree,
+    // per kind, the same as the pre-rename family envelope.
+    explored: paths.length,
+    // The WIDEST envelope this group holds, not whichever Path sorted first —
+    // a Deep Traversal's own wider walk must not be shadowed by a narrower
+    // automatic read of the same kind.
+    reachable: paths.reduce<number | null>(
+      (best, p) =>
+        p.reachableCount != null && (best == null || p.reachableCount > best) ? p.reachableCount : best,
+      null,
+    ),
+    truncated: paths.some((p) => p.truncated),
+  };
+  return {
+    model: { ...envelope, members: modelMembers },
+    widget: { ...envelope, members: widgetMembers },
+  };
+}
+
+const getSupplierNetwork = defineTool({
+  name: 'get_supplier_network',
   description:
-    "A supplier's corporate family: the companies reachable downward through ownership, what risk they carry, and how much of the family was explored. Cite a member's own recordId for the edge that places it in the family, its entityId for what it carries as a company, and the enrichmentId only for the envelope's explored and truncated figures.",
+    "A supplier's Network, grouped by kind — family (ownership, downward), watchlist (Paths to Listed entities), shortest path, deep traversal, supply chain — with what risk each carries and how much of each was explored. A group with no Paths is a real, reported state, not a failure: most kinds beyond family and watchlist have none yet. Cite a member's own recordId for the edge that places it in ITS group, its entityId for what it carries as a company, and a group's own enrichmentId only for that group's explored and truncated figures.",
   input: z.object({ supplierId: z.string() }),
   surfaces: ['chat', 'job', 'mcp'],
   effect: 'read',
@@ -284,55 +341,29 @@ const getSupplierFamily = defineTool({
       return {
         ok: false,
         objections: [
-          'this supplier has no accepted match, so it has no profile to hang a family off',
+          'this supplier has no accepted match, so it has no profile to hang a network off',
         ],
       };
     }
 
-    const paths = await loadFamilyPaths(ctx.db, match.entityId);
-    const { widgetMembers, modelMembers } = projectFamilyMembers(paths);
-    const envelope = {
-      entityId: match.entityId,
-      /**
-       * **The id the coverage figures can be cited through** (finding 106).
-       *
-       * The family walk is an Enrichment — a dated call — and `explored` and
-       * `truncated` are facts about *it*, carried on its `graph_path` rows.
-       * The tool told the model *"explored: 45"* and handed it no id that fact
-       * could resolve to, so the one citation on offer was the member's
-       * `entityId`, and an `entity` row carries no explored count to answer to
-       * it. The number check refused the sentence, correctly, for a figure the
-       * model had read off this very payload.
-       */
-      enrichmentId: paths[0]?.enrichmentId ?? null,
-      // What the traversal reported it covered, not how many rows we hold —
-      // except that counting rows is now exactly that figure. `graph_path`'s
-      // unique `(root, terminal, kind)` index (network spec §6) is what makes
-      // the two agree: the old failure mode (Bosch's family stored 100 times
-      // for 50 members, reporting 100 to the model) is what the index rules
-      // out at the database. See `derive-supplier-page.ts`'s `widestCoverage`
-      // for the fuller account.
-      explored: paths.length,
-      // The WIDEST envelope this family holds, not whichever Path happened to
-      // sort first — a Deep Traversal's own wider walk must not be shadowed
-      // by the automatic read's narrower one (same reasoning as
-      // `widestCoverage`).
-      reachable: paths.reduce<number | null>(
-        (best, p) =>
-          p.reachableCount != null && (best == null || p.reachableCount > best)
-            ? p.reachableCount
-            : best,
-        null,
-      ),
-      truncated: paths.some((p) => p.truncated),
-    };
+    const paths = await loadNetworkPaths(ctx.db, match.entityId);
+    const byKind = new Map<NetworkPathKind, NetworkPath[]>(NETWORK_PATH_KINDS.map((k) => [k, []]));
+    for (const path of paths) byKind.get(path.kind)?.push(path);
+
+    const modelGroups: Record<string, unknown> = {};
+    const widgetGroups: Record<string, unknown> = {};
+    for (const kind of NETWORK_PATH_KINDS) {
+      const group = projectNetworkGroup(byKind.get(kind) ?? []);
+      modelGroups[kind] = group.model;
+      widgetGroups[kind] = group.widget;
+    }
 
     return {
       ok: true,
       data: widget(
         'supplier_family',
-        { ...envelope, members: modelMembers },
-        { ...envelope, members: widgetMembers },
+        { entityId: match.entityId, groups: modelGroups },
+        { entityId: match.entityId, groups: widgetGroups },
       ),
     };
   },
@@ -347,7 +378,7 @@ const getSupplierFamily = defineTool({
  * put ~870,000 tokens into one model turn and fired the assess Job's
  * token ceiling. The cap did its job; the read was the bug.
  */
-function projectFamilyMembers(paths: Awaited<ReturnType<typeof loadFamilyPaths>>) {
+function projectFamilyMembers(paths: NetworkPath[]) {
   /**
    * Factor names, levels **and the `country` marker**, which is what the
    * widget needs to exclude a country-derived factor the way the page does.
@@ -796,7 +827,7 @@ export const PAGE_READS = [
   getProgram,
   getCategory,
   getSupplier,
-  getSupplierFamily,
+  getSupplierNetwork,
   getEntity,
   getRecord,
 ];

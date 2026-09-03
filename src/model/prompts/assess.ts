@@ -68,7 +68,7 @@ ${CITATION_RULE}
 SECTIONS
   identity     always, and always first — which company this is, and how it was settled
   compliance   whenever the compliance criterion returned a value
-  ownership    whenever the ownership criterion returned a value
+  network      whenever the network exposure criterion returned a value
   country      whenever the country criterion returned a value
   tariff       ONLY when the supplier has at least one category
   media        whenever the media criterion returned a value
