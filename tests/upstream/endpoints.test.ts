@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { ENDPOINTS, sayariEntitySummary, sayariTradeSearchSuppliers, sayariTraversalUbo } from '@/upstream/endpoints';
+import {
+  ENDPOINTS,
+  sayariEntitySummary,
+  sayariTradeSearchSuppliers,
+  sayariTraversalShortestPath,
+  sayariTraversalUbo,
+} from '@/upstream/endpoints';
 import { entitySummarySchema } from '@/upstream/projections/sayari';
 
 /**
@@ -62,6 +68,20 @@ describe('ENDPOINTS (SPEC §16.2)', () => {
    * still reads exactly `{ limit: 100 }`, so `params_hash` for every call
    * that never asks for a page past the first is unchanged.
    */
+  /**
+   * `sayariTraversalShortestPath` (network spec §4.2, §7; ticket 04). Not one
+   * of the four `TraversalWalkParams`-shaped rows above: no `limit` default
+   * (the endpoint takes exactly one param, `entities`), and `bucket` still
+   * reads `'traversal'` — the same usage-row class the other four traversal
+   * rows use, since Sayari's own `info.getUsage()` classes it the same way.
+   */
+  it('registers sayariTraversalShortestPath (ticket 04)', () => {
+    expect(ENDPOINTS.sayariTraversalShortestPath).toBe(sayariTraversalShortestPath);
+    expect(sayariTraversalShortestPath.endpoint).toBe('traversal.shortestPath');
+    expect(sayariTraversalShortestPath.bucket).toBe('traversal');
+    expect(sayariTraversalShortestPath.defaults).toEqual({});
+  });
+
   it('adds offset to sayariTradeSearchSuppliers with no default', () => {
     expect(ENDPOINTS.sayariTradeSearchSuppliers).toBe(sayariTradeSearchSuppliers);
     expect(sayariTradeSearchSuppliers.endpoint).toBe('trade.searchSuppliers');

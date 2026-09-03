@@ -396,6 +396,39 @@ export const sayariWatchlist = defineTool({
   },
 });
 
+/**
+ * The two-entity walk Concentration runs at submission (network spec §4.2,
+ * §7; ticket 04) — `entities: [source, target]`, exposed here on demand for a
+ * job or the MCP surface. Named for what it calls, same as `sayariOwnership`/
+ * `sayariWatchlist` beside it (network spec §9 renames row 4).
+ *
+ * Job and mcp surfaces only, same restricted set as `sayariOwnership`/
+ * `sayariWatchlist` — this is not a chat tool (ticket 04's own "job and mcp
+ * surfaces" wording).
+ *
+ * `entityIdA`/`entityIdB` rather than `source`/`target`: no existing
+ * two-entity-shaped tool in this file to match, and `source`/`target` already
+ * name specific columns on `graph_path` (`root_entity_id`/`terminal_entity_id`
+ * there, `Path`-rooted-at-a-Profile), which a generic two-entity lookup does
+ * not presuppose. Order is preserved into `entities` — `entityIdA` first, as
+ * the source `ctx.upstream.sayari.shortestPath` sends.
+ */
+export const sayariShortestPath = defineTool({
+  name: 'sayari_shortest_path',
+  description: 'Find the shortest path between two entities in the Sayari graph.',
+  input: z.object({ entityIdA: z.string(), entityIdB: z.string() }),
+  surfaces: ['job', 'mcp'],
+  effect: 'read',
+  spends: ['sayari'],
+  latency: 'slow',
+  handler: async (input, ctx) => {
+    const r = await ctx.upstream.sayari.shortestPath({
+      entities: [input.entityIdA, input.entityIdB],
+    });
+    return { ok: true, data: sourceResult('Sayari shortest path', r.cacheHit, r.data) };
+  },
+});
+
 /** 7–15 s measured, so `slow`, so barred from chat by boot invariant 5. */
 export const sayariNegativeNews = defineTool({
   name: 'sayari_negative_news',
@@ -534,6 +567,7 @@ export const RAW_LOOKUPS = [
   sayariGetRecord,
   sayariOwnership,
   sayariWatchlist,
+  sayariShortestPath,
   sayariNegativeNews,
   sayariTradeSearch,
   gleifJoinLei,
