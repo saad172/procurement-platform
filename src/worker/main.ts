@@ -247,7 +247,7 @@ async function fetchEntityJobHandler(
   });
 
   const fetched = await upstream.sayari.getEntity({ id: job.subjectId });
-  await upsertEntity(database, fetched.data, fetched.upstreamResponseId);
+  await upsertEntity(database, fetched.data, fetched.upstreamResponseId, 'getEntity');
 
   /**
    * Its graph, now that we hold a payload that is actually its own.
