@@ -328,6 +328,26 @@ export const sayariResolve = defineEndpoint({
   z.infer<typeof resolutionSchema>
 >);
 
+/**
+ * `limit`/`offset` are QUERY parameters on every POST search endpoint this
+ * table calls raw, never body fields — `trade.searchSuppliers` and
+ * `search.searchEntity` both destructure `{ limit, offset }` out of the
+ * request before building `_queryParams`, sending everything else as the
+ * JSON body (`node_modules/@sayari/sdk/dist/api/resources/trade/client/
+ * Client.js` ~205-225, `.../search/client/Client.js` ~92-108). The raw
+ * fallback used to put both in `body`, where the server silently ignores
+ * them and answers with its own default window instead — the same class of
+ * bug BUILD-NOTES 31 already named for `getEntity`'s raw path, and the one
+ * that would have swallowed the trade search's own new `offset` (finding
+ * 155's follow-up).
+ */
+export function limitOffsetQuery(params: {
+  limit?: number | undefined;
+  offset?: number | undefined;
+}): { limit: number | undefined; offset: number | undefined } {
+  return { limit: params.limit, offset: params.offset };
+}
+
 export const sayariSearchEntity = defineEndpoint({
   source: 'sayari',
   endpoint: 'search.searchEntity',
@@ -337,9 +357,18 @@ export const sayariSearchEntity = defineEndpoint({
   normalizeParams: (p) => flat(p),
   dispatch: async (params, deps) => {
     const client = getSayariClient(deps.credentials);
+    // `limit`/`offset` split out for the raw fallback's query string; the SDK
+    // call still gets the whole `params` object, because the SDK does this
+    // same split internally.
+    const { limit, offset, ...body } = params;
     return viaSdkWithRawFallback(
       () => client.search.searchEntity(params as never, requestOptions(deps)),
-      () => ({ path: '/v1/search/entity', method: 'POST' as const, body: params }),
+      () => ({
+        path: '/v1/search/entity',
+        method: 'POST' as const,
+        query: limitOffsetQuery({ limit: limit as number | undefined, offset: offset as number | undefined }),
+        body,
+      }),
       deps,
     );
   },
@@ -575,23 +604,48 @@ export const sayariTradeSearchSuppliers = defineEndpoint({
      * endpoint table's whole purpose: a caller says what it wants, not how the
      * API spells it.
      */
-    const request = {
-      limit: params.limit,
+    // `body`, exactly what the raw fallback also sends — `limit`/`offset`
+    // live in the query string on both paths, never in the JSON body.
+    const body = {
       ...(params.q ? { q: params.q } : {}),
       filter: {
         ...(params.hsCodes ? { hsCode: params.hsCodes } : {}),
         ...(params.arrivalCountries ? { arrivalCountry: params.arrivalCountries } : {}),
       },
     };
+    // The SDK call gets the whole request, `limit`/`offset` included — the
+    // SDK does its own identical split before it builds the wire request.
+    // `offset` is optional and carries no default, deliberately: a default
+    // applied before hashing would change `params_hash` for every existing
+    // call that never asks for a page past the first (the same reasoning
+    // `sayariTraversalOwnership`'s widened params carry above).
+    const request = {
+      limit: params.limit,
+      ...(params.offset !== undefined ? { offset: params.offset } : {}),
+      ...body,
+    };
     return viaSdkWithRawFallback(
       () => client.trade.searchSuppliers(request as never, requestOptions(deps)),
-      () => ({ path: '/v1/trade/search/suppliers', method: 'POST' as const, body: request }),
+      () => ({
+        path: '/v1/trade/search/suppliers',
+        method: 'POST' as const,
+        query: limitOffsetQuery(params),
+        body,
+      }),
       deps,
     );
   },
   projection: tradeSearchSchema,
 } as EndpointDef<
-  { hsCodes?: string[]; arrivalCountries?: string[]; q?: string; limit?: number },
+  {
+    hsCodes?: string[];
+    arrivalCountries?: string[];
+    q?: string;
+    limit?: number;
+    /** The SDK's own `SearchSuppliers.offset` — how many rows to skip before
+     * this page (BUILD-NOTES finding 155). */
+    offset?: number;
+  },
   z.infer<typeof tradeSearchSchema>
 >);
 

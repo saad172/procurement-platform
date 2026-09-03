@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { ENDPOINTS, sayariEntitySummary, sayariTraversalUbo } from '@/upstream/endpoints';
+import { ENDPOINTS, sayariEntitySummary, sayariTradeSearchSuppliers, sayariTraversalUbo } from '@/upstream/endpoints';
 import { entitySummarySchema } from '@/upstream/projections/sayari';
 
 /**
@@ -55,6 +55,19 @@ describe('ENDPOINTS (SPEC §16.2)', () => {
     // depth default, so the Deep Traversal caller's own depth sits in
     // params_hash undisturbed.
     expect(sayariTraversalUbo.defaults).toEqual({ limit: 50 });
+  });
+
+  /**
+   * `offset` on `sayariTradeSearchSuppliers` (BUILD-NOTES finding 155
+   * follow-up, ticket 01 item C). No default, deliberately: `defaults`
+   * still reads exactly `{ limit: 100 }`, so `params_hash` for every call
+   * that never asks for a page past the first is unchanged.
+   */
+  it('adds offset to sayariTradeSearchSuppliers with no default', () => {
+    expect(ENDPOINTS.sayariTradeSearchSuppliers).toBe(sayariTradeSearchSuppliers);
+    expect(sayariTradeSearchSuppliers.endpoint).toBe('trade.searchSuppliers');
+    expect(sayariTradeSearchSuppliers.defaults).toEqual({ limit: 100 });
+    expect(sayariTradeSearchSuppliers.defaults).not.toHaveProperty('offset');
   });
 });
 
