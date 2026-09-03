@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { ENDPOINTS, sayariEntitySummary } from '@/upstream/endpoints';
+import { ENDPOINTS, sayariEntitySummary, sayariTraversalUbo } from '@/upstream/endpoints';
 import { entitySummarySchema } from '@/upstream/projections/sayari';
 
 /**
@@ -10,10 +10,9 @@ import { entitySummarySchema } from '@/upstream/projections/sayari';
  * endpoint nothing could ever call through `call()`, undetected because
  * nothing quantified over the table to notice the gap (ticket 01 item C).
  *
- * This file is that quantifier. Item C adds `sayariTraversalUbo` to the
- * table in its own commit and extends the assertions below to name it; this
- * first pass locks down the shape every row must have and confirms the new
- * `entitySummary` row (item A2) is one of them.
+ * This file is that quantifier, and both gaps the audit found are named
+ * below: `sayariTraversalUbo` (item C) and the new `entitySummary` row
+ * (item A2).
  */
 describe('ENDPOINTS (SPEC §16.2)', () => {
   const rows = Object.entries(ENDPOINTS);
@@ -46,6 +45,16 @@ describe('ENDPOINTS (SPEC §16.2)', () => {
     // `entitySummary` counter — see the row's own doc comment.
     expect(sayariEntitySummary.bucket).toBeUndefined();
     expect(sayariEntitySummary.defaults).toEqual({});
+  });
+
+  it('registers sayariTraversalUbo (ticket 01 item C)', () => {
+    expect(ENDPOINTS.sayariTraversalUbo).toBe(sayariTraversalUbo);
+    expect(sayariTraversalUbo.endpoint).toBe('traversal.ubo');
+    expect(sayariTraversalUbo.bucket).toBe('traversal');
+    // Same shape as the automatic family read (`traversal.ownership`): no
+    // depth default, so the Deep Traversal caller's own depth sits in
+    // params_hash undisturbed.
+    expect(sayariTraversalUbo.defaults).toEqual({ limit: 50 });
   });
 });
 

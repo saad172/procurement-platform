@@ -835,6 +835,7 @@ export const ENDPOINTS = {
   sayariResolve,
   sayariSearchEntity,
   sayariTraversalOwnership,
+  sayariTraversalUbo,
   sayariTraversal,
   sayariNegativeNews,
   sayariTradeSearchSuppliers,
