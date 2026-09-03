@@ -339,7 +339,7 @@ export const sentenceSection = pgEnum('sentence_section', [
   // Assessment
   'identity',
   'compliance',
-  'ownership',
+  'network',
   'country',
   'tariff',
   'media',

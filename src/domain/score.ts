@@ -42,7 +42,7 @@ import type {
 
 export const WEIGHTED_CRITERIA: readonly CriterionKey[] = [
   'compliance_risk',
-  'ownership_exposure',
+  'network_exposure',
   'country_resilience',
   'tariff_exposure',
   'proximity',
@@ -66,7 +66,7 @@ export const WEIGHTED_CRITERIA: readonly CriterionKey[] = [
  */
 export const CRITERION_LABELS: Record<CriterionKey, string> = {
   compliance_risk: 'Compliance risk',
-  ownership_exposure: 'Ownership exposure',
+  network_exposure: 'Network exposure',
   country_resilience: 'Country resilience',
   tariff_exposure: 'Tariff exposure',
   proximity: 'Proximity',
@@ -80,7 +80,7 @@ export const CRITERION_LABELS: Record<CriterionKey, string> = {
  */
 export const DEFAULT_WEIGHTS: Required<WeightVector> = {
   compliance_risk: 28,
-  ownership_exposure: 17,
+  network_exposure: 17,
   country_resilience: 17,
   tariff_exposure: 17,
   proximity: 11,
@@ -96,7 +96,7 @@ export const WEIGHT_PRESETS: Record<string, Required<WeightVector>> = {
   balanced: DEFAULT_WEIGHTS,
   'cost-led': {
     compliance_risk: 20,
-    ownership_exposure: 12,
+    network_exposure: 12,
     country_resilience: 12,
     tariff_exposure: 26,
     proximity: 20,
@@ -104,7 +104,7 @@ export const WEIGHT_PRESETS: Record<string, Required<WeightVector>> = {
   },
   'compliance-led': {
     compliance_risk: 40,
-    ownership_exposure: 22,
+    network_exposure: 22,
     country_resilience: 15,
     tariff_exposure: 10,
     proximity: 5,
@@ -239,7 +239,7 @@ export function scoreSupplier(
   const outcomes: Record<CriterionKey, CriterionOutcome> = unresolved
     ? {
         compliance_risk: NOT_RESOLVED(COMPLIANCE_ANCHOR_LINE),
-        ownership_exposure: NOT_RESOLVED(OWNERSHIP_ANCHOR_LINE),
+        network_exposure: NOT_RESOLVED(OWNERSHIP_ANCHOR_LINE),
         country_resilience: NOT_RESOLVED(COUNTRY_ANCHOR_LINE),
         tariff_exposure: NOT_RESOLVED(TARIFF_ANCHOR_LINE),
         proximity: NOT_RESOLVED(PROXIMITY_ANCHOR_LINE),
@@ -247,7 +247,7 @@ export function scoreSupplier(
       }
     : {
         compliance_risk: complianceRisk(input, band),
-        ownership_exposure: ownershipExposure(input),
+        network_exposure: ownershipExposure(input),
         country_resilience: countryResilience(input),
         tariff_exposure: tariffExposure(input),
         proximity: proximity(input),
