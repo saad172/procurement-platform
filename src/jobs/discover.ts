@@ -1,7 +1,12 @@
 import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
-import { DISCOVER_CLASSIFY_TOP_N, DISCOVER_TRADE_LIMIT, JOB_CAPS } from '@/config/constants';
+import {
+  DISCOVER_CLASSIFY_TOP_N,
+  DISCOVER_TRADE_LIMIT,
+  DISCOVER_TRADE_PAGE_CAP,
+  JOB_CAPS,
+} from '@/config/constants';
 import {
   decideLeadRelation,
   prefilterScore,
@@ -142,6 +147,87 @@ type RankedCandidates = {
   tradeTotalCount: number | null;
 };
 
+/**
+ * Follows the trade search's own `next`/`offset` cursor for up to
+ * `DISCOVER_TRADE_PAGE_CAP` pages, in the style of `paginateTraversal`
+ * (`src/upstream/paginate.ts`): the same guard order — stop BEFORE spending a
+ * call, not after — the same rule that the envelope's own echoed
+ * `offset`/`limit` are read rather than the ones sent, and the same guard
+ * against a cursor that does not advance.
+ *
+ * `tradeTotalCount` is read once, off the first page. It is the query's own
+ * total (`size.count`), not a running tally the pages add up to, so every
+ * later page would report the identical number.
+ *
+ * Deduped across pages by entity id — a row this build has already pooled
+ * from an earlier page is not a second candidate, whatever page it turns up
+ * on again.
+ */
+export async function fetchTradeRows(
+  deps: Pick<DiscoverDeps, 'upstream'>,
+  query: { hsCodes: string[]; arrivalCountries: string[] },
+): Promise<{ rows: SayariTradeRow[]; tradeTotalCount: number | null }> {
+  const seen = new Set<string>();
+  const rows: SayariTradeRow[] = [];
+  let tradeTotalCount: number | null = null;
+  let offset = 0;
+
+  for (let page = 0; page < DISCOVER_TRADE_PAGE_CAP; page += 1) {
+    const trade = await deps.upstream.sayari.tradeSearchSuppliers({
+      hsCodes: query.hsCodes,
+      arrivalCountries: query.arrivalCountries,
+      limit: DISCOVER_TRADE_LIMIT,
+      // Absent on the first page, deliberately: `offset` carries no default
+      // (`src/upstream/endpoints.ts`), so sending `0` explicitly would still
+      // add a key to `params` that every page-one call before this ticket
+      // never had, changing `params_hash` for all of them (SPEC §16.6).
+      ...(offset > 0 ? { offset } : {}),
+    });
+
+    // The query's own total, read once — later pages would only repeat it.
+    if (tradeTotalCount === null) tradeTotalCount = trade.data.size?.count ?? null;
+
+    const pageRows = trade.data.data ?? [];
+    for (const row of pageRows) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      rows.push(row);
+    }
+
+    if (pageRows.length === 0 || !hasMoreTradeRows(trade.data)) break;
+
+    const next = nextTradeOffset(trade.data, offset, DISCOVER_TRADE_LIMIT);
+    // A cursor that does not advance is a loop, and a loop against a call
+    // measured at 3.6-13.4 s (SPEC §11.1) is the expensive kind.
+    if (next <= offset) break;
+    offset = next;
+  }
+
+  return { rows, tradeTotalCount };
+}
+
+/** `next` is a boolean on the live API, like `traversal`'s own (`paginate.ts`). */
+function hasMoreTradeRows(envelope: { next?: boolean | string | null | undefined }): boolean {
+  const next = envelope.next;
+  return typeof next === 'string' ? next.length > 0 : next === true;
+}
+
+/**
+ * The server's own echoed `offset` and `limit`, preferred over the ones this
+ * build sent — the request is a request and the envelope is the answer
+ * (`paginate.ts`'s own `nextOffset`, mirrored here for the trade envelope's
+ * shape rather than the traversal one).
+ */
+function nextTradeOffset(
+  envelope: { offset?: number | null | undefined; limit?: number | null | undefined },
+  offset: number,
+  limit: number,
+): number {
+  const from = typeof envelope.offset === 'number' ? envelope.offset : offset;
+  const step = typeof envelope.limit === 'number' && envelope.limit > 0 ? envelope.limit : limit;
+  return from + step;
+}
+
 /** Runs the trade search, then ranks and dedupes it against the roster. */
 async function searchTradeCandidates(
   deps: DiscoverDeps,
@@ -151,23 +237,7 @@ async function searchTradeCandidates(
   const { db } = deps;
   const { hsCodes, arrivalCountries } = query;
 
-  /**
-   * **Page one only.** The envelope's own `next`/`offset` cursor is read below
-   * for `tradeTotalCount`, but the pagination ticket 01 item C asks for —
-   * following that cursor for a second page — cannot be built from this file:
-   * `sayariTradeSearchSuppliers`'s `EndpointDef` (`src/upstream/endpoints.ts`)
-   * declares no `offset` parameter and its `dispatch` never forwards one to
-   * the SDK/raw request, so passing one here would be silently ignored and
-   * every "page" would re-fetch the same first 100 rows. That file is owned by
-   * another unit in this wave; extending the endpoint to accept and forward
-   * `offset` is the follow-up this leaves behind.
-   */
-  const trade = await deps.upstream.sayari.tradeSearchSuppliers({
-    hsCodes,
-    arrivalCountries,
-    limit: DISCOVER_TRADE_LIMIT,
-  });
-  const tradeTotalCount = trade.data.size?.count ?? null;
+  const { rows: tradeRows, tradeTotalCount } = await fetchTradeRows(deps, { hsCodes, arrivalCountries });
 
   // Everything already on this Program's roster, by entity id.
   const onRoster = new Set(
@@ -192,7 +262,7 @@ async function searchTradeCandidates(
 
   const familyOwners = await loadFamilyOwners(db, args.programId);
 
-  const rows = trade.data.data ?? [];
+  const rows = tradeRows;
   let alreadyOnRoster = 0;
   const candidates: {
     entity: SayariEntity;

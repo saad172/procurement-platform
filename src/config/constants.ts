@@ -36,6 +36,21 @@ export const MAX_FREE_RETRIES_PER_ROUND = 2;
 export const DISCOVER_TRADE_LIMIT = 100;
 export const DISCOVER_CLASSIFY_TOP_N = 25;
 
+/**
+ * How many pages `searchTradeCandidates` follows the trade search's own
+ * `next`/`offset` cursor before it stops (ticket 01 item C; BUILD-NOTES
+ * finding 155). A handful, not the whole reachable set: the trade call alone
+ * measures 3.6–13.4 s (SPEC §11.1), so every extra page multiplies a
+ * Discover Job's wall-clock cost directly, and `DISCOVER_CLASSIFY_TOP_N`
+ * still only classifies the top 25 by score however many rows were pooled
+ * first — more pages widen the pool the prefilter reorders, not the number
+ * of model calls it costs. Four pages at `DISCOVER_TRADE_LIMIT` pool up to
+ * 400 rows, which is enough for a real supplier bunched behind a wall of
+ * freight forwarders (SPEC §11.1's measured 3,385-counterparty line) to
+ * surface without turning one Discover run into dozens of slow calls.
+ */
+export const DISCOVER_TRADE_PAGE_CAP = 4;
+
 /** One call per accepted Profile; truncation is recorded (SPEC §8.2). */
 export const FAMILY_TRAVERSAL_LIMIT = 50;
 
