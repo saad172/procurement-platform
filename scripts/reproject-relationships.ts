@@ -95,7 +95,7 @@ async function main(): Promise<void> {
       result.unclassified.forEach((type) => unclassified.add(type));
       parsed += result.edges.length;
       if (dryRun) continue;
-      written += await storeRelationships(db, result.edges);
+      written += (await storeRelationships(db, result.edges)).written;
     }
   }
 
