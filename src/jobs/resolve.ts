@@ -307,6 +307,28 @@ async function gatherPrepassCandidates(
   const { db, upstream } = deps;
   const candidates: CandidateFacts[] = [];
   for (const entityId of args.prepassEntityIds) {
+    /**
+     * **Still `getEntity`, not `entitySummary`** (ticket 01 item D). The swap
+     * is verified safe on data-shape grounds — checked field by field against
+     * 01a's `entitySummarySchemaInner` and the SDK's own
+     * `EntitySummaryResponse`/`EntityDetails` types
+     * (`node_modules/@sayari/sdk/dist/api/resources/entity/types/`,
+     * `.../sharedTypes/types/EntityDetails.d.ts`): the parsed address blocks
+     * `toCandidateFacts` reads (`attributes.address.data[].properties.city/
+     * postcode/country/value`), name aliases (`attributes.name`), business
+     * purposes, `company_type`, `closed`, `latest_status`, the LEI (off
+     * `identifiers`) and `relationship_count` all survive. Only
+     * `relationships` itself does not, which is why 01a's own comment on
+     * `entitySummarySchemaInner` does not declare that key.
+     *
+     * It compiles: `SayariEntitySummary` typechecks everywhere `toCandidateFacts`
+     * and `upsertEntity` need a `SayariEntity`. It was tried and reverted
+     * because trying it breaks every recorded `resolve` fixture's replay —
+     * `rules-r0`, `agree-r1`, `sanctioned` and `not-found` all hold
+     * `entity.getEntity` bodies for the pre-pass Candidates, not
+     * `entity.entitySummary` ones, and there is no credential in this
+     * worktree to record the missing calls. See the PR's Re-record list.
+     */
     const fetched = await upstream.sayari.getEntity({ id: entityId });
     const facts = toCandidateFacts(fetched.data);
     if (facts.lei) {
