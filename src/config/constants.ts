@@ -55,6 +55,15 @@ export const DISCOVER_TRADE_PAGE_CAP = 4;
 export const FAMILY_TRAVERSAL_LIMIT = 50;
 
 /**
+ * The watchlist read, the second automatic call per accepted Profile (network
+ * spec §4.1): `maxDepth: 4`, `psa: true`, `limit: 50`, the endpoint's default
+ * 31 relationship types. One page, like the family read — truncation is
+ * recorded rather than paged through.
+ */
+export const WATCHLIST_TRAVERSAL_LIMIT = 50;
+export const WATCHLIST_TRAVERSAL_MAX_DEPTH = 4;
+
+/**
  * How many pre-pass candidates rung R1 carries into the ladder.
  *
  * The pre-pass returns a ranked list, and every candidate past the cut costs a

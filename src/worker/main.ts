@@ -10,7 +10,7 @@ import { storeRelationships } from '@/jobs/enrich';
 import { parseRelationships } from '@/domain/parse-relationships';
 import { upsertEntity } from '@/jobs/resolve';
 import { runResolveJob } from '@/jobs/resolve-job';
-import { runDeepTraversal } from '@/jobs/traverse';
+import { readDeepTraversalParams, runDeepTraversal } from '@/jobs/traverse';
 import { checkRunBudget, enqueueJob } from '@/jobs/runs';
 import { assessSupplier } from '@/jobs/assess';
 import { recommendCategory } from '@/jobs/recommend';
@@ -256,7 +256,7 @@ async function fetchEntityJobHandler(
    * roster would walk the whole Sayari graph.
    */
   const { edges } = parseRelationships(fetched.data, job.subjectId);
-  const written = await storeRelationships(database, edges, job.id);
+  const { written } = await storeRelationships(database, edges, job.id);
 
   console.log(`  fetch_entity ${fetched.data.label ?? job.subjectId}: ${written} edge(s)`);
   return { state: 'done' };
@@ -293,7 +293,10 @@ async function traverseJobHandler(job: JobRow, database: Database, env: Env): Pr
 
   const walk = await runDeepTraversal(
     { db: database, upstream, jobId: job.id },
-    { entityId: job.subjectId },
+    // `job.params` carries the widened, optional inputs `enqueue_deep_traversal`
+    // exposes (network spec §4.4); absent or malformed reads back as `{}`,
+    // which is the unfiltered walk this Job has always run.
+    { entityId: job.subjectId, params: readDeepTraversalParams(job.params) },
   );
 
   console.log(

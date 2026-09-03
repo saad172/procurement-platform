@@ -94,7 +94,16 @@ export async function openRun(
   return row!.id;
 }
 
-/** Enqueues one Job with the caps its kind carries. */
+/**
+ * Enqueues one Job with the caps its kind carries.
+ *
+ * `params` is the generic jsonb bag `job.params` carries (`src/db/schema/
+ * runs.ts`), first needed by `enqueue_deep_traversal`'s optional widened
+ * inputs (network spec §4.4) and left loosely typed here rather than scoped
+ * to one Job kind: it is a foundational, once-only decision, and later kinds
+ * are expected to reuse this same column. Omitted (or an empty object) writes
+ * `null`, so every existing caller's Job is unchanged.
+ */
 export async function enqueueJob(
   db: Database,
   args: {
@@ -102,9 +111,11 @@ export async function enqueueJob(
     kind: JobKind;
     subjectType: 'supplier' | 'category' | 'entity' | 'program';
     subjectId: string;
+    params?: Record<string, unknown> | undefined;
   },
 ): Promise<string> {
   const caps = JOB_CAPS[args.kind];
+  const params = args.params && Object.keys(args.params).length > 0 ? args.params : null;
   const [row] = await db
     .insert(t.job)
     .values({
@@ -112,6 +123,7 @@ export async function enqueueJob(
       kind: args.kind,
       subjectType: args.subjectType,
       subjectId: args.subjectId,
+      params,
       state: 'queued',
       toolCallCap: caps.toolCalls,
       tokenCap: caps.tokens,

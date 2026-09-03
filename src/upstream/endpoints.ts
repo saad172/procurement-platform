@@ -583,6 +583,47 @@ export const sayariTraversalUbo = defineEndpoint({
 } as EndpointDef<TraversalWalkParams, z.infer<typeof traversalSchema>>);
 
 /**
+ * Paths to Listed entities, in either direction (network spec §4.1).
+ *
+ * `watchlist` is `/v1/watchlist/{id}` in the SDK and takes the same
+ * parameter set as `ownership`/`ubo` — `Watchlist.d.ts`'s fields are the same
+ * superset `TraversalWalkParams` already names (verified against
+ * `node_modules/@sayari/sdk/api/resources/traversal/client/requests/
+ * Watchlist.d.ts`) — so this shares `downstreamQuery` and the same lenient
+ * `traversalSchema` projection with the other two traversal rows rather than
+ * inventing a fourth shape.
+ *
+ * The automatic read (network spec §4.1) sends `maxDepth: 4`, `psa: true`,
+ * `limit: 50` and no `relationships` at all, so it walks the endpoint's own
+ * default 31 relationship types spanning ownership, control and trade — unlike
+ * the Corporate family read, which narrows `ownership` to five ownership types
+ * explicitly. A terminal here carries its `risk` block inline, exactly like an
+ * ownership/ubo terminal, which is what lets a Listed entity's risk be read off
+ * the stored Path without a second call.
+ */
+export const sayariTraversalWatchlist = defineEndpoint({
+  source: 'sayari',
+  endpoint: 'traversal.watchlist',
+  bucket: 'traversal',
+  timeoutMs: SAYARI_SLOW_MS,
+  defaults: { limit: 50 },
+  normalizeParams: (p) => flatSorted(p),
+  dispatch: async (params, deps) => {
+    const { id, ...rest } = params;
+    const client = getSayariClient(deps.credentials);
+    return viaSdkWithRawFallback(
+      () => client.traversal.watchlist(String(id), rest as never, requestOptions(deps)),
+      () => ({
+        path: `/v1/watchlist/${encodeURIComponent(String(id))}`,
+        query: downstreamQuery(rest),
+      }),
+      deps,
+    );
+  },
+  projection: traversalSchema,
+} as EndpointDef<TraversalWalkParams, z.infer<typeof traversalSchema>>);
+
+/**
  * The general traversal, used for Deep Traversal and for the type-filtered
  * `maxDepth: 1` read that recovers owner edges when the entity payload's
  * relationship window is swamped by trade edges (SPEC §16.6).
@@ -916,6 +957,7 @@ export const ENDPOINTS = {
   sayariSearchEntity,
   sayariTraversalOwnership,
   sayariTraversalUbo,
+  sayariTraversalWatchlist,
   sayariTraversal,
   sayariNegativeNews,
   sayariTradeSearchSuppliers,
