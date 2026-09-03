@@ -15,6 +15,7 @@ import {
   enrichLei,
   enrichNegativeNews,
   enrichTariff,
+  enrichWatchlist,
   loadPlants,
   readOwnerEdges,
   writeCriterionValue,
@@ -224,6 +225,12 @@ async function fanOutEnrichments(
   const family = await enrichFamily(ctx, { entityId: match.entityId });
   written.push(family.enrichmentId);
   returned.push('sayari_ownership_family');
+
+  // ── 2b. Watchlist Paths — same cadence as the family read, spec §4.1 ─────
+  // Not in EXPECTED_ENRICHMENTS/checklist yet: Network exposure scoring is
+  // ticket 03's job. This just makes sure the automatic read actually runs.
+  const watchlist = await enrichWatchlist(ctx, { entityId: match.entityId });
+  written.push(watchlist.enrichmentId);
 
   // ── 3. Country indicators, shared across every Supplier in the country ───
   // Fetched for the country the Match settled on (SPEC §9.4), so the World Bank
