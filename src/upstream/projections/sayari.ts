@@ -287,6 +287,93 @@ const recordSchemaInner = z
   .loose();
 
 /**
+ * One entry of `attributes.shares` on a traversal-path relationship record —
+ * measured off `tests/fixtures/traverse/yazaki.json` and `tests/fixtures/
+ * enrich/yazaki.json`: an **open bag**, like `attributeProperties` above.
+ * `currency`/`percentage`/`monetary_value`/`num_shares`/`type`/`from_date`/
+ * `to_date`/`date` are the named fields ticket 01 item C's `ownersOf` and the
+ * Entity page read; the rest — `Denominator`, `Numerator`, `"Share Type"`,
+ * `"Share Value"`, `"Summary Text"`, `liSubConAm` among them, all measured on
+ * the same two fixtures — are source-specific and kept only because
+ * `.loose()` keeps them, never read by name.
+ */
+const traversalShareSchema = z
+  .object({
+    currency: z.string().nullish(),
+    percentage: z.number().nullish(),
+    monetary_value: z.number().nullish(),
+    num_shares: z.number().nullish(),
+    type: z.string().nullish(),
+    from_date: z.string().nullish(),
+    to_date: z.string().nullish(),
+    date: z.string().nullish(),
+  })
+  .partial()
+  .loose();
+
+/**
+ * One edge record inside a `path[].relationships[type].values[]` entry — one
+ * per Sayari `entity_relationship` record between the same two path nodes.
+ * **`record` is a single id, always** — measured 2,578/2,578 values across
+ * both fixtures, never an array — unlike `attributeValue.record` above, which
+ * is Sayari's *other*, array-valued sense of the word, for an attribute
+ * entry rather than a relationship edge.
+ */
+const traversalRelationshipValueSchema = z
+  .object({
+    former: z.boolean().nullish(),
+    record: z.string().nullish(),
+    from_date: z.string().nullish(),
+    to_date: z.string().nullish(),
+    acquisition_date: z.string().nullish(),
+    publication_date: z.string().nullish(),
+    relationship_status: z.string().nullish(),
+    attributes: z
+      .object({ shares: z.array(traversalShareSchema).nullish() })
+      .partial()
+      .loose()
+      .nullish(),
+  })
+  .loose();
+
+/**
+ * One `path[].relationships` value: everything Sayari knows about every edge
+ * of **one relationship type** between the same two path nodes — a rollup
+ * (`former`, `start_date`, `end_date`, `relationship_status`, the
+ * `most_recent_*` fields) alongside `values`, one entry per record. The outer
+ * object this hangs off is keyed by relationship type, which is why the type
+ * name is not a field here — see `traversalPathRelationshipsSchema` below.
+ */
+const traversalRelationshipGroupSchema = z
+  .object({
+    former: z.boolean().nullish(),
+    start_date: z.string().nullish(),
+    end_date: z.string().nullish(),
+    last_observed: z.string().nullish(),
+    relationship_status: z.string().nullish(),
+    most_recent_percentage: z.number().nullish(),
+    most_recent_monetary_value: z.number().nullish(),
+    most_recent_num_shares: z.number().nullish(),
+    values: z.array(traversalRelationshipValueSchema).nullish(),
+  })
+  .loose();
+
+/**
+ * `path[].relationships` itself (SPEC §4; ticket 01 item E). **Keyed by
+ * relationship type, not an array** — measured on `tests/fixtures/traverse/
+ * yazaki.json` and `tests/fixtures/enrich/yazaki.json`, where the same
+ * per-type shape appears under `shareholder_of`, `has_shareholder`,
+ * `has_subsidiary`, `has_branch`, `beneficial_owner_of`, `linked_to` and
+ * `possibly_same_as`. Named and lenient rather than `z.unknown()`, so ticket
+ * 02 can read the relationship type (the key), `attributes.shares`,
+ * `start_date`/`end_date`, `former` and every edge's `record` id off a
+ * stored Path without a second trip to the raw body.
+ */
+const traversalPathRelationshipsSchema = z
+  .record(z.string(), traversalRelationshipGroupSchema)
+  .nullish();
+
+/**
  * A traversal path. The **terminal entity carries its full `risk` block
  * inline**, which is the measurement that made the Corporate family cost one
  * call rather than 25 (SPEC §8.1).
@@ -299,7 +386,7 @@ const traversalPathSchemaInner = z
           .object({
             field: z.string().nullish(),
             entity: z.union([z.string(), entitySchemaInner.loose()]).nullish(),
-            relationships: z.unknown().nullish(),
+            relationships: traversalPathRelationshipsSchema,
           })
           .loose(),
       )
