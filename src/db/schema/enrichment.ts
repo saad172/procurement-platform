@@ -1,6 +1,7 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   doublePrecision,
   index,
   integer,
@@ -17,6 +18,8 @@ import {
   enrichmentSource,
   enrichmentSubjectKind,
   geocodePrecision,
+  graphPathDirection,
+  graphPathKind,
   tariffLineMatch,
 } from './enums';
 import { upstreamResponse } from './upstream';
@@ -87,8 +90,9 @@ export const enrichment = pgTable(
  * **Every one of them is append-only per generation**, and that is deliberate:
  * a value row's `enrichment_id` is what a Citation resolves through, so a
  * re-fetch that overwrote the row in place would move a number underneath the
- * sentence that argued from it. `family_member` is the one exception, and it
- * is an exception for a stated reason (its own comment below).
+ * sentence that argued from it. `graph_path` (formerly `family_member`) is the
+ * one exception, and it is an exception for a stated reason (its own comment
+ * below).
  *
  * The rule that makes append-only safe is on the **read**: a reader takes the
  * latest generation and nothing else, in an explicit total order. Reading
@@ -242,63 +246,144 @@ export const geocode = pgTable('geocode', {
 });
 
 /**
- * One company in a Supplier's Corporate family (SPEC §8).
+ * One route from a Profile to one entity — an ordered list of cited edges
+ * (CONTEXT.md, *Path*; network spec §6, ticket 02).
  *
- * The family is **downward-only and psa-routed**: `traversal.ownership` reaches
- * members through one or two `possibly_same_as` hops to *other* records of the
- * same company, because Sayari splits a company across records and the
- * ownership hangs off the others. One call at `limit: 50`, so it is always
- * *n of m explored* and never a complete list.
+ * `graph_path` replaces `family_member`: a Family member, the terminal of a
+ * watchlist Path, a shortest path between two Picks, and a supply-chain
+ * upstream tier are all Paths from a root to a terminal — only the first used
+ * to get its own table. One shape now holds all five `kind`s,
+ * and `SupplierFamilyWidget`, `computeFamilyExposure`, `get_supplier_family`
+ * and the Supplier page's Corporate family section read Paths of kind
+ * `family` rather than rows of a family-only table.
  *
- * A family member's risk **badges and never deducts** (SPEC §8.2). Two seeded
- * shared-parent pairs mean a deduction would move two Suppliers' ranks off one
- * shared fact. Ranks do not move.
+ * A Path's own risk **badges and never deducts on its own kind's terms**
+ * (Family exposure, CONTEXT.md) — Network exposure (ticket 03) folds that in
+ * for ownership/control kinds; trade-derived kinds are shown and never
+ * deducted (network spec §5).
  */
-export const familyMember = pgTable(
-  'family_member',
+export const graphPath = pgTable(
+  'graph_path',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    enrichmentId: uuid('enrichment_id')
-      .notNull()
-      .references(() => enrichment.id, { onDelete: 'cascade' }),
-    /** The Profile (or Twin) the family hangs off. */
+    /** The Profile (or Twin) the read started from. */
     rootEntityId: text('root_entity_id')
       .notNull()
       .references(() => entity.id),
-    memberEntityId: text('member_entity_id')
+    /** The entity this Path ends at. */
+    terminalEntityId: text('terminal_entity_id')
       .notNull()
       .references(() => entity.id),
-    /** The ownership path, including the `possibly_same_as` hops it ran through. */
-    path: jsonb('path'),
+    kind: graphPathKind('kind').notNull(),
+    direction: graphPathDirection('direction').notNull(),
+    /**
+     * Ownership hops, `possibly_same_as` steps excluded — one rule
+     * (`ownershipHopDepth`, `src/jobs/family-members.ts`) for every kind, so
+     * the automatic read and Deep Traversal stop disagreeing about it.
+     */
     hopDepth: integer('hop_depth').notNull(),
+    /**
+     * The ordered `entity_relationship.id`s this Path cites, one per hop.
+     *
+     * A jsonb array of uuid strings, not a Postgres array column — and,
+     * despite the resemblance, **not** an instance of an existing convention:
+     * `entity.sourceCount` and `entity.relationshipCount` are jsonb too, but
+     * they are objects keyed by source hash or relation type, not arrays of
+     * ids. This is the first jsonb-array-of-ids column in this schema.
+     *
+     * Empty for a Path with no citable edge yet. In particular, every row
+     * migrated from `family_member` (migration 0013) holds `edge_ids: []`
+     * alongside a nonzero `hop_depth` — `family_member` never recorded which
+     * `entity_relationship` rows its path ran through, only Sayari's raw
+     * traversal JSON, so there is nothing to backfill. That combination — a
+     * real hop depth with no edges — is the documented legacy-migration gap,
+     * not a write bug; the next automatic enrich pass replaces the row with
+     * real `edge_ids`.
+     */
+    edgeIds: jsonb('edge_ids').$type<string[]>().notNull().default([]),
+    /** How much of the reachable set this read actually walked. */
+    exploredCount: integer('explored_count'),
+    /**
+     * True when the read's own envelope said its result was incomplete —
+     * read off the envelope, never inferred from how many Paths came back:
+     * zero Paths from an exhaustive read and zero Paths from a truncated one
+     * are different facts, and only the envelope knows which happened.
+     */
+    partialResults: boolean('partial_results').notNull().default(false),
+    /**
+     * True when the window (`limit`, hop cap, node cap) was smaller than the
+     * reachable set. "17 of 2 275 explored" is the honest phrasing, and an
+     * absent Path proves nothing.
+     */
+    truncated: boolean('truncated').notNull().default(false),
+    enrichmentId: uuid('enrichment_id')
+      .notNull()
+      .references(() => enrichment.id, { onDelete: 'cascade' }),
     /** Set when a Deep Traversal, rather than the automatic read, found it. */
     discoveredByJob: uuid('discovered_by_job'),
     /**
-     * True when the 50-node window was smaller than the reachable set. "17 of
-     * 2 275 explored" is the honest phrasing, and an absent member proves nothing.
+     * True once this (root, terminal, kind) row has been confirmed by the
+     * filtered, risk/sanctions/PEP-focused page of an automatic read (network
+     * spec §4.1) rather than only by the unfiltered first page.
+     *
+     * **This is a flag on the one row the unique key below identifies, never
+     * a second row.** The key is (root, terminal, kind) — it does not include
+     * `filtered` — so a terminal reached by both the unfiltered and the
+     * filtered page upserts into the same row, once. The write side (ticket
+     * 02b) must therefore make `filtered` **sticky-true on conflict**:
+     * `filtered = filtered OR excluded.filtered` (equivalently, only ever set
+     * it `true`, never back to `false`) — so a Path the filtered read has ever
+     * confirmed stays `filtered: true` even when a later unfiltered-only read
+     * touches the same row.
      */
-    truncated: boolean('truncated').notNull().default(false),
-    exploredCount: integer('explored_count'),
-    reachableCount: integer('reachable_count'),
+    filtered: boolean('filtered').notNull().default(false),
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    index('family_member_root_idx').on(t.rootEntityId),
     /**
-     * **One row per (root, member).**
-     *
-     * The table had only its `id` primary key, so the `onConflictDoNothing` on
-     * the insert had nothing to conflict on — a fresh uuid never collides — and
-     * a second enrichment of the same Profile simply inserted the family again.
-     * Bosch and Magna each held **100 rows for 50 distinct members**, which the
-     * supplier page then counted, so the badge read *"28 of 100 explored"* where
-     * the truth was 14 of 50. Both halves of that were doubled.
-     *
-     * A family member is a fact about the ownership graph, not about the read
-     * that found it, so the row identity is the pair — and the constraint is what
-     * makes re-enrichment idempotent rather than merely repeated.
+     * Composite rather than a standalone `(root_entity_id)` index: every
+     * real root-only query site (`supplier-page.ts`, `catalog/reads.ts`,
+     * `discover.ts`, `publish.ts`) filters by root alone today, and every
+     * documented future caller narrows by `kind` too once a root's rows mix
+     * all five — so `(root, kind)` serves both, as a leftmost prefix, and a
+     * separate root-only index would only duplicate it.
      */
-    uniqueIndex('family_member_root_member_key').on(t.rootEntityId, t.memberEntityId),
+    index('graph_path_root_kind_idx').on(t.rootEntityId, t.kind),
+    index('graph_path_terminal_idx').on(t.terminalEntityId),
+    /**
+     * **One row per (root, terminal, kind).**
+     *
+     * Generalizes `family_member_root_member_key`: a family member is a fact
+     * about the ownership graph rather than about the read that found it, and
+     * the same is true of every other Path kind. `family_member`'s own
+     * comment names the failure this prevents — Bosch and Magna each held 100
+     * rows for 50 distinct members before that constraint existed, doubling
+     * both the count and the "n of m explored" badge. `kind` joins the key
+     * here because the same (root, terminal) pair can legitimately carry two
+     * Paths of different kinds — a family Path and, separately, a shortest
+     * path found for the recommend Job's award/Pick pairwise check — and
+     * those are not duplicates of each other.
+     */
+    uniqueIndex('graph_path_root_terminal_kind_key').on(
+      t.rootEntityId,
+      t.terminalEntityId,
+      t.kind,
+    ),
+    /**
+     * `kind` and `direction` are not independent: `family` is always `down`
+     * (the Corporate family read never walks up) and `supply_chain` is always
+     * `upstream` (the trade Job's tiers, network spec §4.3) — facts the
+     * `graphPathKind`/`graphPathDirection` doc comments already state, but
+     * that nothing enforced until now. `watchlist` and `deep_traversal` are
+     * left unconstrained: a watchlist Path is `either` by the read's own
+     * design, and a Deep Traversal can walk either way depending on what was
+     * asked for.
+     */
+    check(
+      'graph_path_kind_direction_invariant',
+      sql`(${t.kind} <> 'family' OR ${t.direction} = 'down')
+        AND (${t.kind} <> 'supply_chain' OR ${t.direction} = 'upstream')`,
+    ),
   ],
 );
 
@@ -312,5 +397,5 @@ export const enrichmentRelations = relations(enrichment, ({ one, many }) => ({
   leiRecords: many(leiRecord),
   newsItems: many(newsItem),
   geocodes: many(geocode),
-  familyMembers: many(familyMember),
+  graphPaths: many(graphPath),
 }));

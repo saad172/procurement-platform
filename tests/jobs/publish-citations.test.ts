@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { citationKey, resolveCitations } from '@/jobs/publish';
 import { candidatesFrom, checkNumberFidelity } from '@/domain/validation/number-fidelity';
@@ -113,23 +113,26 @@ describe('the family walk’s coverage is citable', () => {
     const { supplierId } = await buildAssessableSupplier(db, 'Yazaki');
 
     const match = await db.query.match.findFirst({ where: eq(t.match.supplierId, supplierId) });
-    const [member] = await db
+    const members = await db
       .select()
-      .from(t.familyMember)
-      .where(eq(t.familyMember.rootEntityId, match!.entityId!))
-      .limit(1);
-    expect(member, 'the Yazaki fixture holds a corporate family').toBeDefined();
+      .from(t.graphPath)
+      .where(and(eq(t.graphPath.rootEntityId, match!.entityId!), eq(t.graphPath.kind, 'family')));
+    expect(members.length, 'the Yazaki fixture holds a corporate family').toBeGreaterThan(0);
 
-    const citation = { enrichmentId: member!.enrichmentId };
+    const citation = { enrichmentId: members[0]!.enrichmentId };
     const rows = await resolveCitations(db, [citation as never]);
     const row = rows.get(citationKey(citation as never))!;
-    expect(row.explored).toBe(member!.exploredCount);
-    expect(row.truncated).toBe(member!.truncated);
+    // `explored` is now a row count (`graph_path`'s unique `(root, terminal,
+    // kind)` index makes that safe — `derive-supplier-page.ts`'s
+    // `widestCoverage`), and `reachable`/`truncated` are the envelope's own
+    // figures off `graph_path.explored_count`/`truncated`.
+    expect(row.explored).toBe(members.length);
+    expect(row.truncated).toBe(members.some((m) => m.truncated));
 
     // And the check reads it: the count the tool printed now matches a
     // candidate on the row the sentence points at.
     const failures = checkNumberFidelity(
-      `The downward family reached ${member!.exploredCount} members.`,
+      `The downward family reached ${members.length} members.`,
       candidatesFrom({}, [row]),
     );
     expect(failures).toEqual([]);

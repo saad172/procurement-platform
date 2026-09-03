@@ -551,6 +551,90 @@ export function CorporateFamily({ data, programId }: { data: Data; programId: st
     </>
   );
 }
+/**
+ * The citable chain beneath the Corporate family badge (network spec §6, §8):
+ * every Path this family holds, each edge with its type, shares, date and a
+ * link to the record asserting it.
+ *
+ * **This is the fallback without scripts** — the diagram (ticket 05) is a
+ * client-rendered `cytoscape` component fed the same stored Paths as JSON;
+ * this section is plain server-rendered rows, collapsed beneath where that
+ * diagram will sit, and it is what stays true with JavaScript off. It is also
+ * what a citation resolves through: a Family member is cited to the record
+ * asserting its own edge (ticket 02 "Done when"), and this table is that
+ * record made legible rather than only machine-resolvable.
+ */
+export function FamilyChainRows({ data, programId }: { data: Data; programId: string }) {
+  const { familyChain } = data;
+  if (familyChain.length === 0) return null;
+
+  return (
+    <details className="card scroll-x" style={{ marginTop: '0.6rem' }}>
+      <summary>Chain rows — every cited edge behind the family above</summary>
+      <table>
+        <thead>
+          <tr>
+            <th>Member</th>
+            <th>Edge type</th>
+            <th className="num">Share</th>
+            <th>From</th>
+            <th>To</th>
+            <th>Record</th>
+          </tr>
+        </thead>
+        <tbody>
+          {familyChain.map((path) =>
+            path.edges.length === 0 ? (
+              <tr key={path.terminalEntityId}>
+                <td>
+                  <Link href={`/program/${programId}/entity/${path.terminalEntityId}` as never}>
+                    {path.label}
+                  </Link>
+                </td>
+                {/* A migrated `family_member` row (migration 0013) or one whose
+                    edge upsert has not landed yet — a stated gap, not a guess. */}
+                <td className="note" colSpan={5}>
+                  no citable edge yet
+                </td>
+              </tr>
+            ) : (
+              path.edges.map((edge, i) => (
+                <tr key={edge.id}>
+                  <td>
+                    {i === 0 ? (
+                      <Link href={`/program/${programId}/entity/${path.terminalEntityId}` as never}>
+                        {path.label}
+                      </Link>
+                    ) : null}
+                  </td>
+                  <td className="note">{edge.relationshipType.replace(/_/g, ' ')}</td>
+                  <td className="num">
+                    {edge.sharePercentage != null ? `${edge.sharePercentage}%` : '—'}
+                  </td>
+                  <td className="note">{edge.startDate ?? '—'}</td>
+                  <td className="note">{edge.endDate ?? '—'}</td>
+                  <td>
+                    {edge.sourceRecordId ? (
+                      <Link href={recordHref(programId, edge.sourceRecordId) as never}>record</Link>
+                    ) : (
+                      <span className="note">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))
+            ),
+          )}
+        </tbody>
+      </table>
+    </details>
+  );
+}
+
+/** The record route takes a catch-all segment, because a record id is itself a `/`-joined path (`record-page.ts`'s own comment). */
+function recordHref(programId: string, recordId: string): string {
+  return `/program/${programId}/record/${recordId.split('/').map(encodeURIComponent).join('/')}`;
+}
+
 export function Enrichments({ data }: { data: Data }) {
   const { enrichments } = data;
   return (

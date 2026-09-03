@@ -4,27 +4,40 @@ import {
   DEEP_TRAVERSAL_PAGE_SIZE,
   JOB_CAPS,
 } from '@/config/constants';
+import {
+  readDeepTraversalParams,
+  type DeepTraversalParams,
+} from '@/domain/deep-traversal-params';
 import { paginateTraversal, type TraversalStop, type TraversalWalk } from '@/upstream';
 import type { UpstreamResult } from '@/upstream';
-import type { SayariTraversal, SayariTraversalPath } from '@/upstream/projections/sayari';
-import { recordEnrichment, type EnrichContext } from './enrich';
+import type { TraversalWalkParams } from '@/upstream/endpoints';
+import type { SayariEntity, SayariTraversal, SayariTraversalPath } from '@/upstream/projections/sayari';
+import { recordEnrichment, storeHopEdges, type EnrichContext } from './enrich';
 import {
   ownershipHopDepth,
   summarisePath,
   terminalEntityOf,
-  writeFamilyMembers,
-  type FamilyMemberWrite,
+  writeGraphPaths,
+  type GraphPathWrite,
+  type PathHop,
 } from './family-members';
 
 /**
- * The **Deep Traversal** Job (SPEC §5.2, §8.5).
+ * Re-exported so a caller of this file (`worker/main.ts`) does not also need
+ * to know the schema lives in `src/domain/` — see that module's own doc
+ * comment for why it is not declared here, beside `TraversalWalkParams`.
+ */
+export { readDeepTraversalParams, type DeepTraversalParams };
+
+/**
+ * The **Deep Traversal** Job (SPEC §5.2, §8.5; network spec §4.4).
  *
  * CONTEXT defines it as *"a Job a person or the chat triggers on demand that
  * extends a Profile beyond one hop of ownership, within a hop and node cap …
  * though a Deep Traversal that reaches a subsidiary records it as a Family
  * member like any other."* Both halves of that sentence are decisions this file
- * implements: it writes into `family_member` like the automatic read, and it is
- * bounded by numbers rather than by judgement.
+ * implements: its downward finds write Paths of `kind: 'family'`, exactly like
+ * the automatic read, and it is bounded by numbers rather than by judgement.
  *
  * ## What it does that the automatic family read does not
  *
@@ -40,7 +53,9 @@ import {
  *    rather than to the API's first page.
  * 2. **It also walks upward**, through `traversal.ubo`. The Corporate family is
  *    downward-only by measurement (SPEC §8.1), and CONTEXT says so; the owners
- *    above a Profile are exactly what an on-demand expansion is asked for.
+ *    above a Profile are exactly what an on-demand expansion is asked for. An
+ *    upward find is the one case that is genuinely `kind: 'deep_traversal'`
+ *    rather than `kind: 'family'` — see the write loop in `runDeepTraversal` below.
  *
  * It is **not deeper per path**, and it must never be shallower: the walk sends
  * `max_depth` explicitly at `DEEP_TRAVERSAL_MAX_HOPS`, which tracks the server
@@ -49,6 +64,18 @@ import {
  * lose members a page view gets for free. So depth is the one axis on which
  * these two reads agree, and the cursor, the node cap and the upward direction
  * are the whole of the difference.
+ *
+ * ## Widened, optional inputs (network spec §4.4)
+ *
+ * `enqueue_deep_traversal` exposes `relationships`/`riskCategories`/
+ * `countries`/`minShares`/`sanctioned`/`pep`/`excludeClosedEntities` as
+ * optional inputs, stored on `job.params` at enqueue time and read back here by
+ * `readDeepTraversalParams` — so a person can ask for *sanctioned owners within
+ * three hops* rather than everything. **Defaults are unchanged when they are
+ * absent**: `params` is spread ahead of the walk's own explicit `id`/`limit`/
+ * `offset`/`minDepth`/`maxDepth`, which always win, so an omitted filter is
+ * exactly the request this file sent before this ticket and every existing
+ * cache key and fixture holds.
  *
  * ## Deterministic
  *
@@ -60,7 +87,7 @@ import {
 
 export type DeepTraversalResult = {
   rootEntityId: string;
-  /** Distinct Family members this walk holds when it stopped. */
+  /** Distinct members this walk holds when it stopped. */
   explored: number;
   /** How many the API says exist, or null when it did not finish looking. */
   reachable: number | null;
@@ -83,16 +110,25 @@ export type DeepTraversalResult = {
 type Direction = 'downward' | 'upward';
 type Page = UpstreamResult<SayariTraversal>;
 
+/** One page's members, resolved into Paths ready to write. */
+export type MergedPathMember = {
+  entity: SayariEntity;
+  hopDepth: number;
+  /** Every hop, not yet resolved to `entity_relationship` ids — see `mergeMembers`. */
+  hops: PathHop[];
+};
+
 /** Everything the two directions share: one node cap, one call budget, one set. */
 type WalkState = {
   rootEntityId: string;
-  found: Map<string, FamilyMemberWrite>;
+  params: DeepTraversalParams | undefined;
+  found: Map<string, MergedPathMember>;
   /**
    * Members grouped by the Enrichment of the page that found them, carrying
    * that page's own direction — needed at write time (below) so each page's
-   * members are written with the endpoint that actually found them, `B1`.
+   * members are written with the endpoint and `kind` that actually found them.
    */
-  byEnrichment: { enrichmentId: string; members: FamilyMemberWrite[]; direction: Direction }[];
+  byEnrichment: { enrichmentId: string; members: GraphPathWrite[]; direction: Direction }[];
   enrichmentIds: string[];
   /** The largest `explored_count` any page reported: the *m* in "n of m". */
   exploredCount: number | null;
@@ -103,10 +139,11 @@ type WalkState = {
 
 export async function runDeepTraversal(
   ctx: EnrichContext,
-  args: { entityId: string },
+  args: { entityId: string; params?: DeepTraversalParams | undefined },
 ): Promise<DeepTraversalResult> {
   const state: WalkState = {
     rootEntityId: args.entityId,
+    params: args.params,
     found: new Map(),
     byEnrichment: [],
     enrichmentIds: [],
@@ -130,29 +167,42 @@ export async function runDeepTraversal(
     state.apiPartial || downward.stoppedBy !== 'exhausted' || upward.stoppedBy !== 'exhausted';
   const coverage = {
     truncated,
-    exploredCount: state.found.size,
     /**
-     * **`reachable` is the API's own `explored_count`, and only when it says it
-     * finished** (`partial_results: false`). That is the number SPEC §8.2
-     * phrases as *"17 of 2 275 explored"*: how many nodes the traversal
+     * **`exploredCount` is the API's own `explored_count`, and only when it
+     * says it finished** (`partial_results: false`). That is the number SPEC
+     * §8.2 phrases as *"17 of 2 275 explored"*: how many nodes the traversal
      * visited, against how many of them we kept. When the API returns partial
      * results it has not searched the subgraph, so the figure bounds nothing
      * and null — *unknown* — is the only honest value.
      */
-    reachableCount: state.apiPartial ? null : state.exploredCount,
+    exploredCount: state.apiPartial ? null : state.exploredCount,
+    partialResults: state.apiPartial,
   };
 
+  /**
+   * **Downward finds are `kind: 'family'`; only an upward find is
+   * `kind: 'deep_traversal'`** — the design note network spec §6/ticket 02
+   * states explicitly: Corporate family is the downward, ownership-only
+   * subset of the Network, with no mention of which read reached a member, so
+   * a genuine subsidiary reached by "explore further" stays a Family member.
+   * This is what keeps the automatic downward family view and this walk's own
+   * downward exploration writing into the *same* `(root, terminal, kind)` row
+   * — and it is what the schema's own `graph_path_kind_direction_invariant`
+   * CHECK (`kind = 'family' ⇒ direction = 'down'`) requires by construction.
+   */
   for (const page of state.byEnrichment) {
-    await writeFamilyMembers(ctx.db, {
+    await writeGraphPaths(ctx.db, {
       rootEntityId: args.entityId,
       enrichmentId: page.enrichmentId,
+      kind: page.direction === 'downward' ? 'family' : 'deep_traversal',
+      direction: page.direction === 'downward' ? 'down' : 'up',
       members: page.members,
       coverage,
       discoveredByJob: ctx.jobId ?? null,
-      // Named explicitly, not guessed at by `writeFamilyMembers`'s own
-      // default (B1): the downward walk calls `ownership`, the upward one
-      // calls `ubo`, and each page's members are written under the endpoint
-      // that page actually came from.
+      // Named explicitly, not guessed at by `writeGraphPaths`'s own default:
+      // the downward walk calls `ownership`, the upward one calls `ubo`, and
+      // each page's members are written under the endpoint that page came
+      // from.
       source: page.direction === 'downward' ? 'ownership' : 'ubo',
     });
   }
@@ -160,7 +210,7 @@ export async function runDeepTraversal(
   return {
     rootEntityId: args.entityId,
     explored: state.found.size,
-    reachable: coverage.reachableCount,
+    reachable: coverage.exploredCount,
     truncated,
     deepestHop: [...state.found.values()].reduce((deepest, m) => Math.max(deepest, m.hopDepth), 0),
     downward,
@@ -183,7 +233,8 @@ export async function runDeepTraversal(
  * the server's own default for the first, because explicit-at-default puts the
  * number inside `params_hash` (SPEC §16.6) — a server-side default change
  * becomes a visible difference rather than a silently different body under an
- * unchanged key.
+ * unchanged key. `state.params` is spread first, so these explicit fields
+ * always win over anything a widened caller sent (network spec §4.4).
  */
 async function walk(
   ctx: EnrichContext,
@@ -194,6 +245,7 @@ async function walk(
   return paginateTraversal(
     (window) =>
       read({
+        ...(state.params as TraversalWalkParams | undefined),
         id: state.rootEntityId,
         limit: window.limit,
         offset: window.offset,
@@ -216,7 +268,9 @@ async function walk(
 }
 
 /**
- * Records one page as an Enrichment and collects the members it carries.
+ * Records one page as an Enrichment, merges the members it carries, and
+ * writes each new member's edges — so a member added by this page cites the
+ * `entity_relationship` rows this page's own traversal actually ran through.
  *
  * **An Enrichment per page, not per walk.** An Enrichment points at the raw
  * body it was projected from, so that a Citation can reach the source — and a
@@ -225,10 +279,10 @@ async function walk(
  * carries the Enrichment of the page that found it, which is also the row whose
  * `fetched_at` dates it.
  *
- * The rows themselves are written later, once, by the caller: coverage is a
- * fact about the *whole* walk and is not known until it stops, and writing a
- * page's members with the coverage as it stood mid-walk would leave the first
- * page claiming a smaller family than the last.
+ * The `graph_path` rows themselves are written later, once, by the caller:
+ * coverage is a fact about the *whole* walk and is not known until it stops,
+ * and writing a page's members with the coverage as it stood mid-walk would
+ * leave the first page claiming a smaller family than the last.
  */
 async function absorbPage(
   ctx: EnrichContext,
@@ -253,21 +307,29 @@ async function absorbPage(
       limit: envelope.limit ?? DEEP_TRAVERSAL_PAGE_SIZE,
       maxDepth: DEEP_TRAVERSAL_MAX_HOPS,
       maxNodes: DEEP_TRAVERSAL_MAX_NODES,
+      ...state.params,
     },
     result: page,
   });
   state.enrichmentIds.push(enrichmentId);
-  state.byEnrichment.push({
-    enrichmentId,
-    direction,
-    members: mergeMembers({
-      rootEntityId: state.rootEntityId,
-      held: state.found,
-      paths: envelope.data ?? [],
-      maxNodes: DEEP_TRAVERSAL_MAX_NODES,
-      maxHops: DEEP_TRAVERSAL_MAX_HOPS,
-    }),
+
+  const added = mergeMembers({
+    rootEntityId: state.rootEntityId,
+    held: state.found,
+    paths: envelope.data ?? [],
+    maxNodes: DEEP_TRAVERSAL_MAX_NODES,
+    maxHops: DEEP_TRAVERSAL_MAX_HOPS,
   });
+
+  const members: GraphPathWrite[] = [];
+  for (const member of added) {
+    const edgeIds = await storeHopEdges(ctx, member.hops, {
+      source: direction === 'downward' ? 'ownership' : 'ubo',
+    });
+    members.push({ entity: member.entity, hopDepth: member.hopDepth, edgeIds });
+  }
+  state.byEnrichment.push({ enrichmentId, direction, members });
+
   return state.found.size;
 }
 
@@ -279,13 +341,17 @@ async function absorbPage(
  * because this is the whole of the walk's arithmetic — merge, dedupe, hop
  * accounting and the node cap — and it is worth being able to prove over
  * synthetic envelopes with no database, no credential and no cap of 200.
+ * **It stays synchronous and database-free on purpose** — `summarisePath` is a
+ * pure reduction of the payload's own shape, so writing the resulting edges is
+ * left to the caller (`absorbPage`), which has the database connection this
+ * function deliberately does not.
  *
  * **First find wins**, which is what makes the two directions compose: a
- * company reached downward at hop 1 and again upward at hop 2 is one Family
- * member at hop 1, and re-collecting it would spend the node cap on a row that
- * already exists. `held` is mutated on purpose — a merge that returned a new
- * map would leave the caller deciding when the two directions start sharing a
- * cap, which is the one thing they must never disagree about.
+ * company reached downward at hop 1 and again upward at hop 2 is one member at
+ * hop 1, and re-collecting it would spend the node cap on a row that already
+ * exists. `held` is mutated on purpose — a merge that returned a new map would
+ * leave the caller deciding when the two directions start sharing a cap, which
+ * is the one thing they must never disagree about.
  *
  * A path deeper than the hop cap is dropped rather than trusted. The request
  * carries `max_depth`, so this should never fire; it is here because
@@ -295,19 +361,20 @@ async function absorbPage(
  */
 export function mergeMembers(args: {
   rootEntityId: string;
-  held: Map<string, FamilyMemberWrite>;
+  held: Map<string, MergedPathMember>;
   paths: readonly SayariTraversalPath[];
   maxNodes: number;
   maxHops: number;
-}): FamilyMemberWrite[] {
-  const added: FamilyMemberWrite[] = [];
+}): MergedPathMember[] {
+  const added: MergedPathMember[] = [];
   for (const path of args.paths) {
     if (args.held.size >= args.maxNodes) break;
     const entity = terminalEntityOf(path, args.rootEntityId);
     if (!entity || args.held.has(entity.id)) continue;
     const hopDepth = ownershipHopDepth(path.path);
     if (hopDepth > args.maxHops) continue;
-    const member = { entity, path: summarisePath(path.path), hopDepth };
+    const hops = summarisePath(path.path, args.rootEntityId);
+    const member: MergedPathMember = { entity, hopDepth, hops };
     args.held.set(entity.id, member);
     added.push(member);
   }

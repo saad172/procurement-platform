@@ -78,16 +78,19 @@ async function main(): Promise<void> {
 
   const match = await db.query.match.findFirst({ where: eq(t.match.supplierId, supplier.id) });
   if (match?.entityId) {
+    // `family_member` migrated into `graph_path` rows of kind `family`
+    // (network spec §6): `graph_path.explored_count` is what
+    // `family_member.reachable_count` used to be — the envelope's own figure.
     const members = await db
       .select()
-      .from(t.familyMember)
-      .where(eq(t.familyMember.rootEntityId, match.entityId));
+      .from(t.graphPath)
+      .where(and(eq(t.graphPath.rootEntityId, match.entityId), eq(t.graphPath.kind, 'family')));
     const memberEntities = await Promise.all(
       members.map(async (m) =>
-        db.query.entity.findFirst({ where: eq(t.entity.id, m.memberEntityId) }),
+        db.query.entity.findFirst({ where: eq(t.entity.id, m.terminalEntityId) }),
       ),
     );
-    const byId = new Map(members.map((m) => [m.memberEntityId, m]));
+    const byId = new Map(members.map((m) => [m.terminalEntityId, m]));
     const exposure = computeFamilyExposure(
       memberEntities.filter(Boolean).map((e) => ({
         entityId: e!.id,
@@ -100,7 +103,7 @@ async function main(): Promise<void> {
       {
         explored: members.length,
         // Read off the stored rows, the same facts the page reads.
-        reachable: members[0]?.reachableCount ?? null,
+        reachable: members[0]?.exploredCount ?? null,
         partial: members.some((m) => m.truncated),
       },
     );

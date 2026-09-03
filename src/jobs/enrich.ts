@@ -9,17 +9,23 @@ import {
   type ParsedEdge,
 } from '@/domain/parse-relationships';
 import { upwardOwnershipTypes } from '@/domain/relationships';
-import { FAMILY_TRAVERSAL_LIMIT } from '@/config/constants';
+import {
+  FAMILY_TRAVERSAL_LIMIT,
+  WATCHLIST_TRAVERSAL_LIMIT,
+  WATCHLIST_TRAVERSAL_MAX_DEPTH,
+} from '@/config/constants';
 import { COUNTRY_INDICATORS } from '@/domain/scoring/anchors';
 import { chooseHtsLine } from '@/domain/hs-code';
 import type { EntitySource, FamilyMemberRisk } from '@/domain/family';
 import { nearestPlant, type PlantPoint } from '@/domain/geo';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
 import {
+  ownershipHopDepth,
   summarisePath,
   terminalEntityOf,
-  writeFamilyMembers,
-  type FamilyMemberWrite,
+  writeGraphPaths,
+  type GraphPathWrite,
+  type PathHop,
 } from './family-members';
 import { upsertEntity } from './resolve';
 import type { Upstream, UpstreamResult } from '@/upstream';
@@ -473,21 +479,22 @@ export async function enrichFamily(
   });
 
   const paths = result.data.data ?? [];
-  const byId = new Map<string, FamilyMemberWrite>();
+  const byId = new Map<string, GraphPathWrite>();
 
   for (const path of paths) {
     const entity = terminalEntityOf(path, args.entityId);
     if (!entity || byId.has(entity.id)) continue;
+    const edgeIds = await storePathEdges(ctx, path, args.entityId, { source: 'ownership' });
     byId.set(entity.id, {
       entity,
-      // The SHAPE of the path, not the entities along it. Each hop's entity
-      // is already upserted into `entity` and would be stored twice — and
-      // measured, one raw path was 605 KB, because a traversal payload
-      // carries a complete entity at every hop. What the UI renders is the
-      // route: which relationship types it ran through, and which
-      // `possibly_same_as` hops it took to get there.
-      path: summarisePath(path.path),
-      hopDepth: path.path?.length ?? 1,
+      // The one hop-depth rule (`ownershipHopDepth`), not `path.path?.length`
+      // — a `possibly_same_as` step is a move sideways between two records of
+      // the same company, not a step down the ownership chain, and counting
+      // path length reported a direct subsidiary reached through two psa hops
+      // as three hops away (network spec §6, the "one hop-depth rule"
+      // disagreement this ticket fixes).
+      hopDepth: ownershipHopDepth(path.path),
+      edgeIds,
     });
   }
 
@@ -507,40 +514,169 @@ export async function enrichFamily(
   const truncated = apiPartial || envelope.next === true || paths.length >= FAMILY_TRAVERSAL_LIMIT;
 
   /**
-   * **The same rule the Deep Traversal uses** (`traverse.ts`): the reachable
-   * set is the API's own `explored_count`, and only where it says it finished.
-   * Where it returned partial results the figure bounds nothing, and *unknown*
-   * is the only honest value.
+   * **The same rule the Deep Traversal uses** (`traverse.ts`): `explored_count`
+   * is the API's own figure, and only where it says it finished. Where it
+   * returned partial results the figure bounds nothing, and *unknown* is the
+   * only honest value.
    *
    * It is a count of **nodes the traversal visited**, not of companies in the
    * family — 5,047 against a Yazaki family of seventeen — so the badge names
    * the unit rather than presenting it as a family size
    * (`describeFamilyExposure`).
    */
-  const reachableCount = apiPartial ? null : (envelope.explored_count ?? null);
+  const exploredCount = apiPartial ? null : (envelope.explored_count ?? null);
 
   /**
    * **The row write is shared with the Deep Traversal** (`family-members.ts`).
    *
-   * SPEC §8.5: a Deep Traversal that reaches a subsidiary writes into this same
-   * table, distinguished by `discovered_by_job` — so both reads had exactly one
-   * thing to say about a member, and only one of them should say it. What stays
-   * here is what is particular to the automatic read: one call at `limit: 50`,
-   * and its own envelope's account of how far that call got.
+   * A Deep Traversal that reaches a subsidiary writes into this same
+   * `(root, terminal, kind: 'family')` row, distinguished by
+   * `discovered_by_job` — so both reads had exactly one thing to say about a
+   * member, and only one of them should say it. What stays here is what is
+   * particular to the automatic read: one call at `limit: 50`, and its own
+   * envelope's account of how far that call got.
    */
-  const members = await writeFamilyMembers(ctx.db, {
+  const members = await writeGraphPaths(ctx.db, {
     rootEntityId: args.entityId,
     enrichmentId,
+    kind: 'family',
+    direction: 'down',
     members: [...byId.values()],
-    coverage: { truncated, exploredCount: byId.size, reachableCount },
+    coverage: { truncated, exploredCount, partialResults: apiPartial },
     discoveredByJob: null,
     // This is `traversal.ownership`, named explicitly rather than left to
-    // `writeFamilyMembers`'s default — which exists for the one caller this
+    // `writeGraphPaths`'s default — which exists for the one caller this
     // ticket does not own (`traverse.ts`'s Deep Traversal).
     source: 'ownership',
   });
 
-  return { enrichmentId, members, truncated, reachable: reachableCount };
+  return { enrichmentId, members, truncated, reachable: exploredCount };
+}
+
+// ── 6b. Watchlist ────────────────────────────────────────────────────────────
+
+/**
+ * The second automatic call per accepted Profile (network spec §4.1):
+ * `traversal.watchlist`, `maxDepth: 4`, `psa: true`, `limit: 50`, the
+ * endpoint's own default 31 relationship types spanning ownership, control and
+ * trade — unlike the Corporate family read, which narrows to five ownership
+ * types. Paths to Listed entities in **either** direction; a terminal carries
+ * its `risk` block inline, exactly like an ownership/ubo terminal, so a Listed
+ * entity's risk is read off the stored Path without a second call.
+ *
+ * Mirrors `enrichFamily`'s own shape — one call, one Enrichment, one page —
+ * rather than inventing a different one: a person or a future filter can widen
+ * this later (on-demand watchlist reads are not this ticket's job), but the
+ * automatic read stays exactly as narrow as the automatic family read.
+ */
+export async function enrichWatchlist(
+  ctx: EnrichContext,
+  args: { entityId: string },
+): Promise<{
+  enrichmentId: string;
+  members: FamilyMemberRisk[];
+  truncated: boolean;
+  reachable: number | null;
+}> {
+  const result = await ctx.upstream.sayari.watchlist({
+    id: args.entityId,
+    maxDepth: WATCHLIST_TRAVERSAL_MAX_DEPTH,
+    psa: true,
+    limit: WATCHLIST_TRAVERSAL_LIMIT,
+  });
+  const enrichmentId = await recordEnrichment(ctx, {
+    source: 'sayari_watchlist',
+    subjectKind: 'entity',
+    subjectKey: args.entityId,
+    requestParams: {
+      entityId: args.entityId,
+      maxDepth: WATCHLIST_TRAVERSAL_MAX_DEPTH,
+      psa: true,
+      limit: WATCHLIST_TRAVERSAL_LIMIT,
+    },
+    result,
+  });
+
+  const paths = result.data.data ?? [];
+  const byId = new Map<string, GraphPathWrite>();
+
+  for (const path of paths) {
+    const entity = terminalEntityOf(path, args.entityId);
+    if (!entity || byId.has(entity.id)) continue;
+    const edgeIds = await storePathEdges(ctx, path, args.entityId, { source: 'watchlist' });
+    byId.set(entity.id, {
+      entity,
+      hopDepth: ownershipHopDepth(path.path),
+      edgeIds,
+    });
+  }
+
+  const envelope = result.data;
+  const apiPartial = envelope.partial_results === true;
+  const truncated =
+    apiPartial || envelope.next === true || paths.length >= WATCHLIST_TRAVERSAL_LIMIT;
+  const exploredCount = apiPartial ? null : (envelope.explored_count ?? null);
+
+  /**
+   * `direction: 'either'` — the endpoint's own design follows any relationship
+   * type outward without a fixed direction (network spec §6), unlike
+   * `family`'s always-`down`.
+   */
+  const members = await writeGraphPaths(ctx.db, {
+    rootEntityId: args.entityId,
+    enrichmentId,
+    kind: 'watchlist',
+    direction: 'either',
+    members: [...byId.values()],
+    coverage: { truncated, exploredCount, partialResults: apiPartial },
+    discoveredByJob: null,
+    source: 'watchlist',
+  });
+
+  return { enrichmentId, members, truncated, reachable: exploredCount };
+}
+
+/**
+ * Writes every resolvable hop of an already-summarised Path as a citable
+ * `entity_relationship` edge, and returns their ids in hop order —
+ * `graph_path.edge_ids` (network spec §6).
+ *
+ * Takes `summarisePath`'s own output rather than a raw path, so a caller that
+ * has already summarised a path for its own purposes — `traverse.ts`'s
+ * `mergeMembers`, which stays synchronous and database-free by design — does
+ * not summarise it twice. `storePathEdges` below is the convenience form for a
+ * caller (`enrichFamily`, `enrichWatchlist`) that has not.
+ *
+ * Drops the hops `summarisePath` could not resolve to an edge and calls
+ * `storeRelationships` once for the rest, so a Path's edges are written in the
+ * same order they are cited in and every entity along the chain is upserted
+ * before the next hop's edge can reference it as its `from`.
+ */
+export async function storeHopEdges(
+  ctx: EnrichContext,
+  hops: readonly PathHop[],
+  options: { source: EntitySource },
+): Promise<string[]> {
+  const resolvable = hops.filter((hop) => hop.edge != null);
+  if (resolvable.length === 0) return [];
+
+  const { ids } = await storeRelationships(
+    ctx.db,
+    resolvable.map((hop) => hop.edge!),
+    ctx.jobId,
+    { hopDepth: resolvable.map((hop) => hop.hopDepth), source: options.source },
+  );
+  return ids.filter((id): id is string => id != null);
+}
+
+/** `storeHopEdges`, summarising a raw path first — the shape `enrichFamily`/`enrichWatchlist` hold. */
+async function storePathEdges(
+  ctx: EnrichContext,
+  path: SayariTraversalPath,
+  rootEntityId: string,
+  options: { source: EntitySource },
+): Promise<string[]> {
+  return storeHopEdges(ctx, summarisePath(path.path, rootEntityId), options);
 }
 
 // ── Owner edges ──────────────────────────────────────────────────────────────
@@ -767,14 +903,17 @@ export function parseTypedOwnerEdges(
 }
 
 /**
- * Writes edges, and the companies on the far end of them.
+ * Writes edges, and the companies on the far end of them — returning the
+ * resulting `entity_relationship.id` for each, in the same order as `edges`
+ * (network spec §6: `graph_path.edge_ids` is built by zipping these against
+ * the hops that produced them and dropping the skipped ones).
  *
  * **The entity rows come first, and that is a foreign key, not a preference:**
  * `entity_relationship` references `entity` on both ends, so an edge to a
  * company nobody has stored is rejected by the database. A target that arrived
- * as a bare id therefore has no row to write — it is skipped rather than
- * invented, which is the same rule the rest of this app follows about evidence
- * it does not hold.
+ * as a bare id therefore has no row to write — it is skipped (its slot in
+ * `ids` is `null`) rather than invented, which is the same rule the rest of
+ * this app follows about evidence it does not hold.
  *
  * **`hopDepth` is the minimum on conflict, never the newest** — the schema
  * comment on `entity_relationship.hop_depth` has said so since before this
@@ -782,22 +921,36 @@ export function parseTypedOwnerEdges(
  * and later at depth 1 by an ownership read is a 1-hop edge; the pattern is
  * `conflictSet` in `family-members.ts`, applied here to one column instead of
  * three because an edge carries no coverage figures of its own to overwrite.
+ *
+ * `hopDepth` may be one number for the whole batch (every caller before this
+ * ticket: one entity payload window, one hop) or one number **per edge**,
+ * positionally against `edges` — what a multi-hop Path needs, since each of
+ * its hops sits at a different depth from the root (`storePathEdges`,
+ * `traverse.ts`'s Deep Traversal). Defaults to depth 1 where neither is given.
  */
 export async function storeRelationships(
   db: Database,
   edges: readonly ParsedEdge[],
   jobId?: string | undefined,
-  options?: { hopDepth?: number; source?: EntitySource },
-): Promise<number> {
-  const hopDepth = options?.hopDepth ?? 1;
+  options?: { hopDepth?: number | readonly number[]; source?: EntitySource },
+): Promise<{ written: number; ids: (string | null)[] }> {
   const source = options?.source ?? 'getEntity';
+  const hopDepthAt = (index: number): number => {
+    const configured = options?.hopDepth;
+    return Array.isArray(configured) ? (configured[index] ?? 1) : ((configured as number) ?? 1);
+  };
+  const ids: (string | null)[] = [];
   let written = 0;
 
-  for (const edge of edges) {
-    if (!edge.targetEntity) continue;
+  for (let index = 0; index < edges.length; index += 1) {
+    const edge = edges[index]!;
+    if (!edge.targetEntity) {
+      ids.push(null);
+      continue;
+    }
     await upsertEntity(db, edge.targetEntity as unknown as SayariEntity, undefined, source);
 
-    await db
+    const [row] = await db
       .insert(t.entityRelationship)
       .values({
         // Stored as the payload states it: subject first, target second, type
@@ -809,7 +962,7 @@ export async function storeRelationships(
         startDate: edge.startDate,
         endDate: edge.endDate,
         sourceRecordId: edge.sourceRecordId,
-        hopDepth,
+        hopDepth: hopDepthAt(index),
         discoveredByJob: jobId ?? null,
         attributes: edge.attributes as never,
       })
@@ -824,11 +977,13 @@ export async function storeRelationships(
           t.entityRelationship.sourceRecordId,
         ],
         set: { hopDepth: sql`least(${t.entityRelationship.hopDepth}, excluded.hop_depth)` },
-      });
+      })
+      .returning({ id: t.entityRelationship.id });
+    ids.push(row?.id ?? null);
     written += 1;
   }
 
-  return written;
+  return { written, ids };
 }
 
 /** The Plants a Supplier's proximity is measured against. */

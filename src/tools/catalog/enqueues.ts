@@ -9,6 +9,7 @@ import {
   DISCOVER_CLASSIFY_TOP_N,
   DOSSIER_BUDGET_USD,
 } from '@/config/constants';
+import { deepTraversalParamsSchema } from '@/domain/deep-traversal-params';
 import { enqueueJob, openRun } from '@/jobs/runs';
 import { isFullEntityFetch } from '@/upstream/params';
 import { defineTool, type Estimate, type ToolContext } from '../define';
@@ -108,10 +109,10 @@ const enqueueEnrichment = defineTool({
     const cached = !input.refresh && (await cachedUpstreamFor(ctx, match?.entityId ?? null));
     return {
       what: 'Fetch this supplier’s six enrichment sources and recompute its criterion values.',
-      spends: { sayariCalls: cached ? 0 : { min: 2, max: 4 }, usd: 0 },
+      spends: { sayariCalls: cached ? 0 : { min: 3, max: 4 }, usd: 0 },
       basis: cached
         ? 'Every body this needs is already cached.'
-        : 'Two Sayari calls (negative news, ownership family) plus keyless external lookups. The exact count depends on which enrichments are already cached.',
+        : 'Three Sayari calls (negative news, ownership family, watchlist) plus keyless external lookups. The exact count depends on which enrichments are already cached.',
       caveats: [],
       cached,
     };
@@ -213,8 +214,18 @@ const enqueueRerunRecommendation = defineTool({
  * A **Deep Traversal** — person-triggered, three hops, ~200 nodes.
  *
  * Distinct from the Corporate family, which is downward-only, psa-routed,
- * automatic and capped at 50. A Deep Traversal that reaches a subsidiary writes
- * into the **same `family_member` table**, distinguished by `discovered_by_job`.
+ * automatic and capped at 50. A Deep Traversal that reaches a subsidiary
+ * downward writes a Path of the **same `kind: 'family'`** an automatic read
+ * would, distinguished only by `discovered_by_job`; only an upward find is
+ * `kind: 'deep_traversal'` (network spec §6, ticket 02).
+ *
+ * **Widened, optional inputs** (network spec §4.4): `relationships`,
+ * `riskCategories`, `countries`, `minShares`, `sanctioned`, `pep`,
+ * `excludeClosedEntities` — so a person can ask for *sanctioned owners within
+ * three hops* rather than everything. All optional and defaultless, so
+ * omitting them is the exact unfiltered walk this tool always ran; they are
+ * carried into `job.params` at enqueue time and read back by
+ * `traverse.ts`'s runner (`readDeepTraversalParams`).
  *
  * Its caveat is the one that matters most: it **changes no number**.
  */
@@ -222,7 +233,9 @@ const enqueueDeepTraversal = defineTool({
   name: 'enqueue_deep_traversal',
   enqueues: 'traverse',
   description: 'Expand one company’s ownership graph beyond the automatic single hop.',
-  input: z.object({ entityId: z.string(), programId: z.string() }),
+  input: z
+    .object({ entityId: z.string(), programId: z.string() })
+    .extend(deepTraversalParamsSchema.shape),
   surfaces: ['chat'],
   effect: 'write',
   spends: ['sayari'],
@@ -244,33 +257,54 @@ const enqueueDeepTraversal = defineTool({
    * is a ceiling that a real walk rarely reaches rather than a forecast.
    *
    * Local rows only, and in fact no rows at all: the numbers are constants, so
-   * this estimator cannot be the thing that spends before consent.
+   * this estimator cannot be the thing that spends before consent. The filter
+   * fields change **which** nodes the walk finds, never how many calls the
+   * caps allow, so they widen the `what` sentence and nothing in `spends`.
    */
-  confirm: async (): Promise<Estimate> => ({
-    what: `Expand this company’s ownership graph to ${DEEP_TRAVERSAL_MAX_HOPS} hops, up to ${DEEP_TRAVERSAL_MAX_NODES} nodes, downward and upward.`,
-    spends: { sayariCalls: { min: 2, max: DEEP_TRAVERSAL_MAX_PAGES * 2 } },
-    basis:
-      `Up to ${DEEP_TRAVERSAL_MAX_PAGES} downward pages and ${DEEP_TRAVERSAL_MAX_PAGES} upward pages ` +
-      `of ${DEEP_TRAVERSAL_PAGE_SIZE} nodes each — the API's maximum page — stopping at the ` +
-      `${DEEP_TRAVERSAL_MAX_NODES}-node cap the two directions share. Every node arrives as a full ` +
-      'entity with its risk block, so no node costs a second call.',
-    caveats: [
-      'A deep traversal changes no score: ownership exposure is computed from current one-hop edges. What it can do is light the "new evidence" mark on a version that cites something it touches.',
-      'It is capped, so it is never a complete family: what comes back is "n of m explored", and a company it does not reach is not a company it ruled out.',
-    ],
-  }),
+  confirm: async (input): Promise<Estimate> => {
+    const filters: string[] = [];
+    if (input.relationships?.length) filters.push(`relationship types ${input.relationships.join(', ')}`);
+    if (input.riskCategories?.length) filters.push(`risk categories ${input.riskCategories.join(', ')}`);
+    if (input.countries?.length) filters.push(`countries ${input.countries.join(', ')}`);
+    if (input.minShares != null) filters.push(`at least ${input.minShares}% shares`);
+    if (input.sanctioned) filters.push('sanctioned entities only');
+    if (input.pep) filters.push('PEP entities only');
+    if (input.excludeClosedEntities) filters.push('excluding closed entities');
+
+    return {
+      what:
+        `Expand this company’s ownership graph to ${DEEP_TRAVERSAL_MAX_HOPS} hops, up to ` +
+        `${DEEP_TRAVERSAL_MAX_NODES} nodes, downward and upward` +
+        (filters.length > 0 ? `, filtered to ${filters.join('; ')}.` : '.'),
+      spends: { sayariCalls: { min: 2, max: DEEP_TRAVERSAL_MAX_PAGES * 2 } },
+      basis:
+        `Up to ${DEEP_TRAVERSAL_MAX_PAGES} downward pages and ${DEEP_TRAVERSAL_MAX_PAGES} upward pages ` +
+        `of ${DEEP_TRAVERSAL_PAGE_SIZE} nodes each — the API's maximum page — stopping at the ` +
+        `${DEEP_TRAVERSAL_MAX_NODES}-node cap the two directions share. Every node arrives as a full ` +
+        'entity with its risk block, so no node costs a second call.',
+      caveats: [
+        'A deep traversal changes no score: ownership exposure is computed from current one-hop edges. What it can do is light the "new evidence" mark on a version that cites something it touches.',
+        'It is capped, so it is never a complete family: what comes back is "n of m explored", and a company it does not reach is not a company it ruled out.',
+        ...(filters.length > 0
+          ? ['A filter changes which nodes the walk explores, not what a Path means once it finds one.']
+          : []),
+      ],
+    };
+  },
   handler: async (input, ctx) => {
+    const { entityId, programId, ...params } = input;
     const runId = await openRun(ctx.db, {
-      programId: input.programId,
+      programId,
       trigger: 'traverse',
-      subjectLabel: `traverse ${input.entityId}`,
+      subjectLabel: `traverse ${entityId}`,
       supplierCount: 1,
     });
     const jobId = await enqueueJob(ctx.db, {
       runId,
       kind: 'traverse',
       subjectType: 'entity',
-      subjectId: input.entityId,
+      subjectId: entityId,
+      params,
     });
     return { ok: true, data: { runId, jobId } };
   },

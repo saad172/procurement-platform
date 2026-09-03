@@ -164,26 +164,29 @@ describe.skipIf(!up)(`database constraints (needs: ${START_TEST_DB_HINT})`, () =
 });
 
 /**
- * **A family member is a fact about the ownership graph, not about the read
- * that found it.**
+ * **A Path is a fact about the graph, not about the read that found it.**
  *
- * `family_member` carried only its `id` primary key, so the insert's
- * `onConflictDoNothing()` conflicted on a freshly generated uuid and therefore
- * never fired. A second enrichment of the same Profile inserted the whole
- * family again: Bosch and Magna each held **100 rows for 50 distinct
+ * `family_member` (this constraint's own history) carried only its `id`
+ * primary key before it gained `(root_entity_id, member_entity_id)`, so the
+ * insert's `onConflictDoNothing()` conflicted on a freshly generated uuid and
+ * therefore never fired. A second enrichment of the same Profile inserted the
+ * whole family again: Bosch and Magna each held **100 rows for 50 distinct
  * members**, and both the supplier page and `get_supplier_family` counted rows
  * to report coverage. The badge read *"28 of 100 explored"* where the truth was
  * 14 of 50 — both halves doubled, in the same direction, so nothing looked odd.
  *
- * The constraint is what makes re-enrichment idempotent rather than merely
- * repeated, and it is the reason the row count and `explored_count` cannot
- * silently drift apart again.
+ * `graph_path` generalises that constraint to `(root_entity_id,
+ * terminal_entity_id, kind)` — `family_member`'s own comment names the failure
+ * this prevents, and `kind` joins the key because the same (root, terminal)
+ * pair can legitimately carry two Paths of different kinds (a family Path and,
+ * separately, a shortest path found for the recommend Job's pairwise check),
+ * and those are not duplicates of each other.
  */
 describe.skipIf(!up)(
-  `one family_member row per (root, member) (needs: ${START_TEST_DB_HINT})`,
+  `one graph_path row per (root, terminal, kind) (needs: ${START_TEST_DB_HINT})`,
   () => {
-    const ROOT = 'family-constraint-root';
-    const MEMBER = 'family-constraint-member';
+    const ROOT = 'graph-path-constraint-root';
+    const TERMINAL = 'graph-path-constraint-terminal';
     const RESPONSE = '66666666-6666-6666-6666-666666666666';
     const ENRICHMENT_A = '77777777-7777-7777-7777-777777777777';
     const ENRICHMENT_B = '88888888-8888-8888-8888-888888888888';
@@ -192,8 +195,8 @@ describe.skipIf(!up)(
       // The block above closes the client in its own `afterAll`, so this reopens.
       await getTestDb();
       const sql = testSql();
-      await sql`DELETE FROM entity WHERE id IN (${ROOT}, ${MEMBER})`;
-      await sql`INSERT INTO entity (id, label) VALUES (${ROOT}, 'Root'), (${MEMBER}, 'Member')`;
+      await sql`DELETE FROM entity WHERE id IN (${ROOT}, ${TERMINAL})`;
+      await sql`INSERT INTO entity (id, label) VALUES (${ROOT}, 'Root'), (${TERMINAL}, 'Terminal')`;
       await sql`INSERT INTO upstream_response (id, source, endpoint, params_hash, params, body, body_hash, via)
               VALUES (${RESPONSE}, 'sayari', 'traversal.ownership', 'h', '{}'::jsonb, '{}'::jsonb, 'bh', 'sdk')`;
       // Two enrichments of the same Profile: the exact shape that doubled the
@@ -207,36 +210,54 @@ describe.skipIf(!up)(
     afterAll(async () => {
       if (!up) return;
       const sql = testSql();
+      await sql`DELETE FROM graph_path WHERE root_entity_id = ${ROOT}`;
       await sql`DELETE FROM enrichment WHERE id IN (${ENRICHMENT_A}, ${ENRICHMENT_B})`;
       await sql`DELETE FROM upstream_response WHERE id = ${RESPONSE}`;
-      await sql`DELETE FROM entity WHERE id IN (${ROOT}, ${MEMBER})`;
+      await sql`DELETE FROM entity WHERE id IN (${ROOT}, ${TERMINAL})`;
       await closeTestDb();
     });
 
-    it('refuses the same member twice under the same root', async () => {
+    it('refuses the same (root, terminal, kind) twice', async () => {
       const sql = testSql();
-      await sql`INSERT INTO family_member (enrichment_id, root_entity_id, member_entity_id, hop_depth, explored_count)
-              VALUES (${ENRICHMENT_A}, ${ROOT}, ${MEMBER}, 1, 50)`;
+      await sql`INSERT INTO graph_path (enrichment_id, root_entity_id, terminal_entity_id, kind, direction, hop_depth, explored_count)
+              VALUES (${ENRICHMENT_A}, ${ROOT}, ${TERMINAL}, 'family', 'down', 1, 50)`;
       await expect(
-        sql`INSERT INTO family_member (enrichment_id, root_entity_id, member_entity_id, hop_depth, explored_count)
-          VALUES (${ENRICHMENT_B}, ${ROOT}, ${MEMBER}, 1, 50)`,
-      ).rejects.toThrow(/family_member_root_member_key/);
+        sql`INSERT INTO graph_path (enrichment_id, root_entity_id, terminal_entity_id, kind, direction, hop_depth, explored_count)
+          VALUES (${ENRICHMENT_B}, ${ROOT}, ${TERMINAL}, 'family', 'down', 1, 50)`,
+      ).rejects.toThrow(/graph_path_root_terminal_kind_key/);
     });
 
     it('lets a second read refresh the row it already has', async () => {
-      // What `enrichFamily` now does: the pair is the identity, and a re-read is
-      // newer evidence about the same pair rather than a new fact.
+      // What `enrichFamily` now does: the triple is the identity, and a
+      // re-read is newer evidence about the same Path rather than a new fact.
       const sql = testSql();
-      await sql`INSERT INTO family_member (enrichment_id, root_entity_id, member_entity_id, hop_depth, explored_count)
-              VALUES (${ENRICHMENT_B}, ${ROOT}, ${MEMBER}, 2, 37)
-              ON CONFLICT (root_entity_id, member_entity_id)
+      await sql`INSERT INTO graph_path (enrichment_id, root_entity_id, terminal_entity_id, kind, direction, hop_depth, explored_count)
+              VALUES (${ENRICHMENT_B}, ${ROOT}, ${TERMINAL}, 'family', 'down', 2, 37)
+              ON CONFLICT (root_entity_id, terminal_entity_id, kind)
               DO UPDATE SET enrichment_id = EXCLUDED.enrichment_id,
                             hop_depth = EXCLUDED.hop_depth,
                             explored_count = EXCLUDED.explored_count`;
-      const rows = await sql`SELECT hop_depth, explored_count FROM family_member
-                           WHERE root_entity_id = ${ROOT} AND member_entity_id = ${MEMBER}`;
+      const rows = await sql`SELECT hop_depth, explored_count FROM graph_path
+                           WHERE root_entity_id = ${ROOT} AND terminal_entity_id = ${TERMINAL} AND kind = 'family'`;
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ hop_depth: 2, explored_count: 37 });
+    });
+
+    it('allows the same (root, terminal) pair under two different kinds', async () => {
+      const sql = testSql();
+      const [row] = await sql`
+        INSERT INTO graph_path (enrichment_id, root_entity_id, terminal_entity_id, kind, direction, hop_depth, explored_count)
+        VALUES (${ENRICHMENT_A}, ${ROOT}, ${TERMINAL}, 'shortest_path', 'either', 1, 1)
+        RETURNING id`;
+      expect(row?.id).toBeTruthy();
+    });
+
+    it('enforces the kind/direction invariant: a family Path is always down', async () => {
+      const sql = testSql();
+      await expect(
+        sql`INSERT INTO graph_path (enrichment_id, root_entity_id, terminal_entity_id, kind, direction, hop_depth, explored_count)
+          VALUES (${ENRICHMENT_A}, ${ROOT}, ${TERMINAL}, 'family', 'up', 1, 1)`,
+      ).rejects.toThrow(/graph_path_kind_direction_invariant/);
     });
   },
 );

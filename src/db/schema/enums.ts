@@ -191,6 +191,17 @@ export const enrichmentSource = pgEnum('enrichment_source', [
    * pipeline made on its own indistinguishable from one a person asked for.
    */
   'sayari_owner_edges',
+  /**
+   * The watchlist read, the second automatic call per accepted Profile
+   * (network spec §4.1, ticket 02): `traversal.watchlist`, `maxDepth: 4`,
+   * `psa: true`, `limit: 50`, the endpoint's default 31 relationship types.
+   * Automatic, like `sayari_ownership_family`, and kept apart from it for the
+   * same three reasons that source's own doc comment gives: it is not the
+   * same read (a different endpoint, a different filter), and the two write
+   * Paths of different `kind`s (`family` versus `watchlist`) that a person
+   * reading the Enrichments panel should be able to tell apart.
+   */
+  'sayari_watchlist',
   'world_bank',
   'gleif',
   'usitc',
@@ -237,6 +248,48 @@ export const geocodePrecision = pgEnum('geocode_precision', [
 
 /** Sayari's own risk levels. We deduct on these, never on a scale of our own. */
 export const riskLevel = pgEnum('risk_level', ['high', 'elevated', 'relevant']);
+
+// ── Network ──────────────────────────────────────────────────────────────────
+
+/**
+ * One shape for every Path (network spec §6, ticket 02).
+ *
+ * `family` is the downward, ownership-only, psa-routed subset the Corporate
+ * family read has always produced — `family_member` migrates into `graph_path`
+ * rows of this kind. `watchlist` and `deep_traversal` come from the same
+ * automatic and on-demand traversal reads (network spec §4.1, §4.4);
+ * `shortest_path` is the recommend Job's pairwise check for whether an award
+ * and another Pick share a parent or one owns the other (§4.2, §7);
+ * `supply_chain` is the trade Job's upstream tiers (§4.3). A Path's `kind` is
+ * part of its identity — `graph_path`'s unique key is (root, terminal, kind),
+ * not (root, terminal) — because the same two entities can be joined by both
+ * a family Path and a separate shortest path found for that pairwise check.
+ */
+export const graphPathKind = pgEnum('graph_path_kind', [
+  'family',
+  'watchlist',
+  'shortest_path',
+  'deep_traversal',
+  'supply_chain',
+]);
+
+/**
+ * Which way a Path was walked (network spec §6).
+ *
+ * `down`/`up` are ownership's two directions; `either` is the watchlist read,
+ * which follows any relationship type outward without a fixed direction;
+ * `upstream` is the trade Job's supply-chain tiers (§4.3), the one direction
+ * that is never ownership at all. Not reused across kinds — `family` is
+ * always `down`, `supply_chain` is always `upstream` — but each Path still
+ * states its own, because a Path is what a diagram and a chain row render
+ * from, and neither should have to infer direction from `kind`.
+ */
+export const graphPathDirection = pgEnum('graph_path_direction', [
+  'down',
+  'up',
+  'either',
+  'upstream',
+]);
 
 // ── Narrative ────────────────────────────────────────────────────────────────
 

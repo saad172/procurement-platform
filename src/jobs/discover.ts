@@ -537,6 +537,11 @@ export async function recordLead(
  * and `supplier` is what makes the badge a statement about this roster, and
  * carrying the Supplier id is what lets it say whose family the Lead is in.
  *
+ * `graph_path` (network spec §6) generalises `family_member`, and every
+ * Family member is a Path of `kind = 'family'` — `kind` is filtered
+ * explicitly here rather than assumed, because a root can carry Paths of
+ * every other kind too once ticket 03 lands.
+ *
  * Ordered, and first-wins: two Suppliers can legitimately share a Family
  * member (the seed holds two shared-parent pairs), and which one the badge
  * names must not be decided by Postgres row order. Roster order is the order
@@ -548,14 +553,20 @@ export async function loadFamilyOwners(
 ): Promise<Map<string, string>> {
   const rows = await db
     .select({
-      member: t.familyMember.memberEntityId,
+      member: t.graphPath.terminalEntityId,
       supplierId: t.supplier.id,
     })
-    .from(t.familyMember)
-    .innerJoin(t.match, eq(t.match.entityId, t.familyMember.rootEntityId))
+    .from(t.graphPath)
+    .innerJoin(t.match, eq(t.match.entityId, t.graphPath.rootEntityId))
     .innerJoin(t.supplier, eq(t.supplier.id, t.match.supplierId))
-    .where(and(eq(t.supplier.programId, programId), eq(t.match.status, 'accepted')))
-    .orderBy(asc(t.supplier.rosterIndex), asc(t.familyMember.memberEntityId));
+    .where(
+      and(
+        eq(t.supplier.programId, programId),
+        eq(t.match.status, 'accepted'),
+        eq(t.graphPath.kind, 'family'),
+      ),
+    )
+    .orderBy(asc(t.supplier.rosterIndex), asc(t.graphPath.terminalEntityId));
 
   const owners = new Map<string, string>();
   for (const row of rows) {

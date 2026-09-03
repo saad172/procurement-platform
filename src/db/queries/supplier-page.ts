@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { DEFAULT_WEIGHTS } from '@/domain/score';
@@ -13,6 +13,7 @@ import {
 import { entitySchema, type SayariEntity } from '@/upstream/projections/sayari';
 import { parseViewState } from '@/lib/view-state';
 import { loadEnrichmentHistory } from './enrichments';
+import { loadFamilyPaths, type FamilyPath } from './family-paths';
 import { loadShortlist, loadSupplierSnapshots, scoreSnapshot } from './shortlist';
 
 /**
@@ -73,31 +74,17 @@ async function readSupplierRows(db: Database, programId: string, supplierId: str
   // points at rather than a recomputation that could differ from it.
   const [snapshot] = await loadSupplierSnapshots(db, { programId, supplierIds: [supplierId] });
 
-  const familyRows = match?.entityId
-    ? await db
-        .select({
-          member: t.entity,
-          hopDepth: t.familyMember.hopDepth,
-          truncated: t.familyMember.truncated,
-          exploredCount: t.familyMember.exploredCount,
-          reachableCount: t.familyMember.reachableCount,
-          // A Deep Traversal writes into this same table and is distinguished
-          // by this column alone (SPEC §8.5), so the page reads it rather than
-          // assuming every member came from the automatic read.
-          discoveredByJob: t.familyMember.discoveredByJob,
-        })
-        .from(t.familyMember)
-        .innerJoin(t.entity, eq(t.entity.id, t.familyMember.memberEntityId))
-        .where(eq(t.familyMember.rootEntityId, match.entityId))
-        /**
-         * By hop depth first, because that is the order a person reads a family
-         * in: the immediate subsidiaries, then what sits behind them. The
-         * member id breaks the tie, since it is the only field guaranteed
-         * unique — and a page whose rows can reorder between two reads of the
-         * same data is a page whose screenshot cannot be trusted.
-         */
-        .orderBy(asc(t.familyMember.hopDepth), asc(t.familyMember.memberEntityId))
-    : [];
+  /**
+   * `graph_path` of kind `family` (network spec §6), joined out to its
+   * `entity_relationship` chain — the same `loadFamilyPaths` `get_supplier_family`
+   * reads (`src/tools/catalog/reads.ts`), so the page's exposure badge and its
+   * chain rows cannot disagree about what the family graph says. `discoveredByJob`
+   * still distinguishes a Deep Traversal find from the automatic read's own
+   * (SPEC §8.5) — a Deep Traversal that walked **down** stays `kind = 'family'`
+   * (migration 0013's own comment), so this column, not the row's presence
+   * here, is what the page reads to say which walk found a given member.
+   */
+  const familyPaths: FamilyPath[] = match?.entityId ? await loadFamilyPaths(db, match.entityId) : [];
 
   // Ages are computed in the query, not during render: reading a clock while
   // rendering is not idempotent, and one read per request is the right number.
@@ -145,7 +132,7 @@ async function readSupplierRows(db: Database, programId: string, supplierId: str
     supplier,
     match,
     snapshot,
-    familyRows,
+    familyPaths,
     enrichments,
     assessment,
     version,
@@ -177,7 +164,7 @@ export async function loadSupplierPage(
 
   const rows = await readSupplierRows(db, programId, supplierId);
   if (!rows) return undefined;
-  const { program, supplier, match, snapshot, familyRows, enrichments } = rows;
+  const { program, supplier, match, snapshot, familyPaths, enrichments } = rows;
   const { version, sentences, dissent, ownPayload, firstCategory } = rows;
 
   const programDefault = parseSupplierWeights(program);
@@ -194,7 +181,15 @@ export async function loadSupplierPage(
     ? await loadShortlist(db, { programId, categoryId: firstCategory.id, weights: view.weights })
     : undefined;
 
-  const { coverage, exposure } = deriveFamilyCoverageAndExposure(familyRows);
+  const { coverage, exposure } = deriveFamilyCoverageAndExposure(
+    familyPaths.map((p) => ({
+      member: { id: p.terminalEntityId, label: p.label, country: p.country, risk: p.risk },
+      hopDepth: p.hopDepth,
+      truncated: p.truncated,
+      reachableCount: p.reachableCount,
+      discoveredByJob: p.discoveredByJob,
+    })),
+  );
 
   let profile: SayariEntity | undefined;
   if (ownPayload) {
@@ -242,6 +237,11 @@ export async function loadSupplierPage(
     scored,
     coverage,
     exposure,
+    // The citable chain rows sit beneath the exposure badge (network spec
+    // §6, §8) — every Path this family holds, each with its own ordered
+    // `entity_relationship` chain, ready for ticket 05's diagram to sit
+    // above.
+    familyChain: familyPaths,
     enrichments,
     version,
     sentences,

@@ -2,92 +2,123 @@ import { sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import type { EntitySource, FamilyMemberRisk } from '@/domain/family';
+import type { ParsedEdge } from '@/domain/parse-relationships';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
 import type { SayariEntity, SayariTraversalPath } from '@/upstream/projections/sayari';
 import { upsertEntity } from './resolve';
 
 /**
- * Writing `family_member` rows, for both reads that produce them (SPEC §8.5).
+ * Writing `graph_path` rows, for every read that produces a Path (network spec
+ * §6, ticket 02).
  *
- * **Two callers, one writer.** The automatic Corporate family read
- * (`enrichFamily`) and the person-triggered Deep Traversal (`runDeepTraversal`)
- * find members through different endpoints, at different depths, in different
- * directions — and then have exactly the same thing to say about each one:
- * upsert the entity, and record the pair *(root, member)* with the route that
- * reached it. SPEC §8.5 is explicit that a Deep Traversal *writes into the same
- * `family_member` table*, so the second caller could only have been a copy of
- * the first, and a copy is where the `onConflictDoUpdate` target would have
- * drifted back to the primary key that already cost Bosch and Magna a doubled
- * badge.
+ * **One writer, every kind.** The automatic Corporate family and watchlist
+ * reads, the person-triggered Deep Traversal, the recommend Job's shortest-path
+ * check and the trade Job's upstream tiers all find Paths through different
+ * endpoints, at different depths, in different directions — and then have
+ * exactly the same thing to say about each one: upsert the terminal entity, and
+ * record the pair *(root, terminal, kind)* with the route that reached it.
+ * `graph_path`'s unique key is on all three, so a family Path and a shortest
+ * path between the same two entities are not duplicates of each other — they
+ * are two different facts that happen to share two endpoints.
  *
  * What stays with each caller is what genuinely differs: which endpoint to
- * call, how to page it, and how to read coverage off its envelope. What lives
- * here is the row.
+ * call, how to page it, how to read coverage off its envelope, and which `kind`
+ * and `direction` its own Paths carry. What lives here is the row, and the one
+ * hop-depth rule (`ownershipHopDepth`) every caller now shares.
  */
 
-/** One member, ready to write: the entity as it arrived, and the route to it. */
-export type FamilyMemberWrite = {
+export type GraphPathKind = (typeof t.graphPathKind.enumValues)[number];
+export type GraphPathDirection = (typeof t.graphPathDirection.enumValues)[number];
+
+/** One member, ready to write: the entity as it arrived, its depth, and its edges. */
+export type GraphPathWrite = {
   entity: SayariEntity;
-  /** The **shape** of the path, never the entities along it — see `summarisePath`. */
-  path: unknown;
+  /** Ownership hops from the root, `possibly_same_as` steps excluded. */
   hopDepth: number;
+  /**
+   * Ordered `entity_relationship.id`s, one per resolvable hop — see
+   * `summarisePath`. Empty when no hop of this Path could be resolved to a
+   * citable edge (the payload named a hop with no readable entity or type).
+   */
+  edgeIds: readonly string[];
 };
 
 /**
- * Upserts every member and its entity, and returns them in the shape the
- * Family exposure badge reads.
+ * Upserts every terminal entity and its Path, and returns them in the shape
+ * the Family exposure badge reads.
  *
- * `discoveredByJob` is the caller's answer to *which read found this*: null for
- * the automatic family, the Job id for a Deep Traversal. It is deliberately
- * **not** in the conflict `set` below.
+ * `discoveredByJob` is the caller's answer to *which read found this*: null
+ * for an automatic read, the Job id for a Deep Traversal. It is deliberately
+ * **not** in the conflict `set` below — the row's provenance is who found it
+ * FIRST, not who found it most recently.
+ *
+ * `kind`/`direction` are the caller's answer to *what shape of Path is this*
+ * (network spec §6). **Design note, not a bug to fix further:** a downward
+ * Deep Traversal find is `kind: 'family'` — Corporate family is defined as the
+ * downward subset of the Network, with no mention of which read reached a
+ * member — and only an upward Deep Traversal find is `kind: 'deep_traversal'`.
+ * That split is the caller's decision (`traverse.ts`), not this function's; it
+ * only needs `kind`/`direction` to be told, once, per batch of members.
+ *
+ * `filtered` is **sticky-true on conflict** (the schema's own comment on
+ * `graph_path.filtered`, network spec §4.1): a Path a filtered, risk-focused
+ * page has ever confirmed stays `filtered: true` even when a later unfiltered
+ * read touches the same row. `filtered = filtered OR excluded.filtered` in
+ * `conflictSet` below is what makes that true without a second row — the
+ * unique key is (root, terminal, kind), not (root, terminal, kind, filtered).
  *
  * `source` names the endpoint this batch of members arrived from, for the risk
- * union `upsertEntity` merges on every write (SPEC §8.2 D5). Both callers now
- * name it explicitly — `enrichFamily` (this file's only automatic caller)
- * always with `'ownership'`, and `traverse.ts`'s Deep Traversal with
- * `'ownership'` for its downward walk and `'ubo'` for its upward one (B1) —
- * so the default below is exercised only by the automatic family read, which
- * is the one caller for which `'ownership'` is always correct.
+ * union `upsertEntity` merges on every write (SPEC §8.2 D5). Every caller now
+ * names it explicitly — `enrichFamily`/`enrichWatchlist` (`src/jobs/enrich.ts`)
+ * always with the endpoint they called, and `traverse.ts`'s Deep Traversal with
+ * `'ownership'` for its downward walk and `'ubo'` for its upward one — so the
+ * default below is a fallback only, never load-bearing.
  */
-export async function writeFamilyMembers(
+export async function writeGraphPaths(
   db: Database,
   args: {
     rootEntityId: string;
     enrichmentId: string;
-    members: readonly FamilyMemberWrite[];
-    coverage: { truncated: boolean; exploredCount: number | null; reachableCount: number | null };
+    kind: GraphPathKind;
+    direction: GraphPathDirection;
+    members: readonly GraphPathWrite[];
+    /** Read off the read's own envelope, never inferred from path count (network spec §6). */
+    coverage: { truncated: boolean; exploredCount: number | null; partialResults: boolean };
     discoveredByJob: string | null;
+    filtered?: boolean | undefined;
     source?: EntitySource | undefined;
   },
 ): Promise<FamilyMemberRisk[]> {
   const written: FamilyMemberRisk[] = [];
   const source: EntitySource = args.source ?? 'ownership';
+  const filtered = args.filtered ?? false;
 
   for (const member of args.members) {
     // The merged, persisted `risk` — the union of this sighting and whatever
     // this id already held, with per-factor provenance — rather than the
-    // fresh incoming payload alone. Reading it straight back from the write
-    // is what lets a Family member get the same "provenance from the stored
-    // row" treatment as the five other single-source call sites (item A):
-    // one member entity can be BOTH a Supplier's Profile (fetched by
-    // `getEntity` elsewhere) and a family member (fetched by this traversal),
-    // and the badge should see everything either read has ever found.
+    // fresh incoming payload alone. One terminal entity can be BOTH a
+    // Supplier's Profile (fetched by `getEntity` elsewhere) and a Path
+    // terminal (fetched by this traversal), and the badge should see
+    // everything either read has ever found.
     const { risk: storedRisk } = await upsertEntity(db, member.entity, undefined, source);
     await db
-      .insert(t.familyMember)
+      .insert(t.graphPath)
       .values({
         enrichmentId: args.enrichmentId,
         rootEntityId: args.rootEntityId,
-        memberEntityId: member.entity.id,
-        path: (member.path ?? null) as never,
+        terminalEntityId: member.entity.id,
+        kind: args.kind,
+        direction: args.direction,
         hopDepth: member.hopDepth,
+        edgeIds: [...member.edgeIds],
         discoveredByJob: args.discoveredByJob,
         truncated: args.coverage.truncated,
         exploredCount: args.coverage.exploredCount,
-        reachableCount: args.coverage.reachableCount,
+        partialResults: args.coverage.partialResults,
+        filtered,
       })
       .onConflictDoUpdate({
-        target: [t.familyMember.rootEntityId, t.familyMember.memberEntityId],
+        target: [t.graphPath.rootEntityId, t.graphPath.terminalEntityId, t.graphPath.kind],
         set: conflictSet(args),
       });
 
@@ -105,67 +136,158 @@ export async function writeFamilyMembers(
 }
 
 /**
- * What a second read of the same pair updates, and what it leaves standing.
+ * What a second read of the same (root, terminal, kind) updates, and what it
+ * leaves standing.
  *
  * **`firstSeenAt` and `discoveredByJob` are absent on purpose.** They are the
- * row's provenance — *when this company first appeared in this family, and
- * which read put it there* — and a later read is not new provenance for a fact
- * it did not discover. The *new evidence* chip is computed from `firstSeenAt`
+ * row's provenance — *when this Path first appeared, and which read found
+ * it* — and a later read is not new provenance for a fact it did not
+ * discover. The *new evidence* chip is computed from `firstSeenAt`
  * (SPEC §12.1), so re-stamping it would light the chip on every re-read; and a
  * Deep Traversal that re-reaches a member the automatic family already held
  * must not claim to have found it.
  *
- * **`hopDepth` and `path` move together, and only downwards.** A row records
- * the *shortest* route known to that member: a company reachable in one hop is
- * reachable in one hop whichever read noticed, and a Deep Traversal arriving at
- * it through a longer path has learned nothing that makes it further away. The
- * path is the evidence for the depth, so overwriting one without the other
- * would leave a row whose route and whose number disagree.
+ * **`hopDepth` and `edgeIds` move together, and only downwards.** A row
+ * records the *shortest* route known to that terminal: an entity reachable in
+ * one hop is reachable in one hop whichever read noticed, and a Deep Traversal
+ * arriving at it through a longer path has learned nothing that makes it
+ * further away. `edgeIds` is the evidence for the depth, so overwriting one
+ * without the other would leave a row whose chain and whose number disagree.
  *
- * The coverage columns *are* overwritten, because they describe the read rather
- * than the member, and the newest read is the one the page should be quoting.
+ * **`filtered` only ever moves to `true`.** `filtered OR excluded.filtered`
+ * is what makes a Path confirmed by a filtered page stay confirmed, whichever
+ * order the two pages of one read arrive in.
+ *
+ * The coverage columns *are* overwritten unconditionally, because they
+ * describe the read rather than the terminal, and the newest read is the one
+ * the page should be quoting.
  */
 function conflictSet(args: {
   enrichmentId: string;
-  coverage: { truncated: boolean; exploredCount: number | null; reachableCount: number | null };
+  coverage: { truncated: boolean; exploredCount: number | null; partialResults: boolean };
 }) {
   return {
     enrichmentId: args.enrichmentId,
-    hopDepth: sql`least(${t.familyMember.hopDepth}, excluded.hop_depth)`,
-    path: sql`case when excluded.hop_depth <= ${t.familyMember.hopDepth}
-                   then excluded.path else ${t.familyMember.path} end`,
+    hopDepth: sql`least(${t.graphPath.hopDepth}, excluded.hop_depth)`,
+    edgeIds: sql`case when excluded.hop_depth <= ${t.graphPath.hopDepth}
+                   then excluded.edge_ids else ${t.graphPath.edgeIds} end`,
     truncated: args.coverage.truncated,
     exploredCount: args.coverage.exploredCount,
-    reachableCount: args.coverage.reachableCount,
+    partialResults: args.coverage.partialResults,
+    filtered: sql`${t.graphPath.filtered} OR excluded.filtered`,
   };
 }
 
+/** One occurrence inside a traversal path hop's own relationships group. */
+type PathHopValue = {
+  record?: string | null;
+  from_date?: string | null;
+  to_date?: string | null;
+  former?: boolean | null;
+  attributes?: unknown;
+};
+
+/** One hop of a traversal path, reduced to what a citable edge needs. */
+export type PathHop = {
+  field: string | null;
+  entityId: string | null;
+  /**
+   * The edge this hop names, ready for `storeRelationships` — null when the
+   * hop's own entity or relationship type could not be read from the payload.
+   * Once a hop is unresolvable every hop after it is too: the chain's subject
+   * is the previous hop's own entity, and there is nothing to chain from.
+   */
+  edge: ParsedEdge | null;
+  /** Ownership hops through and including this one, `possibly_same_as` excluded. */
+  hopDepth: number;
+};
+
 /**
- * Reduces a traversal path to its route: one entry per hop, carrying the
- * relationship field and the entity id it reached.
+ * Reduces a traversal path to its citable edges, one per hop, in order —
+ * `edge_ids: ordered entity_relationship.ids — a Path is a list of citable
+ * edges` (network spec §6).
  *
- * The entities themselves are upserted into `entity` by `writeFamilyMembers`,
- * so storing them again here would duplicate megabytes per Supplier — measured
- * at **886 KB across 17 rows**, one path alone at 605 KB, because a Sayari
+ * Each hop becomes a `ParsedEdge` ready for `storeRelationships`: subject
+ * chained from the previous hop's own entity (the root, for the first hop),
+ * target the hop's own entity, type the hop's `field`, record/shares/dates
+ * from the **first** occurrence of that hop's own relationship group — the
+ * primary citation for that hop, not every sighting of it (a hop can carry a
+ * dozen; `storeRelationships` still stores whichever one is asked for, and a
+ * caller that wants every occurrence stored calls it directly, the way
+ * `readOwnerEdges` does for owner edges).
+ *
+ * `hopDepth` is carried per hop too, via the one hop-depth rule
+ * (`ownershipHopDepth`): the same figure a caller would get computing it over
+ * `path.slice(0, i + 1)` itself, so `entity_relationship.hop_depth` and
+ * `graph_path.hop_depth` never disagree about what "N hops" means.
+ *
+ * The entities themselves are upserted by `storeRelationships`/
+ * `writeGraphPaths`, not stored here — storing them again in this function's
+ * own return value would duplicate megabytes per Supplier, measured at
+ * **886 KB across 17 rows**, one path alone at 605 KB, because a Sayari
  * traversal payload carries a complete entity at every hop. Returning them
  * wholesale from a read tool is what fired the assess Job's 450,000-token
  * ceiling (BUILD-NOTES finding 23).
  */
-export function summarisePath(path: unknown): { field: string | null; entityId: string | null }[] {
-  if (!Array.isArray(path)) return [];
-  return path.map((hop) => {
-    const step = (hop ?? {}) as { field?: unknown; entity?: unknown };
-    const entity = step.entity;
-    return {
-      field: typeof step.field === 'string' ? step.field : null,
-      entityId:
-        typeof entity === 'string'
-          ? entity
-          : entity && typeof entity === 'object' && 'id' in entity
-            ? String((entity as { id: unknown }).id)
+export function summarisePath(path: unknown, rootEntityId: string): PathHop[] {
+  const hops = (Array.isArray(path) ? path : []) as NonNullable<SayariTraversalPath['path']>;
+  const out: PathHop[] = [];
+  let subjectId = rootEntityId;
+  let broken = false;
+
+  hops.forEach((raw, index) => {
+    const step = (raw ?? {}) as { field?: unknown; entity?: unknown; relationships?: unknown };
+    const field = typeof step.field === 'string' ? step.field : null;
+    const entityRaw = step.entity;
+    const targetObject =
+      entityRaw && typeof entityRaw === 'object' && 'id' in entityRaw
+        ? (entityRaw as SayariEntity)
+        : null;
+    const entityId = targetObject
+      ? String(targetObject.id)
+      : typeof entityRaw === 'string'
+        ? entityRaw
+        : null;
+    const hopDepth = ownershipHopDepth(hops.slice(0, index + 1));
+
+    if (broken || !field || !entityId) {
+      broken = true;
+      out.push({ field, entityId, edge: null, hopDepth });
+      return;
+    }
+
+    const bag = step.relationships;
+    const group =
+      bag && typeof bag === 'object' && !Array.isArray(bag)
+        ? (bag as Record<string, { values?: readonly PathHopValue[] | null } | null>)[field]
+        : undefined;
+    const value = group?.values?.[0];
+
+    out.push({
+      field,
+      entityId,
+      hopDepth,
+      edge: {
+        subjectId,
+        targetId: entityId,
+        targetLabel: targetObject?.label ?? null,
+        targetType: targetObject?.type ?? null,
+        relationshipType: field,
+        former: value?.former === true,
+        startDate: value?.from_date ?? null,
+        endDate: value?.to_date ?? null,
+        sourceRecordId: value?.record ?? null,
+        attributes:
+          value?.attributes && typeof value.attributes === 'object'
+            ? (value.attributes as Record<string, unknown>)
             : null,
-    };
+        targetEntity: targetObject as unknown as Record<string, unknown> | null,
+      },
+    });
+    subjectId = entityId;
   });
+
+  return out;
 }
 
 /**
@@ -181,6 +303,10 @@ export function summarisePath(path: unknown): { field: string | null; entityId: 
  * path `field` three times, so this is a real difference and not a hypothetical
  * one.
  *
+ * **One rule for every kind and every caller** — the automatic reads
+ * (`enrich.ts`) and Deep Traversal (`traverse.ts`) both route through this
+ * function now, rather than one of them counting raw path length.
+ *
  * Floored at 1, because a member is never zero hops from the root: the root is
  * not its own family member, and a path we cannot read at all is at least one
  * step away.
@@ -192,13 +318,13 @@ export function ownershipHopDepth(path: SayariTraversalPath['path']): number {
 }
 
 /**
- * The member a path ends at, or nothing where the payload does not carry one.
+ * The terminal a path ends at, or nothing where the payload does not carry one.
  *
- * The `target` is the family member and it arrives **complete, with its `risk`
- * block inline** — the measurement that made the family cost one call rather
- * than 25 (SPEC §8.1). Falling back to the last path element covers the shape
- * where `target` is an id rather than an entity; a root that appears as its own
- * target is dropped, since a company is not in its own Corporate family.
+ * The `target` arrives **complete, with its `risk` block inline** — the
+ * measurement that made the family cost one call rather than 25 (SPEC §8.1).
+ * Falling back to the last path element covers the shape where `target` is an
+ * id rather than an entity; a root that appears as its own target is dropped,
+ * since an entity is not a member of its own family.
  */
 export function terminalEntityOf(
   path: SayariTraversalPath,

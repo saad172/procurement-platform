@@ -16,6 +16,13 @@ import { arr, bool, isObj, num, str } from './narrow';
  * this widget excludes country-derived factors the same way the page and
  * `score.ts` do — through `isCountryDerived()`, one predicate, rather than
  * re-testing the three factor names it used to hold as its own copy.
+ *
+ * Each member also now carries `recordId` — the record asserting THIS
+ * member's own edge (network spec §6, ticket 02 "Done when"), never the read
+ * that found it. Rendered as text, not a `Link`: this payload carries no
+ * `programId` (this file's own note, above) for a `/record/[...recordId]`
+ * href to hang off, the same limitation that already keeps `entityId`
+ * text-only here.
  */
 export function SupplierFamilyWidget({ payload }: { payload: unknown }) {
   const f = parse(payload);
@@ -99,6 +106,7 @@ function MemberRow({ member }: { member: Parsed['members'][number] }) {
           ))
         )}
       </td>
+      <td className="note mono">{member.recordId ?? 'no record cited yet'}</td>
     </tr>
   );
 }
@@ -116,6 +124,10 @@ function parse(payload: unknown) {
         country: str(m.country),
         hopDepth: num(m.hopDepth) ?? 0,
         sanctioned: bool(m.sanctioned),
+        // Absent on a payload frozen before this field existed — `str()`
+        // returns null either way, which reads as "no record cited yet"
+        // rather than throwing `parse()` back to `RawPayload`.
+        recordId: str(m.recordId),
         riskFactors: arr(m.riskFactors)
           .map((r) =>
             isObj(r) && str(r.name)
