@@ -1,9 +1,9 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { derivedId } from '@/db/derived-id';
 import { toAlpha3 } from '@/domain/iso3166';
-import type { DiscriminatorResult } from './discriminators';
+import type { DiscriminatorResult, ResolutionEvidence } from './discriminators';
 
 /**
  * `settleMatch()` — the third chokepoint (SPEC §2.4, §15.4).
@@ -30,15 +30,9 @@ export type CandidateRecord = {
   entityId: string;
   foundByRung: string;
   queryProvenance?: string | undefined;
-  score?: number | undefined;
-  matchStrength?: string | undefined;
-  explanation?: unknown;
-  /** Sayari's own resolution `highlight` block — a different record from
-   * `explanation` (SPEC §6.2/§9), so its own column rather than folded in. */
-  highlight?: unknown;
   /** Keyed by who reported them: `rules`, `resolver`, `evaluator`. */
   verdicts: { reportedBy: string; results: DiscriminatorResult[] }[];
-};
+} & Partial<ResolutionEvidence>;
 
 /**
  * What the settler knows about **where the settled Candidate actually is**.
@@ -62,7 +56,6 @@ export type Settlement = {
   status: 'accepted' | 'needs_review' | 'not_found';
   entityId: string | null;
   settledBy: SettledBy;
-  matchStrength?: string | undefined;
   jobId?: string | undefined;
   threadMessageId?: string | undefined;
   note?: string | undefined;
@@ -115,6 +108,58 @@ export function deriveSettledCountry(args: {
 }
 
 /**
+ * `match.match_strength` for this settlement's accepted entity, DERIVED
+ * rather than hand-passed (A2, PR #18 altitude review).
+ *
+ * Two hand-passed callers used to exist (`resolve.ts`'s rules gate and its
+ * agreement path), and a third path had nothing to pass at all:
+ * `settle-by-hand.ts` calls `settleMatch` with neither `candidates` nor a
+ * `matchStrength` of its own, so a person accepting a pre-pass Candidate
+ * wrote NULL — which reads as *strong* (the UI's own rule for an absent
+ * value). Derived here instead, in the one place every settlement passes
+ * through:
+ *
+ * 1. **This settlement's own `candidates`**, when the accepted entity is
+ *    among them — the rules gate and the agent agreement path both pass one,
+ *    so this is exactly their old hand-passed value, computed instead of
+ *    carried.
+ * 2. **The latest `match_candidate` row for that entity**, across every
+ *    attempt this Match has ever had — the human path's own case: a person
+ *    accepts a Candidate the Needs Review page listed, and that Candidate's
+ *    row is exactly what an earlier attempt (rules or agents) already stored.
+ * 3. **Null**, honestly, when neither exists — a typed-in entity id no rung
+ *    ever surfaced has no match_strength to report, which is the same reading
+ *    a promoted Lead's `settleDiscoveredLead` note already states in words.
+ */
+async function deriveMatchStrength(
+  tx: Parameters<Parameters<Database['transaction']>[0]>[0],
+  settlement: Settlement,
+  existingMatchId: string | undefined,
+): Promise<string | null> {
+  if (!settlement.entityId) return null;
+
+  const fromThisSettlement = settlement.candidates?.find(
+    (c) => c.entityId === settlement.entityId,
+  )?.matchStrength;
+  if (fromThisSettlement) return fromThisSettlement;
+
+  if (!existingMatchId) return null;
+  const [row] = await tx
+    .select({ matchStrength: t.matchCandidate.matchStrength })
+    .from(t.matchCandidate)
+    .innerJoin(t.matchAttempt, eq(t.matchAttempt.id, t.matchCandidate.matchAttemptId))
+    .where(
+      and(
+        eq(t.matchAttempt.matchId, existingMatchId),
+        eq(t.matchCandidate.entityId, settlement.entityId),
+      ),
+    )
+    .orderBy(desc(t.matchAttempt.attemptN))
+    .limit(1);
+  return row?.matchStrength ?? null;
+}
+
+/**
  * The one `match` row per Supplier, inserted or updated, carrying the country
  * this settlement decided to score on.
  *
@@ -139,12 +184,13 @@ async function upsertMatchRow(
   const settled = settlement.entityId
     ? deriveSettledCountry({ evidence: settlement.settledEvidence, profileCountry })
     : { country: null, source: null };
+  const matchStrength = await deriveMatchStrength(tx, settlement, existing?.id);
 
   const values = {
     status: settlement.status,
     entityId: settlement.entityId,
     settledBy: settlement.settledBy,
-    matchStrength: settlement.matchStrength ?? null,
+    matchStrength,
     settledCountry: settled.country,
     settledCountrySource: settled.source,
   };

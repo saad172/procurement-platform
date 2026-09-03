@@ -21,8 +21,13 @@ import { seededProgram } from '../../support/seeded-program';
  * `resolve/rules-r0` fixture's own row for AMERICAN AXLE & MANUFACTURING INC
  * — `score: 216.92903`, `match_strength: {"value": "strong"}`, the `name` /
  * `address` / `country` keys both blocks carry, and `address` entries' own
- * `matchQuality`, per `tests/fixtures/resolve/rules-r0.json` — rather than a
+ * `match_quality`, per `tests/fixtures/resolve/rules-r0.json` — rather than a
  * live call, per the hard rule against one.
+ *
+ * **Snake_case, as projected (C1).** The fixture's raw body is the SDK's own
+ * camelCase (`highQualityMatchName`); by the time it reaches
+ * `match_candidate.explanation` it has been through `snakeKeys`, so the
+ * stored shape — and this test's own — is `high_quality_match_name`.
  */
 
 const TEST_ROSTER_NAME = 'Settle Match Evidence Test Co';
@@ -34,7 +39,7 @@ const EXPLANATION = {
       matched: '<em>TEST</em> <em>EVIDENCE</em> CO',
       uploaded: 'Test Evidence Co',
       evaluator: 'algo',
-      highQualityMatchName: true,
+      high_quality_match_name: true,
     },
   ],
   address: [
@@ -42,7 +47,7 @@ const EXPLANATION = {
       scores: { '9p': 1 },
       matched: '1 <em>TEST</em> STREET',
       uploaded: '1 Test Street',
-      matchQuality: 'high',
+      match_quality: 'high',
     },
   ],
   country: [{ matched: '<em>USA</em>', uploaded: 'USA' }],
@@ -99,12 +104,14 @@ describe('settleMatch keeps the four evidence fields, from a body shaped like a 
       verdicts: [{ reportedBy: 'rules', results: [] }],
     };
 
+    // No top-level `matchStrength` — `settleMatch` derives `match.match_strength`
+    // from the accepted Candidate's own row (A2), which `candidate` above
+    // already carries.
     await settleMatch(db, {
       supplierId: setup.supplierId,
       status: 'accepted',
       entityId: setup.entityId,
       settledBy: 'rules',
-      matchStrength: 'strong',
       candidates: [candidate],
     });
 
@@ -166,5 +173,76 @@ describe('settleMatch keeps the four evidence fields, from a body shaped like a 
     expect(row?.matchStrength).toBeNull();
     expect(row?.explanation).toBeNull();
     expect(row?.highlight).toBeNull();
+  });
+});
+
+/**
+ * **`match.match_strength` is derived, never hand-passed** (A2). The two
+ * callers that used to pass it (`resolve.ts`'s rules gate and its agreement
+ * path) both had a Candidate row of their own to read it off; `settle-by-hand.ts`
+ * had neither, so a person accepting a pre-pass Candidate wrote NULL, which
+ * reads as *strong*. `settleMatch` now derives it itself: from the accepted
+ * Candidate in THIS settlement's own `candidates`, falling back to the latest
+ * `match_candidate` row for that entity — the one the human path's Needs
+ * Review page listed the person's choice from.
+ */
+describe('settleMatch derives match.match_strength (A2)', () => {
+  it('falls back to the latest match_candidate row for the accepted entity, on the human path', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const db = await getTestDb();
+    await resetDerived(db);
+    const setup = await seedSupplierAndEntity(db);
+
+    // An earlier, agents-settled attempt records the Candidate's own
+    // match_strength on its row, and parks rather than accepts.
+    await settleMatch(db, {
+      supplierId: setup.supplierId,
+      status: 'needs_review',
+      entityId: null,
+      settledBy: 'agents',
+      candidates: [
+        {
+          entityId: setup.entityId,
+          foundByRung: 'R2',
+          matchStrength: 'weak',
+          verdicts: [{ reportedBy: 'resolver', results: [] }],
+        },
+      ],
+    });
+
+    // A person later accepts that same Candidate by hand — no `candidates`,
+    // no `matchStrength` of its own to pass (`settle-by-hand.ts`'s own shape).
+    await settleMatch(db, {
+      supplierId: setup.supplierId,
+      status: 'accepted',
+      entityId: setup.entityId,
+      settledBy: 'human',
+    });
+
+    const match = await db.query.match.findFirst({
+      where: eq(t.match.supplierId, setup.supplierId),
+    });
+    expect(match?.matchStrength).toBe('weak');
+  });
+
+  it('reads null, not "strong", when the accepted entity has no match_candidate row at all', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const db = await getTestDb();
+    await resetDerived(db);
+    const setup = await seedSupplierAndEntity(db);
+
+    // A typed-in entity id, never surfaced by any rung — the human path's
+    // other case (`settle-by-hand.ts`'s `parsed.kind === 'typed'`).
+    await settleMatch(db, {
+      supplierId: setup.supplierId,
+      status: 'accepted',
+      entityId: setup.entityId,
+      settledBy: 'human',
+    });
+
+    const match = await db.query.match.findFirst({
+      where: eq(t.match.supplierId, setup.supplierId),
+    });
+    expect(match?.matchStrength).toBeNull();
   });
 });
