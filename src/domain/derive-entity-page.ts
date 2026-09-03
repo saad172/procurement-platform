@@ -1,5 +1,6 @@
 import type * as t from '@/db/schema';
-import { directionOf } from './relationships';
+import { directionOf, targetOwnsSubject } from './relationships';
+import { sharePercentageOf } from './parse-relationships';
 
 /**
  * Pure shaping for the Entity page (SPEC §13.7): edges grouped for reading,
@@ -68,6 +69,47 @@ export function deriveEdgeGroups(
       };
     })
     .sort((a, b) => b.total - a.total);
+}
+
+/** One current owner of this entity, with the share and dates the edge carries. */
+export type OwnerEdgeRow = {
+  relationshipType: string;
+  targetId: string;
+  targetLabel: string | null;
+  sharePercentage: number | null;
+  startDate: string | null;
+  endDate: string | null;
+};
+
+/**
+ * This entity's current one-hop owners — `deriveEdgeGroups`'s aggregate
+ * counts say *how many* `has_shareholder` edges there are; this says *who*,
+ * with the share percentage and dates `parseRelationships` has always stored
+ * and nothing had read back (item C, SPEC §16.6).
+ *
+ * Filtered to `side === 'from'` (this entity is the subject) and
+ * `targetOwnsSubject`, the same test `ownersOf` applies to a freshly-parsed
+ * payload — an owner edge read off a stored row is the identical question
+ * asked of a different source.
+ */
+export function deriveOwnerEdges(
+  edges: readonly (typeof t.entityRelationship.$inferSelect)[],
+  entityId: string,
+  labelById: ReadonlyMap<string, string>,
+): OwnerEdgeRow[] {
+  return edges
+    .filter(
+      (edge) =>
+        edge.fromEntityId === entityId && !edge.former && targetOwnsSubject(edge.relationshipType),
+    )
+    .map((edge) => ({
+      relationshipType: edge.relationshipType,
+      targetId: edge.toEntityId,
+      targetLabel: labelById.get(edge.toEntityId) ?? null,
+      sharePercentage: sharePercentageOf(edge.attributes),
+      startDate: edge.startDate,
+      endDate: edge.endDate,
+    }));
 }
 
 /** The Supplier fields the "known as" line needs — never the whole row. */

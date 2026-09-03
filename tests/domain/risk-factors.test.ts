@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEDUCTION_BY_LEVEL,
+  attachRiskSources,
   baseNameOf,
   dedupePsaAgainstBase,
   effectiveLevel,
@@ -229,6 +230,42 @@ describe('parseRiskObject', () => {
   it('treats an empty or absent risk object as no factors, not as an error', () => {
     expect(parseRiskObject(null)).toEqual([]);
     expect(parseRiskObject({})).toEqual([]);
+  });
+
+  /**
+   * `entity.risk` never carries a `sources` key, on purpose (SPEC §8.2 D5) —
+   * `src/tools/catalog/reads.ts` hands this column to a model turn verbatim,
+   * and an extra key here would be an extra key in a live prompt.
+   */
+  it('never reads a sources key, even if one were present on the row', () => {
+    const parsed = parseRiskObject({ cpi_score: { level: 'relevant', sources: ['getEntity'] } });
+    expect(parsed[0]).not.toHaveProperty('sources');
+  });
+});
+
+/**
+ * `attachRiskSources` joins `parseRiskObject`'s factors back up with the
+ * sibling `risk_sources` column, for a caller that wants to say who reported
+ * a factor — a page render, never anything a model turn could echo verbatim
+ * (item A).
+ */
+describe('attachRiskSources', () => {
+  it('adds sources to the factor it names, and leaves the rest alone', () => {
+    const factors = parseRiskObject({
+      cpi_score: { level: 'relevant' },
+      basel_aml: { level: 'relevant' },
+    });
+    const decorated = attachRiskSources(factors, { cpi_score: ['getEntity', 'traversal'] });
+    expect(decorated.find((f) => f.name === 'cpi_score')?.sources).toEqual([
+      'getEntity',
+      'traversal',
+    ]);
+    expect(decorated.find((f) => f.name === 'basel_aml')?.sources).toBeUndefined();
+  });
+
+  it('is a no-op when risk_sources is null — a row from before this ticket', () => {
+    const factors = parseRiskObject({ cpi_score: { level: 'relevant' } });
+    expect(attachRiskSources(factors, null)).toEqual(factors);
   });
 });
 

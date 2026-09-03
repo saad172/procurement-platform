@@ -1,7 +1,8 @@
 import { sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
-import { unionRiskFactors, type FamilyMemberRisk } from '@/domain/family';
+import type { EntitySource, FamilyMemberRisk } from '@/domain/family';
+import { parseRiskObject } from '@/domain/scoring/risk-factors';
 import type { SayariEntity, SayariTraversalPath } from '@/upstream/projections/sayari';
 import { upsertEntity } from './resolve';
 
@@ -39,6 +40,15 @@ export type FamilyMemberWrite = {
  * `discoveredByJob` is the caller's answer to *which read found this*: null for
  * the automatic family, the Job id for a Deep Traversal. It is deliberately
  * **not** in the conflict `set` below.
+ *
+ * `source` names the endpoint this batch of members arrived from, for the risk
+ * union `upsertEntity` merges on every write (SPEC §8.2 D5). Left unnamed, it
+ * defaults to `'ownership'` when `discoveredByJob` is null — the automatic
+ * family read, which always calls `traversal.ownership` — and to `'ubo'`
+ * otherwise, because a Deep Traversal is the one caller that also walks
+ * upward. `traverse.ts` is not this ticket's file to edit, so its existing
+ * call (which names neither) still gets a sensible label rather than the
+ * wrong one (`getEntity`) `upsertEntity`'s own default would otherwise apply.
  */
 export async function writeFamilyMembers(
   db: Database,
@@ -48,12 +58,22 @@ export async function writeFamilyMembers(
     members: readonly FamilyMemberWrite[];
     coverage: { truncated: boolean; exploredCount: number | null; reachableCount: number | null };
     discoveredByJob: string | null;
+    source?: EntitySource | undefined;
   },
 ): Promise<FamilyMemberRisk[]> {
   const written: FamilyMemberRisk[] = [];
+  const source: EntitySource = args.source ?? (args.discoveredByJob ? 'ubo' : 'ownership');
 
   for (const member of args.members) {
-    await upsertEntity(db, member.entity);
+    // The merged, persisted `risk` — the union of this sighting and whatever
+    // this id already held, with per-factor provenance — rather than the
+    // fresh incoming payload alone. Reading it straight back from the write
+    // is what lets a Family member get the same "provenance from the stored
+    // row" treatment as the five other single-source call sites (item A):
+    // one member entity can be BOTH a Supplier's Profile (fetched by
+    // `getEntity` elsewhere) and a family member (fetched by this traversal),
+    // and the badge should see everything either read has ever found.
+    const { risk: storedRisk } = await upsertEntity(db, member.entity, undefined, source);
     await db
       .insert(t.familyMember)
       .values({
@@ -76,11 +96,7 @@ export async function writeFamilyMembers(
       entityId: member.entity.id,
       label: member.entity.label,
       country: member.entity.countries?.[0] ?? null,
-      // Union with per-factor provenance: the traversal payload and getEntity
-      // disagree, and taking either as authoritative drops real factors.
-      factors: unionRiskFactors([{ source: 'traversal', risk: member.entity.risk }]).map(
-        (u) => u.factor,
-      ),
+      factors: parseRiskObject(storedRisk ?? member.entity.risk),
       hopDepth: member.hopDepth,
       fromDeepTraversal: args.discoveredByJob != null,
     });

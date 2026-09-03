@@ -251,3 +251,116 @@ export function unionRiskFactors(
 
   return [...merged.values()];
 }
+
+/**
+ * The endpoint that produced an entity payload, for the risk provenance
+ * `upsertEntity` writes on every merge (SPEC §8.2 D5).
+ *
+ * Open-ended by design — a template-literal-style union rather than a closed
+ * enum — because the SDK has more entity-shaped endpoints than this ticket
+ * touches (`entitySummary` for the pre-pass Candidates, `resolution`,
+ * `searchEntity`, …) and a factor's `sources` array is a citation list, not a
+ * schema: a name this build has not named yet still merges and still gets
+ * remembered, rather than being coerced into a lie or refused.
+ */
+export type EntitySource =
+  | 'getEntity'
+  | 'ownership'
+  | 'ubo'
+  | 'traversal'
+  | 'entitySummary'
+  | 'resolution'
+  | 'searchEntity'
+  | (string & {});
+
+/**
+ * Merges a newly-sighted `risk` object into what a previous `upsertEntity`
+ * call already wrote, for one factor at a time (SPEC §8.2 D5).
+ *
+ * This is **not** `unionRiskFactors` reused, and the difference is why a
+ * separate function exists: `unionRiskFactors` gives every factor parsed out
+ * of one `risk` blob the *same* source label, which is exactly right for
+ * combining two freshly-fetched payloads in memory, but wrong here — the
+ * *existing* side of this merge is a row that may already carry a different
+ * source list **per factor**, the residue of every merge before this one.
+ * Labelling the whole existing blob "existing" would discard that history on
+ * every write.
+ *
+ * Kept per factor: the union of names, the **worse** level where both sides
+ * report one (understating is the more dangerous error — the same call
+ * `unionRiskFactors` makes), the traversal path from whichever side has one,
+ * and the union of sources.
+ *
+ * **Two return values, for two columns.** `risk` keeps Sayari's own shape —
+ * `level`, `value`, `metadata`, nothing added — because
+ * `src/tools/catalog/reads.ts` hands it to a model turn verbatim; `sources` is
+ * the flat `{ [factorName]: string[] }` map `upsertEntity` writes to the
+ * sibling `risk_sources` column. See the schema comment on `entity.risk` for
+ * why the two are not one jsonb blob: an inline `sources` key broke two
+ * assess/recommend replays the first time this was tried, because the exact
+ * shape of `entity.risk` reaches a live prompt unfiltered.
+ *
+ * Returns `undefined` when this sighting says nothing about risk at all, so
+ * `upsertEntity`'s "a column moves only when the incoming sighting states it"
+ * rule holds for `risk` exactly as it does for every other column — a caller
+ * that gets `undefined` back knows to leave both columns alone.
+ */
+export function mergeRiskForUpsert(
+  existingRisk: unknown,
+  existingSources: unknown,
+  incomingRisk: unknown,
+  source: EntitySource,
+): { risk: Record<string, unknown>; sources: Record<string, string[]> } | undefined {
+  if (incomingRisk === undefined) return undefined;
+
+  const priorSourcesByName = parseSourceMap(existingSources);
+  const merged = new Map<string, RiskFactor & { sources: string[] }>();
+  for (const factor of parseRiskObject(existingRisk)) {
+    merged.set(factor.name, { ...factor, sources: priorSourcesByName[factor.name] ?? [] });
+  }
+  for (const factor of parseRiskObject(incomingRisk)) {
+    const prior = merged.get(factor.name);
+    if (!prior) {
+      merged.set(factor.name, { ...factor, sources: [source] });
+      continue;
+    }
+    merged.set(factor.name, {
+      ...prior,
+      level:
+        factor.level && (!prior.level || rank(factor.level) > rank(prior.level))
+          ? factor.level
+          : prior.level,
+      // Keep whichever traversal path is already on file; it is the evidence
+      // a compliance sentence cites, and a `getEntity` body never carries one
+      // to begin with.
+      traversalPath: prior.traversalPath ?? factor.traversalPath,
+      value: prior.value ?? factor.value,
+      sources: prior.sources.includes(source) ? prior.sources : [...prior.sources, source],
+    });
+  }
+
+  const risk: Record<string, unknown> = {};
+  const sources: Record<string, string[]> = {};
+  for (const [name, factor] of merged) {
+    risk[name] = {
+      level: factor.level ?? null,
+      value: factor.value ?? null,
+      metadata: {
+        ...(factor.country != null ? { country: factor.country } : {}),
+        ...(factor.traversalPath != null ? { traversal_path: factor.traversalPath } : {}),
+      },
+    };
+    sources[name] = factor.sources;
+  }
+  return { risk, sources };
+}
+
+/** Reads the `risk_sources` column back into a plain `{ name: sources[] }` map. */
+function parseSourceMap(riskSources: unknown): Record<string, string[]> {
+  if (!riskSources || typeof riskSources !== 'object') return {};
+  const out: Record<string, string[]> = {};
+  for (const [name, raw] of Object.entries(riskSources as Record<string, unknown>)) {
+    if (Array.isArray(raw)) out[name] = raw.filter((s): s is string => typeof s === 'string');
+  }
+  return out;
+}

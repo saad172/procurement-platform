@@ -129,6 +129,37 @@ export function ownersOf(edges: readonly ParsedEdge[]): ParsedEdge[] {
   return edges.filter((edge) => !edge.former && targetOwnsSubject(edge.relationshipType));
 }
 
+/**
+ * The share percentage `attributes.shares` carries, when it does (item C).
+ *
+ * `parseRelationships` already stores `attributes` verbatim — shares, dates
+ * and `source_record_id` — and nothing had read them back. `shares` is an
+ * array (one entry per share class recorded), so the first entry that names a
+ * `percentage` is taken; a recorded entry with only a `monetary_value` or a
+ * `num_shares` says something real but not a percentage, so it is skipped
+ * rather than misread as one.
+ *
+ * Takes `attributes` directly, not a whole `ParsedEdge`, so the same reader
+ * serves both a `ParsedEdge.attributes` and an `entity_relationship` row's
+ * `attributes` column — the two are the same shape, stored and read straight
+ * through.
+ */
+export function sharePercentageOf(attributes: unknown): number | null {
+  const shares =
+    attributes && typeof attributes === 'object'
+      ? (attributes as Record<string, unknown>)['shares']
+      : null;
+  if (!Array.isArray(shares)) return null;
+  for (const share of shares) {
+    const pct =
+      share && typeof share === 'object'
+        ? (share as Record<string, unknown>)['percentage']
+        : undefined;
+    if (typeof pct === 'number') return pct;
+  }
+  return null;
+}
+
 /** Edges grouped for display: type, direction, and the targets on it. */
 export function groupForDisplay(
   edges: readonly ParsedEdge[],

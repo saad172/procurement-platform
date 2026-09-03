@@ -13,6 +13,7 @@ import { sameCountry } from '@/domain/match/address-ladder';
 import { seedFor, shuffleCandidates } from '@/domain/match/shuffle';
 import { ownersOf, parseRelationships } from '@/domain/parse-relationships';
 import { compareAddresses } from '@/domain/match/address-ladder';
+import { mergeRiskForUpsert, type EntitySource } from '@/domain/family';
 import {
   nextAttemptNumber,
   settleMatch,
@@ -889,16 +890,49 @@ function sawCandidateInCountry(roster: RosterRow, candidates: readonly Candidate
  * is truly this entity's own payload is what keeps the Profile page's
  * provenance line honest — see the column's own note. It was the one column
  * already guarded this way; everything below generalises that note.
+ *
+ * **`risk` and `risk_sources` are the two columns that do not simply take
+ * the newest sighting.** Two Sayari endpoints disagree about an entity's risk
+ * often enough that taking either as authoritative drops real factors —
+ * measured at ten factors in a traversal payload against six from `getEntity`
+ * for the same company, the four missing including an elevated forced-labour
+ * factor (SPEC §8.2 D5). So they are **merged** rather than overwritten:
+ * `mergeRiskForUpsert` (`src/domain/family.ts`) keeps the union of factor
+ * names in `risk`, the worse level where two sightings disagree, and — in the
+ * sibling `risk_sources` column, never inline in `risk` itself — every
+ * endpoint that has ever reported each factor. `source` therefore names
+ * *which* endpoint this particular payload came from — `getEntity` is the
+ * sensible default for every caller that has not been updated to say
+ * otherwise, which today is every caller outside this file's owned region
+ * (see the report on ticket `01-tier-one-fixes`, item A).
  */
 export async function upsertEntity(
   db: Database,
   entity: SayariEntity,
   upstreamResponseId?: string | null,
-): Promise<void> {
+  source: EntitySource = 'getEntity',
+): Promise<{ risk: Record<string, unknown> | undefined }> {
   const address = entity.attributes?.address?.data?.[0];
   const properties = address?.properties;
   const sourceCount = entity.source_count ?? null;
   const lei = findLei(entity);
+
+  /**
+   * The merged `risk` and `risk_sources`, read back from whatever this id
+   * already holds so a factor a previous sighting reported is never dropped
+   * by this one. Only queried when this sighting actually says something
+   * about risk — the same "a column moves only when the incoming sighting
+   * states it" rule as every other column, applied to the one query this
+   * function runs before its write.
+   */
+  let merged: ReturnType<typeof mergeRiskForUpsert>;
+  if (entity.risk !== undefined) {
+    const existing = await db.query.entity.findFirst({
+      where: eq(t.entity.id, entity.id),
+      columns: { risk: true, riskSources: true },
+    });
+    merged = mergeRiskForUpsert(existing?.risk, existing?.riskSources, entity.risk, source);
+  }
 
   /**
    * What this sighting states, with `undefined` for everything it is silent
@@ -924,7 +958,8 @@ export async function upsertEntity(
     sanctioned: entity.sanctioned ?? undefined,
     pep: entity.pep ?? undefined,
     closed: entity.closed ?? undefined,
-    risk: (entity.risk ?? undefined) as never,
+    risk: (merged?.risk ?? undefined) as never,
+    riskSources: (merged?.sources ?? undefined) as never,
     psaCount: entity.psa_count ?? undefined,
     ...(entity.relationship_count
       ? {
@@ -962,6 +997,8 @@ export async function upsertEntity(
         // chip is computed from it, and re-stamping would silence the signal.
       },
     });
+
+  return { risk: merged?.risk };
 }
 
 /**

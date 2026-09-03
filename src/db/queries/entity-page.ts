@@ -1,8 +1,8 @@
-import { and, eq, or } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
-import { parseRiskObject } from '@/domain/scoring/risk-factors';
-import { deriveEdgeGroups, deriveKnownAs } from '@/domain/derive-entity-page';
+import { attachRiskSources, parseRiskObject } from '@/domain/scoring/risk-factors';
+import { deriveEdgeGroups, deriveKnownAs, deriveOwnerEdges } from '@/domain/derive-entity-page';
 
 /**
  * Everything this page renders, in one read (SPEC §13.1).
@@ -39,10 +39,39 @@ export async function loadEntityPage(db: Database, args: { programId: string; en
     : undefined;
 
   const sources = readSources(entity.sourceCount);
-  const factors = parseRiskObject(entity.risk);
+  // With provenance joined back in from the sibling `risk_sources` column
+  // (item A) — safe here because this is a page's own render, never a value
+  // that reaches a model turn the way `entity.risk` itself sometimes does.
+  const factors = attachRiskSources(parseRiskObject(entity.risk), entity.riskSources);
   // Grouped here, not in the Relationships section — a section receives
   // already-derived props; it does not derive.
   const edgeGroups = deriveEdgeGroups(edges, entityId);
+
+  /**
+   * The current owners' own labels, for the small list beneath the grouped
+   * counts (item C). A second, targeted query rather than a join on `edges`
+   * above: most edges on this page are not ownership at all — Yazaki alone
+   * carries thousands of `carrier_of` and `notify_party_of` rows — so joining
+   * `entity` onto every one of them to label a handful of owners would be
+   * the wrong end of the query to widen.
+   */
+  const ownerTargetIds = [
+    ...new Set(
+      edges.filter((e) => e.fromEntityId === entityId && !e.former).map((e) => e.toEntityId),
+    ),
+  ];
+  const ownerLabels = ownerTargetIds.length
+    ? await db
+        .select({ id: t.entity.id, label: t.entity.label })
+        .from(t.entity)
+        .where(inArray(t.entity.id, ownerTargetIds))
+    : [];
+  const owners = deriveOwnerEdges(
+    edges,
+    entityId,
+    new Map(ownerLabels.map((row) => [row.id, row.label])),
+  );
+
   const { cases: knownAs, breadcrumbSupplier } = deriveKnownAs(
     await readKnownAsRows(db, programId, entityId),
   );
@@ -52,6 +81,7 @@ export async function loadEntityPage(db: Database, args: { programId: string; en
     program,
     edges,
     edgeGroups,
+    owners,
     source,
     sources,
     factors,

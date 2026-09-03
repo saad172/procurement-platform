@@ -10,8 +10,7 @@ import {
   type WeightVector,
 } from '@/domain/score';
 import { EXPECTED_ENRICHMENTS } from '@/domain/scoring/anchors';
-import { isDisqualifying } from '@/domain/scoring/risk-factors';
-import { unionRiskFactors } from '@/domain/family';
+import { isDisqualifying, parseRiskObject } from '@/domain/scoring/risk-factors';
 import type { Facets } from '@/lib/view-state';
 
 /**
@@ -95,9 +94,10 @@ export async function loadSupplierSnapshots(
         and(eq(t.criterionValue.supplierId, supplier.id), eq(t.criterionValue.isCurrent, true)),
       );
 
-    const factors = profile
-      ? unionRiskFactors([{ source: 'getEntity', risk: profile.risk }]).map((u) => u.factor)
-      : [];
+    // `profile.risk` already carries every endpoint's per-factor provenance —
+    // `upsertEntity` merges it on every write (SPEC §8.2 D5) — so this reads it
+    // straight rather than relabelling it all `getEntity`.
+    const factors = profile ? parseRiskObject(profile.risk) : [];
     const disqualifyingFactors = factors.filter(isDisqualifying).map((f) => f.name);
     if (profile?.sanctioned) disqualifyingFactors.push('sanctioned');
 

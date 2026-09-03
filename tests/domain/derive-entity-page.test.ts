@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { deriveEdgeGroups, deriveKnownAs, type KnownAsSupplier } from '@/domain/derive-entity-page';
+import {
+  deriveEdgeGroups,
+  deriveKnownAs,
+  deriveOwnerEdges,
+  type KnownAsSupplier,
+} from '@/domain/derive-entity-page';
 
 /**
  * Rows are stored as the payload states them — subject first, target second —
@@ -14,6 +19,9 @@ const edge = (
     fromEntityId: string;
     toEntityId: string;
     former: boolean;
+    attributes: unknown;
+    startDate: string | null;
+    endDate: string | null;
   }> = {},
 ) => ({
   id: 'e1',
@@ -21,6 +29,9 @@ const edge = (
   fromEntityId: overrides.fromEntityId ?? 'SUBJECT',
   toEntityId: overrides.toEntityId ?? 'TARGET',
   former: overrides.former ?? false,
+  attributes: overrides.attributes ?? null,
+  startDate: overrides.startDate ?? null,
+  endDate: overrides.endDate ?? null,
 });
 
 describe('deriveEdgeGroups', () => {
@@ -88,6 +99,73 @@ describe('deriveEdgeGroups', () => {
     const groups = deriveEdgeGroups(edges as never, 'SUBJECT');
     expect(groups[0]!.relationshipType).toBe('owner_of');
     expect(groups[0]!.total).toBe(2);
+  });
+});
+
+/**
+ * `deriveEdgeGroups` says HOW MANY `has_shareholder` edges there are;
+ * `deriveOwnerEdges` says WHO, with the share and dates the edge carries —
+ * item C (SPEC §16.6).
+ */
+describe('deriveOwnerEdges', () => {
+  it('is this company’s current owners, and no other side of no other type', () => {
+    const edges = [
+      // This company is the SUBJECT and has_shareholder is upward: PARENT owns it.
+      edge({ relationshipType: 'has_shareholder', fromEntityId: 'SUBJECT', toEntityId: 'PARENT' }),
+      // Downward: this company owns CHILD, so CHILD is not an owner of it.
+      edge({ relationshipType: 'owner_of', fromEntityId: 'SUBJECT', toEntityId: 'CHILD' }),
+      // Standing at the other end: this row is about SUBJECT owning CHILD, so
+      // read from CHILD it is not one of CHILD's owner edges either.
+      edge({ relationshipType: 'owner_of', fromEntityId: 'OTHER', toEntityId: 'SUBJECT' }),
+    ];
+    const owners = deriveOwnerEdges(edges as never, 'SUBJECT', new Map());
+    expect(owners.map((o) => o.targetId)).toEqual(['PARENT']);
+  });
+
+  it('excludes a former owner — only a current edge is an owner', () => {
+    const edges = [
+      edge({
+        relationshipType: 'has_shareholder',
+        fromEntityId: 'SUBJECT',
+        toEntityId: 'EX-PARENT',
+        former: true,
+      }),
+    ];
+    expect(deriveOwnerEdges(edges as never, 'SUBJECT', new Map())).toEqual([]);
+  });
+
+  it('carries the share percentage and dates the edge stores', () => {
+    const edges = [
+      edge({
+        relationshipType: 'has_shareholder',
+        fromEntityId: 'SUBJECT',
+        toEntityId: 'PARENT',
+        attributes: { shares: [{ percentage: 16.3 }] },
+        startDate: '2024-01-22',
+        endDate: null,
+      }),
+    ];
+    const [owner] = deriveOwnerEdges(edges as never, 'SUBJECT', new Map());
+    expect(owner).toMatchObject({
+      sharePercentage: 16.3,
+      startDate: '2024-01-22',
+      endDate: null,
+    });
+  });
+
+  it('names the owner from the label map, or the id when it has none', () => {
+    const edges = [
+      edge({ relationshipType: 'has_shareholder', fromEntityId: 'SUBJECT', toEntityId: 'PARENT' }),
+    ];
+    const named = deriveOwnerEdges(
+      edges as never,
+      'SUBJECT',
+      new Map([['PARENT', 'Parent Holdings']]),
+    );
+    expect(named[0]!.targetLabel).toBe('Parent Holdings');
+
+    const unnamed = deriveOwnerEdges(edges as never, 'SUBJECT', new Map());
+    expect(unnamed[0]!.targetLabel).toBeNull();
   });
 });
 
