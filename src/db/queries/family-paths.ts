@@ -1,4 +1,5 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, lt } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { sharePercentageOf } from '@/domain/parse-relationships';
@@ -99,9 +100,7 @@ async function loadPathRows(
     })
     .from(t.graphPath)
     .innerJoin(t.entity, eq(t.entity.id, t.graphPath.terminalEntityId))
-    .where(
-      and(eq(t.graphPath.rootEntityId, rootEntityId), inArray(t.graphPath.kind, [...kinds])),
-    )
+    .where(and(eq(t.graphPath.rootEntityId, rootEntityId), inArray(t.graphPath.kind, [...kinds])))
     .orderBy(asc(t.graphPath.hopDepth), asc(t.graphPath.terminalEntityId));
 
   // One batched fetch for every edge every Path cites, rather than one query
@@ -110,7 +109,10 @@ async function loadPathRows(
   // keeps a shared intermediate hop from being fetched twice.
   const allEdgeIds = [...new Set(paths.flatMap((p) => p.edgeIds))];
   const edgeRows = allEdgeIds.length
-    ? await db.select().from(t.entityRelationship).where(inArray(t.entityRelationship.id, allEdgeIds))
+    ? await db
+        .select()
+        .from(t.entityRelationship)
+        .where(inArray(t.entityRelationship.id, allEdgeIds))
     : [];
   const edgeById = new Map(edgeRows.map((e) => [e.id, e] as const));
 
@@ -265,7 +267,8 @@ export async function loadNetworkExposurePaths(
     return {
       ...row,
       viaOwnership:
-        nonPsaEdges.length > 0 && nonPsaEdges.every((e) => isOwnership(e.relationshipType) && !e.former),
+        nonPsaEdges.length > 0 &&
+        nonPsaEdges.every((e) => isOwnership(e.relationshipType) && !e.former),
     };
   });
 
@@ -279,7 +282,10 @@ export async function loadNetworkExposurePaths(
     return { exploredCount: widest?.reachableCount ?? null, truncated: widest?.truncated ?? false };
   };
 
-  return { paths, coverage: { family: coverageFor('family'), watchlist: coverageFor('watchlist') } };
+  return {
+    paths,
+    coverage: { family: coverageFor('family'), watchlist: coverageFor('watchlist') },
+  };
 }
 
 /**
@@ -351,7 +357,10 @@ export async function loadNetworkPaths(db: Database, rootEntityId: string): Prom
   // shared intermediate hop should be fetched once, not once per kind.
   const allEdgeIds = [...new Set(paths.flatMap((p) => p.edgeIds))];
   const edgeRows = allEdgeIds.length
-    ? await db.select().from(t.entityRelationship).where(inArray(t.entityRelationship.id, allEdgeIds))
+    ? await db
+        .select()
+        .from(t.entityRelationship)
+        .where(inArray(t.entityRelationship.id, allEdgeIds))
     : [];
   const edgeById = new Map(edgeRows.map((e) => [e.id, e] as const));
 
@@ -382,4 +391,89 @@ export async function loadNetworkPaths(db: Database, rootEntityId: string): Prom
         sourceRecordId: e.sourceRecordId,
       })),
   }));
+}
+
+// ── Concentration (network spec §7) ─────────────────────────────────────────
+
+/**
+ * The `graph_path.kind`s the automatic enrich Job stores for every accepted
+ * Profile (network spec §4.1) — the only kinds `findConcentrations` reads.
+ *
+ * `shortest_path` is deliberately excluded: that kind is the recommend Job's
+ * own **targeted** award-vs-Pick check (network spec §7, a different unit's
+ * Job — see that ticket), found for one named pair on demand, not a Network
+ * already explored for every root this function is asked about. Folding it
+ * in here would make the Category page's "for free" derivation silently
+ * depend on whether some earlier Recommendation happened to run, which is
+ * not what "for free from stored Networks" means.
+ */
+const CONCENTRATION_KINDS: readonly PathKind[] = ['family', 'watchlist'];
+
+/**
+ * One shared terminal joining two entities' Networks (network spec §7: "two
+ * Suppliers whose Paths share an entity are joined through it"). `entityId`
+ * and `otherEntityId` are two of the ids `findConcentrations` was called
+ * with; `terminalEntityId`/`terminalLabel` are **what** joins them, not just
+ * that something does — e.g. a shared parent both reach via their own
+ * Corporate family.
+ */
+export type Concentration = {
+  entityId: string;
+  otherEntityId: string;
+  terminalEntityId: string;
+  terminalLabel: string;
+};
+
+/**
+ * Concentration, derived **for free** from Paths the automatic enrich Job has
+ * already stored (network spec §7) — no upstream call, no Job. Two ids among
+ * `entityIds` are joined when each has a Path of kind `family` or
+ * `watchlist` reaching the SAME terminal entity: two Suppliers' Corporate
+ * families both reaching one shared parent is the ordinary case, but a
+ * shared Listed entity on either's watchlist Path joins them exactly the
+ * same way.
+ *
+ * Self-joined on `graph_path` (`gpA`/`gpB` below) rather than a subquery per
+ * id, so this is one query regardless of how many entity ids the caller
+ * passes — the point of computing Concentration once per Category load,
+ * never once per Shortlist row (see `loadShortlist`'s own caller comment).
+ * `gpA.root_entity_id < gpB.root_entity_id` reports each unordered pair once,
+ * not twice (A,B and B,A), and rules out a root joined to itself.
+ *
+ * A pair sharing more than one terminal (e.g. a `family` Path AND a
+ * `watchlist` Path each reaching a different common entity) returns one row
+ * per distinct terminal — the caller decides how to fold that into one
+ * Supplier row's list.
+ */
+export async function findConcentrations(
+  db: Database,
+  entityIds: readonly string[],
+): Promise<Concentration[]> {
+  const ids = [...new Set(entityIds)];
+  if (ids.length < 2) return [];
+
+  const gpA = alias(t.graphPath, 'gp_concentration_a');
+  const gpB = alias(t.graphPath, 'gp_concentration_b');
+
+  return db
+    .select({
+      entityId: gpA.rootEntityId,
+      otherEntityId: gpB.rootEntityId,
+      terminalEntityId: gpA.terminalEntityId,
+      terminalLabel: t.entity.label,
+    })
+    .from(gpA)
+    .innerJoin(
+      gpB,
+      and(eq(gpA.terminalEntityId, gpB.terminalEntityId), lt(gpA.rootEntityId, gpB.rootEntityId)),
+    )
+    .innerJoin(t.entity, eq(t.entity.id, gpA.terminalEntityId))
+    .where(
+      and(
+        inArray(gpA.rootEntityId, ids),
+        inArray(gpB.rootEntityId, ids),
+        inArray(gpA.kind, [...CONCENTRATION_KINDS]),
+        inArray(gpB.kind, [...CONCENTRATION_KINDS]),
+      ),
+    );
 }

@@ -40,6 +40,8 @@ export function createUpstream(ctx: UpstreamContext) {
       /** Paths to Listed entities, in either direction (network spec §4.1). */
       watchlist: run(endpoints.sayariTraversalWatchlist),
       traversal: run(endpoints.sayariTraversal),
+      /** `entities: [source, target]` — Concentration at submission (network spec §4.2, §7). */
+      shortestPath: run(endpoints.sayariTraversalShortestPath),
       /** Slow (7–15 s) and barred from chat. Input is the resolved legal name. */
       negativeNews: run(endpoints.sayariNegativeNews),
       /** Slow (3.6–13.4 s) and barred from chat. Discover's mechanism. */

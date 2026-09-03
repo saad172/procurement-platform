@@ -110,12 +110,13 @@ export function Shortlist({ data, programId }: { data: Data; programId: string }
               <th>Coverage</th>
               <th>Data confidence</th>
               <th>Flags</th>
+              <th>Concentration</th>
             </tr>
           </thead>
           <tbody>
             {shortlist.ranked.length === 0 ? (
               <tr>
-                <td colSpan={6} className="empty">
+                <td colSpan={7} className="empty">
                   {SHORTLIST_EMPTY_LINE}
                 </td>
               </tr>
@@ -163,7 +164,36 @@ function ShortlistRow({
           </span>
         ) : null}
       </td>
+      <td>
+        <ConcentrationBadge partners={row.concentrationWith} />
+      </td>
     </tr>
+  );
+}
+
+/**
+ * Concentration, derived for free from stored Networks (network spec §7):
+ * this Supplier's own Network shares a Path terminal with another accepted
+ * bidder's here — a shared parent, most often. Named partners and the shared
+ * entity ride in the title, so a reader does not have to click through to
+ * learn *what* joins them, only *that* something does.
+ *
+ * `[]` renders nothing: no badge is the honest state for a row whose Network
+ * shares nothing with any other accepted bidder on this Shortlist.
+ */
+function ConcentrationBadge({
+  partners,
+}: {
+  partners: Data['shortlist']['ranked'][number]['concentrationWith'];
+}) {
+  if (partners.length === 0) return null;
+  return (
+    <span
+      className="badge warn"
+      title={partners.map((p) => `${p.displayName} — via ${p.terminalLabel}`).join('; ')}
+    >
+      joined with {partners.map((p) => p.displayName).join(', ')}
+    </span>
   );
 }
 

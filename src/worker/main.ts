@@ -11,6 +11,7 @@ import { parseRelationships } from '@/domain/parse-relationships';
 import { upsertEntity } from '@/jobs/resolve';
 import { runResolveJob } from '@/jobs/resolve-job';
 import { readDeepTraversalParams, runDeepTraversal } from '@/jobs/traverse';
+import { runPairsCheck } from '@/jobs/pairs';
 import { checkRunBudget, enqueueJob } from '@/jobs/runs';
 import { assessSupplier } from '@/jobs/assess';
 import { recommendCategory } from '@/jobs/recommend';
@@ -128,6 +129,7 @@ function buildJobHandlers(env: Env): Record<RunnableJobKind, JobHandler> {
     assess: (job, database) => assessJobHandler(job, database, env),
     recommend: (job, database) => recommendJobHandler(job, database, env),
     traverse: (job, database) => traverseJobHandler(job, database, env),
+    pairs: (job, database) => pairsJobHandler(job, database, env),
   };
 }
 
@@ -313,6 +315,46 @@ async function traverseJobHandler(job: JobRow, database: Database, env: Env): Pr
         `holding ${walk.explored} family member(s). Re-running continues from a warm cache.`,
     };
   }
+  return { state: 'done' };
+}
+
+/**
+ * The **Check every pair** Job (network spec §7; ticket 04, unit 04e): the
+ * shortest-path check swept over every accepted-Supplier pair bidding one
+ * Category, for the Concentrations stored Networks alone cannot see.
+ *
+ * Deterministic, like `traverse` and `fetch_entity`: no model turn, so its
+ * Trace is its `usage_event` rows. The subject is a **category**, like
+ * `discover` and `recommend` — a Check-every-pair action is about a
+ * Category's whole roster of bidders, not about one Supplier or one entity.
+ */
+async function pairsJobHandler(job: JobRow, database: Database, env: Env): Promise<JobOutcome> {
+  const category = await database.query.category.findFirst({
+    where: (row, { eq: equals }) => equals(row.id, job.subjectId),
+  });
+  if (!category) return { state: 'failed', error: `no category ${job.subjectId}` };
+
+  const upstream = createUpstream({
+    db: database,
+    runId: job.runId,
+    jobId: job.id,
+    credentials: buildUpstreamCredentials(env),
+    toolCallCap: job.toolCallCap,
+  });
+
+  const result = await runPairsCheck(
+    { db: database, upstream, jobId: job.id },
+    { categoryId: category.id },
+  );
+
+  console.log(
+    `  pairs ${category.code}: ${result.pathsFound} concentration(s) found over ` +
+      `${result.pairsChecked} pair(s) among ${result.suppliersConsidered} accepted supplier(s)` +
+      (result.skippedSamePair > 0
+        ? ` (${result.skippedSamePair} pair(s) skipped — same profile)`
+        : ''),
+  );
+
   return { state: 'done' };
 }
 

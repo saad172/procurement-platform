@@ -5,7 +5,9 @@ import { JOB_CAPS } from '@/config/constants';
 import type { FrozenInputs } from '@/domain/staleness';
 import {
   checkRecommendation,
+  type ConcentrationPair,
   type Objection,
+  type ResolvedEvidence,
   type SubmittedPick,
   type SubmittedSentence,
 } from '@/domain/validation/submit-checks';
@@ -15,12 +17,14 @@ import * as recommendPrompts from '@/model/prompts/recommend';
 import { getRegistry, type ToolContext, type ToolDefinition } from '@/tools';
 import type { ModelContext } from '@/model/types';
 import { buildEvidence, buildFrozenInputs } from './assess';
+import type { EnrichContext } from './enrich';
 import { evaluateWithVerdict } from './evaluation';
 import { publishVersion } from './publish';
 import { roundCheckpoint } from './round-checkpoint';
 import { readSubmission } from './submission';
 import { UnpublishableDraftError, type EvaluationResult, type ProposalResult } from './rounds';
 import { runProposerEvaluatorLoop } from './rounds';
+import { findAndWriteShortestPath } from './shortest-path';
 import { raiseIfStopped } from './stops';
 
 /**
@@ -233,12 +237,69 @@ async function validateRecommendDraft(
     frozenInputs: ctx.frozenInputs,
     citations: draft.sentences.flatMap((s) => s.citations),
   });
+  const concentrations = await findConcentrations(ctx, draft, evidence);
   return checkRecommendation({
     picks: draft.picks,
     sentences: draft.sentences,
     categoryId: ctx.args.categoryId,
     evidence,
+    concentrations,
   });
+}
+
+/**
+ * §4.2, §7: at submission (every Round the lead submits a draft, since that
+ * is where this Job's own submit checks run — see `validateRecommendDraft`),
+ * `shortestPath` for the award against each `second_source` Pick.
+ *
+ * **At most three calls per the ticket text; at most two in practice**, since
+ * `checkPickLegality` (`src/domain/validation/submit-checks.ts`) caps a
+ * Recommendation at three picks with exactly one `award` — so the award
+ * against up to two other Picks accounts for the whole gap between the
+ * ticket's number and this loop's.
+ *
+ * No award pick, or an award/pick with no accepted Profile (no entity id to
+ * call with), contributes nothing — not an error, just nothing to check yet;
+ * the model has not finished drafting. `findAndWriteShortestPath` itself
+ * turns "no Path" into `undefined`, so a pick this ticket's Concentration
+ * objection does not apply to is silently absent from the result rather than
+ * recorded as a non-Concentration.
+ */
+export async function findConcentrations(
+  ctx: RecommendRoundContext,
+  draft: RecommendDraft,
+  evidence: ResolvedEvidence,
+): Promise<ConcentrationPair[]> {
+  const award = draft.picks.find((p) => p.role === 'award');
+  const awardEntityId = award ? evidence.suppliers.get(award.supplierId)?.entityId : undefined;
+  if (!award || !awardEntityId) return [];
+
+  const enrichCtx: EnrichContext = {
+    db: ctx.db,
+    upstream: ctx.deps.toolCtx.upstream,
+    jobId: ctx.deps.jobId,
+  };
+
+  const pairs: ConcentrationPair[] = [];
+  for (const pick of draft.picks) {
+    if (pick.role !== 'second_source') continue;
+    const targetEntityId = evidence.suppliers.get(pick.supplierId)?.entityId;
+    if (!targetEntityId) continue;
+
+    const found = await findAndWriteShortestPath(enrichCtx, {
+      rootEntityId: awardEntityId,
+      targetEntityId,
+      discoveredByJob: ctx.deps.jobId ?? null,
+    });
+    if (!found) continue;
+
+    pairs.push({
+      awardSupplierId: award.supplierId,
+      secondSourceSupplierId: pick.supplierId,
+      terminalEntityId: found.terminalEntityId,
+    });
+  }
+  return pairs;
 }
 
 /**

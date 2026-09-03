@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { getRegistry, type ToolContext } from '@/tools';
-import { loadFamilyPaths, loadNetworkExposurePaths, terminalEdgeOf } from '@/db/queries/family-paths';
+import {
+  findConcentrations,
+  loadFamilyPaths,
+  loadNetworkExposurePaths,
+  terminalEdgeOf,
+} from '@/db/queries/family-paths';
 import { loadSupplierPage } from '@/db/queries/supplier-page';
 import { loadEntityPage } from '@/db/queries/entity-page';
 import { loadFamilyOwners } from '@/jobs/discover';
@@ -42,7 +47,9 @@ describe('graph_path (kind family), read side', () => {
     await resetDerived(db);
     const program = await seededProgram(db);
 
-    const supplier = await db.query.supplier.findFirst({ where: eq(t.supplier.rosterName, 'Yazaki') });
+    const supplier = await db.query.supplier.findFirst({
+      where: eq(t.supplier.rosterName, 'Yazaki'),
+    });
     if (!supplier) throw new Error('no seeded supplier "Yazaki"');
 
     await db.insert(t.entity).values([
@@ -192,10 +199,9 @@ describe('graph_path (kind family), read side', () => {
       runId: 'test-run',
       surface: 'job',
     };
-    const result = await getRegistry().byName.get('get_supplier_network')!.handler(
-      { supplierId: supplier.id },
-      ctx,
-    );
+    const result = await getRegistry()
+      .byName.get('get_supplier_network')!
+      .handler({ supplierId: supplier.id }, ctx);
     if (!result.ok) throw new Error(result.objections.join('; '));
     // `{ data, widget }`, same as `citation-targets.test.ts`'s `call()`: the
     // model reads the `data` half.
@@ -352,11 +358,13 @@ describe('loadNetworkExposurePaths — family + watchlist, hop classification', 
       })
       .returning({ id: t.enrichment.id });
 
-    await db.insert(t.record).values([
-      { id: 'source/rec-network-fam/1700000000000' },
-      { id: 'source/rec-network-own/1700000000000' },
-      { id: 'source/rec-network-trade/1700000000000' },
-    ]);
+    await db
+      .insert(t.record)
+      .values([
+        { id: 'source/rec-network-fam/1700000000000' },
+        { id: 'source/rec-network-own/1700000000000' },
+        { id: 'source/rec-network-trade/1700000000000' },
+      ]);
 
     // Root → Family Member, `has_shareholder` — ownership, upward-classified
     // in `src/domain/relationships.ts`, but `isOwnership` does not care about
@@ -662,5 +670,205 @@ describe('loadNetworkExposurePaths — possibly_same_as hops are skipped, not re
       'ships_to',
     ]);
     expect(tradeAfterPsa.viaOwnership).toBe(false);
+  });
+});
+
+/**
+ * `findConcentrations` (network spec §7) — Concentration derived **for free**
+ * from Paths tickets 02/03's automatic reads already stored, seeded directly
+ * the same way `loadFamilyPaths`'s own suite does above (no enrich pipeline
+ * required to prove the read side).
+ */
+describe('findConcentrations — Concentration derived for free from stored Paths', () => {
+  const ROOT_A = 'test-concentration-root-a';
+  const ROOT_B = 'test-concentration-root-b';
+  const ROOT_C = 'test-concentration-root-c';
+  const SHARED_PARENT = 'test-concentration-shared-parent';
+  const SHARED_LISTED_ENTITY = 'test-concentration-shared-listed';
+  const A_ONLY_TERMINAL = 'test-concentration-a-only';
+  const C_ONLY_TERMINAL = 'test-concentration-c-only';
+  const SHORTEST_PATH_ONLY_SHARED = 'test-concentration-shortest-path-only';
+
+  async function seedEnrichment(db: Awaited<ReturnType<typeof getTestDb>>, rootEntityId: string) {
+    const [upstreamResponse] = await db
+      .insert(t.upstreamResponse)
+      .values({
+        source: 'sayari',
+        endpoint: 'traversal.ownership',
+        paramsHash: `test-hash-concentration-${rootEntityId}`,
+        params: { entityId: rootEntityId },
+        body: {},
+        bodyHash: `test-body-hash-concentration-${rootEntityId}`,
+        via: 'sdk',
+      })
+      .returning({ id: t.upstreamResponse.id });
+    const [enrichment] = await db
+      .insert(t.enrichment)
+      .values({
+        source: 'sayari_ownership_family',
+        subjectKind: 'entity',
+        subjectKey: rootEntityId,
+        requestParams: { entityId: rootEntityId },
+        upstreamResponseId: upstreamResponse!.id,
+      })
+      .returning({ id: t.enrichment.id });
+    return enrichment!.id;
+  }
+
+  async function seedConcentrationFixture() {
+    const db = await getTestDb();
+    await resetDerived(db);
+
+    await db.insert(t.entity).values([
+      { id: ROOT_A, label: 'Supplier A', country: 'DEU' },
+      { id: ROOT_B, label: 'Supplier B', country: 'FRA' },
+      { id: ROOT_C, label: 'Supplier C', country: 'ITA' },
+      { id: SHARED_PARENT, label: 'Shared Parent Holding', country: 'DEU' },
+      { id: SHARED_LISTED_ENTITY, label: 'Shared Listed Entity', country: 'RUS', sanctioned: true },
+      { id: A_ONLY_TERMINAL, label: 'Only A reaches this', country: 'ESP' },
+      { id: C_ONLY_TERMINAL, label: 'Only C reaches this', country: 'POL' },
+      { id: SHORTEST_PATH_ONLY_SHARED, label: 'Shared only via shortest_path', country: 'GBR' },
+    ]);
+
+    const enrichmentA = await seedEnrichment(db, ROOT_A);
+    const enrichmentB = await seedEnrichment(db, ROOT_B);
+    const enrichmentC = await seedEnrichment(db, ROOT_C);
+
+    await db.insert(t.graphPath).values([
+      // A's family reaches the shared parent — and a second terminal nobody
+      // else reaches, proving the join is on the SHARED row, not on "A has
+      // any Path at all".
+      {
+        rootEntityId: ROOT_A,
+        terminalEntityId: SHARED_PARENT,
+        kind: 'family',
+        direction: 'down',
+        hopDepth: 1,
+        enrichmentId: enrichmentA,
+      },
+      {
+        rootEntityId: ROOT_A,
+        terminalEntityId: A_ONLY_TERMINAL,
+        kind: 'family',
+        direction: 'down',
+        hopDepth: 1,
+        enrichmentId: enrichmentA,
+      },
+      // B's family reaches the SAME shared parent, at a different hop depth
+      // and via a separate read — the join `findConcentrations` should find.
+      {
+        rootEntityId: ROOT_B,
+        terminalEntityId: SHARED_PARENT,
+        kind: 'family',
+        direction: 'down',
+        hopDepth: 2,
+        enrichmentId: enrichmentB,
+      },
+      // A and B ALSO both reach a Listed entity on their watchlist Paths —
+      // proves the join is not family-only.
+      {
+        rootEntityId: ROOT_A,
+        terminalEntityId: SHARED_LISTED_ENTITY,
+        kind: 'watchlist',
+        direction: 'either',
+        hopDepth: 3,
+        enrichmentId: enrichmentA,
+      },
+      {
+        rootEntityId: ROOT_B,
+        terminalEntityId: SHARED_LISTED_ENTITY,
+        kind: 'watchlist',
+        direction: 'either',
+        hopDepth: 1,
+        enrichmentId: enrichmentB,
+      },
+      // C's family reaches a terminal neither A nor B reaches at all — the
+      // negative case: C is in the queried id set but joined to no one.
+      {
+        rootEntityId: ROOT_C,
+        terminalEntityId: C_ONLY_TERMINAL,
+        kind: 'family',
+        direction: 'down',
+        hopDepth: 1,
+        enrichmentId: enrichmentC,
+      },
+      // A and C both reach one more entity, but only via kind `shortest_path`
+      // — the recommend Job's own targeted award-vs-Pick check (network spec
+      // §7, a different unit's Job), deliberately excluded from this free
+      // derivation. Proves the kind filter, not just the terminal match.
+      {
+        rootEntityId: ROOT_A,
+        terminalEntityId: SHORTEST_PATH_ONLY_SHARED,
+        kind: 'shortest_path',
+        direction: 'either',
+        hopDepth: 1,
+        enrichmentId: enrichmentA,
+      },
+      {
+        rootEntityId: ROOT_C,
+        terminalEntityId: SHORTEST_PATH_ONLY_SHARED,
+        kind: 'shortest_path',
+        direction: 'either',
+        hopDepth: 1,
+        enrichmentId: enrichmentC,
+      },
+    ]);
+
+    return { db };
+  }
+
+  it('joins two entities whose stored Paths reach the same terminal, on every family/watchlist terminal they share', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const { db } = await seedConcentrationFixture();
+
+    const pairs = await findConcentrations(db, [ROOT_A, ROOT_B, ROOT_C]);
+
+    // ROOT_A < ROOT_B lexicographically, so the pair reports as (A, B), never
+    // the reverse — `findConcentrations`'s own documented dedup rule.
+    const sharedParentPair = pairs.find((p) => p.terminalEntityId === SHARED_PARENT);
+    expect(sharedParentPair).toEqual({
+      entityId: ROOT_A,
+      otherEntityId: ROOT_B,
+      terminalEntityId: SHARED_PARENT,
+      terminalLabel: 'Shared Parent Holding',
+    });
+
+    // The watchlist-kind join, alongside the family-kind one — one row per
+    // distinct shared terminal, not collapsed into one pair-level fact.
+    const sharedListedPair = pairs.find((p) => p.terminalEntityId === SHARED_LISTED_ENTITY);
+    expect(sharedListedPair).toEqual({
+      entityId: ROOT_A,
+      otherEntityId: ROOT_B,
+      terminalEntityId: SHARED_LISTED_ENTITY,
+      terminalLabel: 'Shared Listed Entity',
+    });
+
+    expect(pairs).toHaveLength(2);
+  });
+
+  it('reports nothing for an entity whose Paths share no terminal with anyone (the negative case)', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const { db } = await seedConcentrationFixture();
+
+    const pairs = await findConcentrations(db, [ROOT_A, ROOT_B, ROOT_C]);
+    expect(pairs.some((p) => p.entityId === ROOT_C || p.otherEntityId === ROOT_C)).toBe(false);
+  });
+
+  it('never joins on a shared terminal reached only via kind shortest_path', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const { db } = await seedConcentrationFixture();
+
+    // A and C share SHORTEST_PATH_ONLY_SHARED, but only through `shortest_path`
+    // rows — out of scope for the free derivation (see the fixture's own
+    // comment and `findConcentrations`'s doc comment on `CONCENTRATION_KINDS`).
+    const pairs = await findConcentrations(db, [ROOT_A, ROOT_C]);
+    expect(pairs).toEqual([]);
+  });
+
+  it('returns nothing for fewer than two entity ids, without querying', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const db = await getTestDb();
+    expect(await findConcentrations(db, [])).toEqual([]);
+    expect(await findConcentrations(db, [ROOT_A])).toEqual([]);
   });
 });

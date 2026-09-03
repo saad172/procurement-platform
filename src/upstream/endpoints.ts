@@ -16,6 +16,7 @@ import {
   recordSchema,
   resolutionSchema,
   searchEntitySchema,
+  shortestPathSchema,
   tradeSearchSchema,
   traversalSchema,
 } from './projections/sayari';
@@ -719,6 +720,64 @@ export const sayariTraversal = defineEndpoint({
   projection: traversalSchema,
 } as EndpointDef<TraversalWalkParams, z.infer<typeof traversalSchema>>);
 
+/**
+ * `entities: [source, target]` — the two-entity walk Concentration runs at
+ * submission (network spec §4.2, §7; ticket 04) and `sayari_shortest_path`
+ * exposes on demand: at most three calls per Recommendation, the award
+ * against each other Pick.
+ *
+ * **Deliberately not routed through `dispatchTraversalWalk`/`downstreamQuery`
+ * above.** That machinery exists specifically for the `riskCategories`
+ * JSON-stringify defect the other four traversal-shaped methods share
+ * (`ownership`, `ubo`, `watchlist`, `traversal` — BUILD-NOTES 31,
+ * `downstreamQuery`'s doc comment above), and `shortestPath` shares neither
+ * the defect nor `TraversalWalkParams`'s wider parameter set: it takes exactly
+ * one param, `entities`, and no `id`.
+ *
+ * Verified against the SDK source
+ * (`node_modules/@sayari/sdk/api/resources/traversal/client/Client.js`,
+ * `shortestPath`): unlike the four methods above, a populated `entities`
+ * array is kept as a genuine array all the way to
+ * `qs.stringify(_queryParams, { arrayFormat: 'repeat' })` — there is no
+ * `toJson()`/JSON-stringify branch on this method at all — so there is no
+ * mis-encoding bug to route around here. That is why this dispatches through
+ * the ordinary `viaSdkWithRawFallback` (parse-error-triggered fallback only),
+ * the same pattern `sayariNegativeNews`/`sayariSearchEntity` below use,
+ * rather than the unconditional-raw branch `dispatchTraversalWalk` needs.
+ *
+ * GET `/v1/shortest_path`, one query param, `entities`, sent **repeated**
+ * (`entities=<source>&entities=<target>`) on both the SDK and the raw-fallback
+ * paths — the raw fallback's query string is built explicitly here, per this
+ * file's own rule that every raw fallback carries its query string (network
+ * spec §4, BUILD-NOTES 31).
+ *
+ * `normalizeParams` does **not** sort `entities` the way `flatSorted` sorts
+ * `relationships`/`countries` on the four traversal rows above: order here is
+ * meaningful — `entities[0]` is the source, `entities[1]` the target — not
+ * incidental to how a caller happened to build the array, so two calls with
+ * the pair in different orders are correctly two different `params_hash`
+ * entries, not one.
+ */
+export type ShortestPathParams = { entities: string[] };
+
+export const sayariTraversalShortestPath = defineEndpoint({
+  source: 'sayari',
+  endpoint: 'traversal.shortestPath',
+  bucket: 'traversal',
+  timeoutMs: SAYARI_SLOW_MS,
+  defaults: {},
+  normalizeParams: (p) => flat(p),
+  dispatch: async (params, deps) => {
+    const client = getSayariClient(deps.credentials);
+    return viaSdkWithRawFallback(
+      () => client.traversal.shortestPath({ entities: params.entities }, requestOptions(deps)),
+      () => ({ path: '/v1/shortest_path', query: { entities: params.entities } }),
+      deps,
+    );
+  },
+  projection: shortestPathSchema,
+} as EndpointDef<ShortestPathParams, z.infer<typeof shortestPathSchema>>);
+
 /** Takes a bare name, so the input is always the **resolved legal name**. */
 export const sayariNegativeNews = defineEndpoint({
   source: 'sayari',
@@ -1028,6 +1087,7 @@ export const ENDPOINTS = {
   sayariTraversalUbo,
   sayariTraversalWatchlist,
   sayariTraversal,
+  sayariTraversalShortestPath,
   sayariNegativeNews,
   sayariTradeSearchSuppliers,
   sayariMetadataRaw,

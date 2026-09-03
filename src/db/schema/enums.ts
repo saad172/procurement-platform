@@ -233,6 +233,46 @@ export const enrichmentSource = pgEnum('enrichment_source', [
    *    family read's own latest fetch.
    */
   'sayari_ownership_exposure',
+  /**
+   * `traversal.shortestPath` between two entities (network spec §4.2, §7;
+   * ticket 04). **Not automatic** — unlike the three sources above it, kept
+   * apart from `sayari_deep_traversal` for the same reason that source is
+   * kept apart from the automatic family: *a person, or a Job a person or
+   * the chat triggered, asked for this specific pair.* CONTEXT's own
+   * distinction for a Deep Traversal — *"a Job a person or the chat triggers
+   * on demand"* — is exactly the distinction this read makes too: the
+   * recommend Job runs it at submission time to check whether an award and
+   * another Pick share a parent or one owns the other, and the pairs Job
+   * runs it on demand for a chosen pair. Neither happens without a specific
+   * trigger the way `sayari_ownership_family`/`sayari_watchlist`/
+   * `sayari_ownership_exposure` happen for every accepted Profile.
+   *
+   * The same three reasons `sayari_deep_traversal`'s own doc comment gives
+   * apply here too, not restated wholesale but each still true:
+   *
+   * 1. **It is not the same read.** `traversal.shortestPath` takes exactly
+   *    two entity ids and no `id`/depth/filter params at all — a targeted
+   *    walk between a named pair, not an expansion from one root outward.
+   *    Its own envelope carries no `explored_count`/`partial_results` (see
+   *    `SayariShortestPath`, `src/upstream/projections/sayari.ts`), which
+   *    the four expansion reads all do.
+   * 2. **A person, or something a person triggered, asked for it** — see
+   *    above.
+   * 3. **The id is derived from the source.** `recordEnrichment` derives
+   *    `enrichment.id` from `source:subjectKind:subjectKey` plus a counted
+   *    generation, keyed on the root entity alone (`subjectKey`) — sharing a
+   *    source with any automatic read would make a shortest-path check
+   *    against one Pick read as the next generation of that root's family or
+   *    watchlist, a re-read of something it is not a re-read of.
+   *
+   * Writes a `graph_path` row of `kind: 'shortest_path'` (network spec §6):
+   * a Path in its own right, not folded into `family` or `watchlist`, even
+   * when the same two entities are already joined by one of those — the
+   * unique key is (root, terminal, kind), and a shortest path found for a
+   * pairwise check is a different fact from a Path an unrelated automatic
+   * read already recorded between the same two ids.
+   */
+  'sayari_shortest_path',
   'world_bank',
   'gleif',
   'usitc',
@@ -425,6 +465,15 @@ export const jobKind = pgEnum('job_kind', [
   'recommend',
   'discover',
   'dossier',
+  /**
+   * The *Check every pair* Job (network spec §7): runs `findAndWriteShortestPath`
+   * for every accepted-Supplier pair on one Category, confirm-gated, with
+   * estimate n(n−1)/2. Distinct from the recommend Job's own narrower
+   * shortestPath check, which runs only the award against each other Pick at
+   * submission (§4.2, the ninth submit check) — this Job is the wider,
+   * on-demand sweep over the whole roster a Category is bidding.
+   */
+  'pairs',
 ]);
 
 /** What a Job is about: a Supplier, a Category, an entity, or the Program. */

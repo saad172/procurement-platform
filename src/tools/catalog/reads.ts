@@ -332,7 +332,9 @@ function projectNetworkGroup(paths: NetworkPath[]) {
     // read sharing the kind.
     reachable: ownPaths.reduce<number | null>(
       (best, p) =>
-        p.reachableCount != null && (best == null || p.reachableCount > best) ? p.reachableCount : best,
+        p.reachableCount != null && (best == null || p.reachableCount > best)
+          ? p.reachableCount
+          : best,
       null,
     ),
     truncated: ownPaths.some((p) => p.truncated),
@@ -591,6 +593,18 @@ const getShortlist = defineTool({
             // A `high` factor in a pinning family forces the verdict — a model
             // naming a winner has to know this row cannot be one.
             disqualifying: row.disqualifying,
+            /**
+             * Names only, deliberately — not `terminalEntityId`/`terminalLabel`
+             * (network spec §7). A model reasoning about who to recommend
+             * needs to know THAT two Picks on this Shortlist are joined before
+             * it names both as award and second source (the ninth submit
+             * check this same fact feeds, a different unit's Job); the shared
+             * entity itself is what the widget and the Category page's own
+             * badge are for, one click away. Small and consistent with the
+             * rest of this allowlist (unit 04d's own call — flagged here
+             * rather than silently omitted).
+             */
+            concentration: row.concentrationWith.map((p) => p.displayName),
           })),
           // Excluded is never ranked low: no Score, no estimated Criterion, and
           // the two reasons are different problems (SPEC §13.3).

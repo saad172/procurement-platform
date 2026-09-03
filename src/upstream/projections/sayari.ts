@@ -429,6 +429,37 @@ const traversalSchemaInner = z
   .loose();
 
 /**
+ * `traversal.shortestPath` (network spec §4.2, §7; ticket 04) — the two-entity
+ * walk Concentration runs at submission and `sayari_shortest_path` exposes on
+ * demand.
+ *
+ * `data` holds **0 or 1** entries, never more, since `entities` is always
+ * exactly two ids. Each entry is structurally identical to a traversal Path —
+ * `ShortestPathData` in `node_modules/@sayari/sdk/api/resources/traversal/
+ * types/ShortestPathData.d.ts` types it `{ source: string; target:
+ * EntityDetails; path: TraversalPath[] }`, the same `{path, source, target}`
+ * shape `traversalPathSchemaInner` already projects — so this reuses that
+ * inner schema rather than inventing a fourth one; `target` arriving as a full
+ * entity rather than a bare id is exactly what `traversalPathSchemaInner`'s
+ * `z.union([z.string(), entitySchemaInner.loose()])` on `target` already
+ * accepts.
+ *
+ * **No `explored_count`/`partial_results`/`next`/`offset`/`limit`** here,
+ * unlike `traversalSchemaInner` above — verified against
+ * `ShortestPathResponse.d.ts`, which types the envelope as just `{ entities:
+ * string[]; data: ShortestPathData[] }`. A targeted two-entity query has no
+ * "subgraph explored" concept to report. The caller that writes a `graph_path`
+ * row for a Path of kind `shortest_path` hardcodes its coverage fields rather
+ * than reading them off this envelope.
+ */
+const shortestPathSchemaInner = z
+  .object({
+    entities: z.array(z.string()).nullish(),
+    data: z.array(traversalPathSchemaInner).nullish(),
+  })
+  .loose();
+
+/**
  * `negativeNews` takes a **bare name**, so disambiguation is ours — the input
  * is always the resolved legal name (SPEC §7.1).
  */
@@ -540,6 +571,7 @@ export const searchEntitySchema = eitherCasing(searchEntitySchemaInner);
 export const recordSchema = eitherCasing(recordSchemaInner);
 export const traversalPathSchema = eitherCasing(traversalPathSchemaInner);
 export const traversalSchema = eitherCasing(traversalSchemaInner);
+export const shortestPathSchema = eitherCasing(shortestPathSchemaInner);
 export const negativeNewsSchema = eitherCasing(negativeNewsSchemaInner);
 export const tradeSearchSchema = eitherCasing(tradeSearchSchemaInner);
 
@@ -550,6 +582,7 @@ export type SayariEntitySummary = z.infer<typeof entitySummarySchemaInner>;
 export type SayariResolutionCandidate = z.infer<typeof resolutionCandidateSchemaInner>;
 export type SayariTraversalPath = z.infer<typeof traversalPathSchemaInner>;
 export type SayariTraversal = z.infer<typeof traversalSchemaInner>;
+export type SayariShortestPath = z.infer<typeof shortestPathSchemaInner>;
 
 /** One entry of one attribute block, as the projection produces it. */
 export type SayariAttributeValue = NonNullable<

@@ -11,6 +11,7 @@ import {
 } from '@/domain/score';
 import { EXPECTED_ENRICHMENTS } from '@/domain/scoring/anchors';
 import { isDisqualifying, parseRiskObject } from '@/domain/scoring/risk-factors';
+import { findConcentrations } from '@/db/queries/family-paths';
 import type { Facets } from '@/lib/view-state';
 
 /**
@@ -35,12 +36,35 @@ import type { Facets } from '@/lib/view-state';
  *   the gaps left in. **The gap is the disclosure.**
  */
 
+/**
+ * Another accepted Supplier in this Category's Shortlist whose Network
+ * reaches the same entity this row's does (network spec §7). `terminalLabel`
+ * is **what** joins the two, so the UI can say a shared parent's name rather
+ * than only "this row is joined to that one".
+ */
+export type ConcentrationPartner = {
+  supplierId: string;
+  displayName: string;
+  terminalEntityId: string;
+  terminalLabel: string;
+};
+
 export type ShortlistEntry = ShortlistRow & {
   /** False when a filter hides it. It keeps its rank either way. */
   visible: boolean;
   country: string | null;
   matchStatus: string | null;
   entityId: string | null;
+  /**
+   * Other accepted Suppliers on THIS Category's Shortlist whose Network
+   * shares a Path terminal with this one (network spec §7) — derived for
+   * free from `graph_path` rows the automatic enrich Job already stored
+   * (kind `family`/`watchlist`), never a new upstream call. Always `[]` for
+   * a row with no accepted Profile (`entityId` null) — there is no Network
+   * to join through — and for a row whose Network happens to share nothing
+   * with any other accepted bidder here.
+   */
+  concentrationWith: ConcentrationPartner[];
 };
 
 export type ShortlistResult = {
@@ -194,6 +218,61 @@ function matchesFacets(
   return true;
 }
 
+/**
+ * Concentration for one Category's bidders, keyed by `supplierId` (network
+ * spec §7). Scoped to `snapshots` (this Category's bidders, per
+ * `loadShortlist`'s own `supplierIds` filter) and to **accepted** ones only —
+ * a Supplier with no settled Match has no Profile, so it has no `graph_path`
+ * rows to join through in the first place.
+ *
+ * `findConcentrations` returns each unordered pair once; this widens every
+ * pair into both directions, so `concentrationBySupplier.get(x)` never
+ * misses the case where `x` was the query's second root rather than its
+ * first.
+ */
+async function computeConcentration(
+  db: Database,
+  snapshots: readonly SupplierSnapshot[],
+): Promise<Map<string, ConcentrationPartner[]>> {
+  const accepted = snapshots.filter(
+    (s): s is SupplierSnapshot & { entityId: string } => s.matchAccepted && s.entityId != null,
+  );
+  const byEntityId = new Map(accepted.map((s) => [s.entityId, s] as const));
+
+  const pairs = await findConcentrations(
+    db,
+    accepted.map((s) => s.entityId),
+  );
+
+  const out = new Map<string, ConcentrationPartner[]>();
+  const add = (supplierId: string, partner: ConcentrationPartner) => {
+    const list = out.get(supplierId);
+    if (list) list.push(partner);
+    else out.set(supplierId, [partner]);
+  };
+
+  for (const pair of pairs) {
+    const a = byEntityId.get(pair.entityId);
+    const b = byEntityId.get(pair.otherEntityId);
+    // Defensive only: `findConcentrations` was called with exactly this set
+    // of entity ids, so both sides resolve — never expected to miss.
+    if (!a || !b) continue;
+    add(a.supplierId, {
+      supplierId: b.supplierId,
+      displayName: b.displayName,
+      terminalEntityId: pair.terminalEntityId,
+      terminalLabel: pair.terminalLabel,
+    });
+    add(b.supplierId, {
+      supplierId: a.supplierId,
+      displayName: a.displayName,
+      terminalEntityId: pair.terminalEntityId,
+      terminalLabel: pair.terminalLabel,
+    });
+  }
+  return out;
+}
+
 export async function loadShortlist(
   db: Database,
   args: {
@@ -221,6 +300,12 @@ export async function loadShortlist(
   const { ranked, excluded } = buildShortlist(scored);
   const byId = new Map(snapshots.map((s) => [s.supplierId, s]));
 
+  // Once per Category load, not once per row (network spec §7): every
+  // accepted bidder's Networks are already stored, so the join is a single
+  // self-joined query over however many entity ids this Category has, never
+  // an N+1 over the ranked rows.
+  const concentrationBySupplier = await computeConcentration(db, snapshots);
+
   const decorate = (row: ShortlistRow): ShortlistEntry => {
     const snapshot = byId.get(row.supplierId);
     const entry = {
@@ -228,6 +313,7 @@ export async function loadShortlist(
       country: snapshot?.country ?? null,
       matchStatus: snapshot?.matchStatus ?? null,
       entityId: snapshot?.entityId ?? null,
+      concentrationWith: concentrationBySupplier.get(row.supplierId) ?? [],
       visible: true,
     };
     return { ...entry, visible: matchesFacets(entry, args.facets ?? {}) };

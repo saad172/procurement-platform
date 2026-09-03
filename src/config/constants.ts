@@ -219,6 +219,23 @@ export const JOB_CAPS = {
   /** PROVISIONAL — no `discover` Job has run, so there is nothing to fit to. */
   discover: { toolCalls: 40, tokens: 300_000 },
   dossier: { toolCalls: 100, tokens: 0 },
+  /**
+   * PROVISIONAL, like `discover` — no `pairs` Job has run, so there is
+   * nothing measured to fit to. Runs no model, so a cost/call cap only,
+   * shaped like `traverse`'s and `fetch_entity`'s.
+   *
+   * Sized off the roster rather than off a measurement: the estimator
+   * (`enqueue_check_every_pair`) quotes `n(n-1)/2` over the accepted
+   * Suppliers actually bidding in a Category, and today's widest Category
+   * on the seed roster carries 13 bidders — `C(13,2) = 78` pairs, each at
+   * most one live `traversal.shortestPath` call (`findAndWriteShortestPath`
+   * is idempotent, so a re-run's already-found pairs are free cache hits
+   * that do not count against this cap). 100 leaves headroom over that
+   * worst case without inventing a number a wider roster would immediately
+   * outgrow silently — re-fit once a real `pairs` Job has run, the same way
+   * the rest of this table was re-fit on 2026-09-02.
+   */
+  pairs: { toolCalls: 100, tokens: 0 },
 } as const;
 
 export type JobKind = keyof typeof JOB_CAPS;
@@ -226,8 +243,8 @@ export type JobKind = keyof typeof JOB_CAPS;
 /**
  * The Job kinds a worker can actually run (SPEC §2.2).
  *
- * `JOB_CAPS` names eight kinds because it sizes a ceiling for each; the worker
- * registers a handler for seven. The one that is not here — `dossier` — has an
+ * `JOB_CAPS` names nine kinds because it sizes a ceiling for each; the worker
+ * registers a handler for eight. The one that is not here — `dossier` — has an
  * `enqueue_*` tool that chat can propose, so an accepted proposal produced a
  * Job that dequeued and failed with *"no handler registered for job kind"*: a
  * red row in a Run, from a button a person deliberately pressed, for work the
@@ -241,6 +258,9 @@ export type JobKind = keyof typeof JOB_CAPS;
  * **`traverse` has joined it**, which is what the Deep Traversal handler
  * landing means in this file. `dossier` is flag-gated and deliberately outside
  * it, so the boot warning is now about one tool rather than two.
+ *
+ * **`pairs` joins it too** (network spec §7, ticket 04) — the *Check every
+ * pair* Job `enqueue_check_every_pair` proposes.
  */
 export const RUNNABLE_JOB_KINDS = [
   'enrich',
@@ -250,6 +270,7 @@ export const RUNNABLE_JOB_KINDS = [
   'assess',
   'recommend',
   'traverse',
+  'pairs',
 ] as const satisfies readonly JobKind[];
 
 export type RunnableJobKind = (typeof RUNNABLE_JOB_KINDS)[number];

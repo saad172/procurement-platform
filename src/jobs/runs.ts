@@ -46,7 +46,15 @@ export type RunTrigger =
   | 'rerun_recommendation'
   | 'discover'
   | 'dossier'
-  | 'thread';
+  | 'thread'
+  /**
+   * The *Check every pair* Job (network spec §7, ticket 04): shortestPath
+   * over every accepted-Supplier pair on one Category, confirm-gated. Its
+   * own trigger rather than `full`, for the same reason `traverse` and
+   * `discover` are — the Runs list answers *what did this cost and why*,
+   * and "checked every pair" is a different answer from "a roster ran".
+   */
+  | 'pairs';
 
 /**
  * Opens a Run.

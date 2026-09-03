@@ -368,6 +368,7 @@ export async function buildEvidence(
     suppliers.set(supplierId, {
       name: snapshot.displayName,
       matchAccepted: snapshot.matchAccepted,
+      entityId: snapshot.entityId,
       categoryIds: snapshot.categoryIds,
       /**
        * **Per Category, computed the way the Shortlist computes it** — with the

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   checkAssessment,
   checkRecommendation,
+  type ConcentrationPair,
   type ResolvedEvidence,
   type SubmittedSentence,
 } from '@/domain/validation/submit-checks';
@@ -27,6 +28,7 @@ function evidence(overrides: Partial<ResolvedEvidence> = {}): ResolvedEvidence {
         {
           name: 'Alpha',
           matchAccepted: true,
+          entityId: 'entity-alpha',
           categoryIds: ['cat-1'],
           categoriesWithScore: ['cat-1'],
           disqualifying: false,
@@ -503,6 +505,129 @@ describe('check 8 — upstream disclosure', () => {
       evidence: e,
     });
     expect(objections.some((o) => o.check === 'upstream_disclosure')).toBe(true);
+  });
+});
+
+describe('check 9 — concentration', () => {
+  // The award's own concentration pair, matching how `findConcentrations`
+  // (`src/jobs/recommend.ts`) builds one: root = award, target = second source.
+  const PAIR: ConcentrationPair = {
+    awardSupplierId: 'supplier-a',
+    secondSourceSupplierId: 'supplier-b',
+    terminalEntityId: 'entity-parent',
+  };
+
+  const withSecondSource = () => {
+    const e = evidence();
+    e.suppliers.set('supplier-b', { ...e.suppliers.get('supplier-a')!, name: 'Beta' });
+    return e;
+  };
+
+  const picks = () => [
+    { supplierId: 'supplier-a', role: 'award', rank: 1 },
+    { supplierId: 'supplier-b', role: 'second_source', rank: 2 },
+  ];
+
+  const legalRecommendation = () => [cited('headline', 'Award Alpha, second source Beta.')];
+
+  it('objects when the award and a second source are joined by a Path', () => {
+    const objections = checkRecommendation({
+      picks: picks(),
+      sentences: legalRecommendation(),
+      categoryId: 'cat-1',
+      evidence: withSecondSource(),
+      concentrations: [PAIR],
+    });
+    expect(objections.some((o) => o.check === 'concentration')).toBe(true);
+  });
+
+  it('carries the Path as evidence — the terminal entity id, so the next Round can cite it', () => {
+    const objections = checkRecommendation({
+      picks: picks(),
+      sentences: legalRecommendation(),
+      categoryId: 'cat-1',
+      evidence: withSecondSource(),
+      concentrations: [PAIR],
+    });
+    const objection = objections.find((o) => o.check === 'concentration');
+    expect(objection?.message).toMatch(/entityId: entity-parent/);
+    // Names both sides, so the writer knows which Concentration is meant.
+    expect(objection?.message).toMatch(/Alpha/);
+    expect(objection?.message).toMatch(/Beta/);
+  });
+
+  it('resolves when conditions name the second source', () => {
+    const objections = checkRecommendation({
+      picks: picks(),
+      sentences: [
+        ...legalRecommendation(),
+        cited('conditions', 'Beta shares a parent with the award; this is accepted.'),
+      ],
+      categoryId: 'cat-1',
+      evidence: withSecondSource(),
+      concentrations: [PAIR],
+    });
+    expect(objections.some((o) => o.check === 'concentration')).toBe(false);
+  });
+
+  it('resolves when open_questions names the second source', () => {
+    const objections = checkRecommendation({
+      picks: picks(),
+      sentences: [
+        ...legalRecommendation(),
+        cited('open_questions', 'Beta and the award share a parent entity.'),
+      ],
+      categoryId: 'cat-1',
+      evidence: withSecondSource(),
+      concentrations: [PAIR],
+    });
+    expect(objections.some((o) => o.check === 'concentration')).toBe(false);
+  });
+
+  it('does not accept a longer supplier’s name as naming the shorter one', () => {
+    // Mirrors check 8's own whole-word precedent: a mention of "Beta Services"
+    // is not a mention of "Beta".
+    const e = withSecondSource();
+    e.suppliers.set('supplier-c', { ...e.suppliers.get('supplier-b')!, name: 'Beta Services' });
+    const objections = checkRecommendation({
+      picks: picks(),
+      sentences: [
+        ...legalRecommendation(),
+        cited('conditions', 'Beta Services has not confirmed capacity.'),
+      ],
+      categoryId: 'cat-1',
+      evidence: e,
+      concentrations: [PAIR],
+    });
+    expect(objections.some((o) => o.check === 'concentration')).toBe(true);
+  });
+
+  it('resolves when the second source has been re-roled away, on this Round', () => {
+    // `validateRecommendDraft` recomputes concentrations from THIS Round's own
+    // picks, so a stale pair pointing at a pick that is no longer
+    // `second_source` in the current draft is resolved — mirroring check 8's
+    // own "judged against the state this Round's evidence carries" pattern.
+    const objections = checkRecommendation({
+      picks: [
+        { supplierId: 'supplier-a', role: 'award', rank: 1 },
+        { supplierId: 'supplier-b', role: 'develop', rank: 2 },
+      ],
+      sentences: [cited('headline', 'Award Alpha.')],
+      categoryId: 'cat-1',
+      evidence: withSecondSource(),
+      concentrations: [PAIR],
+    });
+    expect(objections.some((o) => o.check === 'concentration')).toBe(false);
+  });
+
+  it('raises nothing with no concentrations at all — the common case', () => {
+    const objections = checkRecommendation({
+      picks: picks(),
+      sentences: legalRecommendation(),
+      categoryId: 'cat-1',
+      evidence: withSecondSource(),
+    });
+    expect(objections.some((o) => o.check === 'concentration')).toBe(false);
   });
 });
 
