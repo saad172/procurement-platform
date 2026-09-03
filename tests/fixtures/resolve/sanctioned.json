@@ -1,34 +1,34 @@
 {
   "manifest": {
     "name": "resolve/sanctioned",
-    "recordedAt": "2026-09-03T14:41:13.171Z",
+    "recordedAt": "2026-09-03T20:04:20.513Z",
     "loopHashes": {
-      "resolve": "ab9d20d24dcd1f0b4b14bd9c65be6877b1ab35ab31972241ffb6bc0181947c29"
+      "resolve": "04cd0c6c8da08e555c8b18b11f30faa19ffbd2197b1fa3423ba9e63f99c31706"
     },
     "toolDigests": {
-      "resolve": "47ea5be4ffcd31716f1b6c6f81ae4e7620512ee9c6c827df65d537a47205f5f7"
+      "resolve": "e7aeebcd1ea50a7cd0b5b3627e71e784f8cfc49d36a8ea572b2b78499c91defc"
     }
   },
   "turns": [
     {
       "n": 1,
-      "wireHash": "35b14ce9cc4977c839723b301a58e1f9a49ae878813cc7941679f99568617ce8",
-      "bodyHash": "5e8ec17f457447c501ee963ecf0ae4ea70ddd161dc94cc220af4ed06c842a375",
+      "wireHash": "405cabae770fce85765420215fea81cf7918a9bc5a164de76eeaeb4eca22e74f",
+      "bodyHash": "cb7d90764eae63f91445139cec2bf40363b610bb84d64a7d24fcd6b7804debaf",
       "loop": "resolve",
       "roundN": 1,
       "response": {
         "model": "claude-opus-5",
-        "id": "msg_011CeggDpq22dqjFrVwkykPX",
+        "id": "msg_011Ceh6tDf4iJ49kA8ZzfFKG",
         "type": "message",
         "role": "assistant",
         "content": [
           {
             "type": "text",
-            "text": "I'll examine the leading candidates."
+            "text": "I'll start by pulling the roster row's own record and the leading candidates."
           },
           {
             "type": "tool_use",
-            "id": "toolu_01KjbfbcVUT6eDsdApQ7ur7V",
+            "id": "toolu_01EuHnQ4BEbrEsTPZCWUzyM3",
             "name": "get_supplier",
             "input": {
               "supplierId": "Rosoboronexport"
@@ -39,10 +39,21 @@
           },
           {
             "type": "tool_use",
-            "id": "toolu_0179JzcvzAQwLD98VgMRbvA2",
+            "id": "toolu_01Awzf6gTNrMTiYiqJALW4uh",
             "name": "sayari_get_entity",
             "input": {
               "entityId": "-nvekxAbgzUC-f4LdTmqCg"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01K64eTdFQxc2z53C8bgkUde",
+            "name": "sayari_get_entity",
+            "input": {
+              "entityId": "9LtTGZXn_LlN05C47cwZ5w"
             },
             "caller": {
               "type": "direct"
@@ -54,26 +65,26 @@
         "stop_details": null,
         "usage": {
           "input_tokens": 2,
-          "cache_creation_input_tokens": 0,
-          "cache_read_input_tokens": 2795,
+          "cache_creation_input_tokens": 2795,
+          "cache_read_input_tokens": 0,
           "cache_creation": {
-            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 2795,
             "ephemeral_1h_input_tokens": 0
           },
           "iterations": [
             {
               "input_tokens": 2,
-              "output_tokens": 143,
-              "cache_read_input_tokens": 2795,
-              "cache_creation_input_tokens": 0,
+              "output_tokens": 225,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 2795,
               "cache_creation": {
-                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 2795,
                 "ephemeral_1h_input_tokens": 0
               },
               "type": "message"
             }
           ],
-          "output_tokens": 143,
+          "output_tokens": 225,
           "output_tokens_details": {
             "thinking_tokens": 0
           },
@@ -84,27 +95,32 @@
     },
     {
       "n": 2,
-      "wireHash": "9595dc6433d349958107da2fb8417d12e5f639a862c321641d3c375c8469fe71",
-      "bodyHash": "a4b3845bb7ca5f294a7cec86c86386ca66e4005434ff3580c824857c738162f3",
+      "wireHash": "049657f620f9de78c085e3330a32fb107a475bd92553489390b69703ed1ccd1b",
+      "bodyHash": "45485c1417eed2b50eb476f354343a39797d8b2628f1c14036e576e7a6838e7d",
       "loop": "resolve",
       "roundN": 1,
       "response": {
         "model": "claude-opus-5",
-        "id": "msg_011CeggE79ndQKs1QZxSt5VL",
+        "id": "msg_011Ceh6tXnUMaGQNUGoDKRXk",
         "type": "message",
         "role": "assistant",
         "content": [
           {
             "type": "thinking",
-            "thinking": "This one matches the address exactly at Stromynka 27. I should also check the other Rosoboronexport candidates, including the older OAO form and the OJSC entity, to see if they're duplicates or predecessor entities.",
-            "signature": "CAISpwQKjgEIERgCKkAaoF2/Km+5UcmG535uJ3HEhdZBuWRPDx4sB40HuIATMw398piHTnqdWBLoQRNodoPJSINLsFBUhN4ogvQouvMEMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiRjNjQ3ZWRhMS0zYTdmLTQyMTUtYjYzMC03M2YxNmE4YjdmZWKoAe6M5tQGEgwjVx+hoC+br0Mr3KIaDFdZ8YOTB7IUe/bpnCIwHx44GFxlRSOewSB+TOftFGzf6Obl+Pm9EBXCUOFAFAYrt6nTrHnWASgbhE/79oXLKsUCG8tRRyEldA4o4y1xEnVOqxtSnbMxh17shjPSdTqcuHG0a4sVbMuRW6exuh0VpivIMBkNE9SCO7DbdPFaWHdj4y48mCecRP8QPftn4Hoe2ZPgZW/mLYriTkNxqFlnMBZwGG9fJpoenHApBgY+N5LwHLIfHhhAgnKvxVZyFRrGm4vDTMGZOLHAC6o9EE7YAEI5F3WLRtV3XbhoOZOwA07AuCUI8HqV51RQ9cos5Nk408ww1iy2bgfiI+6xRTC7EbzQeFTdpA+adGqJgguN7/H2Q/3sP8CPM/8NFL/HVzJzJp1SVBoRFnV/mC6gNrWaAKziy3PvWD8fTXb29s9y2o5LhV1pk8WwV0uQKuCYfcVE7vwt4NS4RkStVvngLNijI1oB85zZv0nPEUQpoU650DiCye35zvwGUD6eorXlc7UDqVJUmiuS6hgB"
+            "thinking": "I'm noticing two candidates share the same INN and OGRN, meaning they're duplicate records for the same legal entity — 9LtTGZXn has far more sources (33) with full ownership and sanctions data, while -nvekxAbgz has only 7 sources focused on trade data, and both list the same Stromynka Street address, so I need to decide which record to treat as canonical.\n\nGiven the richer sourcing, 9LtTGZXn seems the better pick despite its label showing \"Открытое акционерное общество\" while the current form is АО — though I should check the other candidates and run a name search to confirm there isn't a more definitive canonical entity already established.",
+            "signature": "CAIStwgKjgEIERgCKkAGLOO0QRRB7HWvvivsIPg25joMHgu7V7sR3ESK4w/AOZdhJigtqC/skWeMyYyhyR2IgCKjeqLAuW6pmaU4rsj3Mg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiRjNjQ3ZWRhMS0zYTdmLTQyMTUtYjYzMC03M2YxNmE4YjdmZWKoAb6k59QGEgz46Ac9gUEI1I0j0ekaDNjsAoTXl5jyBEVG0yIwaAGaIRl+j8hDHj/fsyBO8Q+nsNfdmjdsCo0smT167TItNohtFhf6dgaAPh7PmZzCKtUGdVWGseJmwjTTm9nxRDxHtfX7kKkhHzQFnW/sYi8PZUZebn8e0RynUlGS6NwXwEQiCMVrmYwynFsPfbOa3BIe5s3SDPgPuAeqV/PgHlJeOVfhMlDf4h6IX1ubSlShbF7mnA8Zbd7cL074C/2Qdi7H/60r4uQKCZLqtv/H0WL/+mnDG6Szwv9PCwDQimMzGjFo66arawdKnTn58dntLsrYvJf7voDfkixcqVmRen3FoaYFJnvChsk6j4iC4/DSDi0yItgpJSTAFbF/+HiNMuJx/tkTuhIdUc3FoEqqaiRi+NK7wHnYd9RglmE5valgYmP0rjBbCkP4VO3/PCEjut0IHmuwUHxJwvp9cgWU/ciMLZTrwlI15GUqeDOGWvOXUe6IL6z6zAeYSAVNIt0gg8Dh8izSVLZJG59qqGm7ddAGxuylVV8yADTAyooX3KLOGvq0QX95fXN0xtGAfELeOefD/J23TEeJyX2rL9fjDSww5M0izvApNbGE/vX6QML+fg4bfaunCbr17dT92MZ9eqZzOb9scaM02ekpkvd6qJI2F52OpkdRj1wM9/vW8mMnWyYZE/KNoJ0HyS543OgC8M6h+y0b0IXgdKCSGilywNvEMhcEfNbrGafo8kpi9F19ImEqK++El3i1gOUPnjGgRE23bPbFQY3My2D1XevIAc18bhC4yoB9rdMFiJOAn9hewf6UyALr0zUlpcyiUlUPmPN5WMuPVdtXHX5K468DSdriP7R8WFtMHU7RNTWEBfTRZJhBzU9uZx6RVUCNwdACLVhEObk2aoP/9iT3VF3xuixg8SbgJ0uBImtOch9iHjoBASuG4MwDKDebZIKld6IuFr4NKZJfk6YCOFnav1jPBQ0bQrCt0RZtEd+GCbUye5TUXgPf2Rq+68/8fwjZY7l8SzQiALoewpzrDv8yJYhtNlmTM4FXiJtUrB59HRjzU9Om0yK5951c7Hb98mwTGX98et4YOWPnaHuyC08jpcZohvISTOwbuc86cr46DdxFn9YHCyVLcx1P2vTP1E2arNEQ7a56krBD2DcAnbkYdvNR1PwW3YWg/sbR6NB+pjxcCDzjTMBOsqFSX2x+qrplazor6TjC9PNfbnVjAHF7B3BTFK7ebuYSfNlbhRgB"
+          },
+          {
+            "type": "text",
+            "text": "Two top candidates share the same INN/OGRN. Let me check the remaining candidates and run a name search."
           },
           {
             "type": "tool_use",
-            "id": "toolu_015yUDSZVzwhEvWQapvDVo1y",
-            "name": "sayari_get_entity",
+            "id": "toolu_01VUt58ZJ8NPXg4T8CYLLpos",
+            "name": "find_candidates_by_name_town",
             "input": {
-              "entityId": "9LtTGZXn_LlN05C47cwZ5w"
+              "nameVariant": "АО \"Рособоронэкспорт\" Москва Стромынка 27",
+              "whyThisVariant": "Current Russian legal form (AO) plus registered street, to see which graph node Sayari treats as the live registered entity at the roster address."
             },
             "caller": {
               "type": "direct"
@@ -112,7 +128,18 @@
           },
           {
             "type": "tool_use",
-            "id": "toolu_01ScCZ3oXTEoXv8rqD751fMT",
+            "id": "toolu_01FgptGLC4CzaW7YZmNo6t4S",
+            "name": "sayari_get_entity",
+            "input": {
+              "entityId": "qyR17dKyPxuYWU75y6FOrw"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01ETcmXBJKiUjk8wYthsK7s4",
             "name": "sayari_get_entity",
             "input": {
               "entityId": "yQQLlvljql9QqVXnUf9MJA"
@@ -127,28 +154,28 @@
         "stop_details": null,
         "usage": {
           "input_tokens": 2,
-          "cache_creation_input_tokens": 2436,
+          "cache_creation_input_tokens": 5610,
           "cache_read_input_tokens": 2795,
           "cache_creation": {
-            "ephemeral_5m_input_tokens": 2436,
+            "ephemeral_5m_input_tokens": 5610,
             "ephemeral_1h_input_tokens": 0
           },
           "iterations": [
             {
               "input_tokens": 2,
-              "output_tokens": 290,
+              "output_tokens": 641,
               "cache_read_input_tokens": 2795,
-              "cache_creation_input_tokens": 2436,
+              "cache_creation_input_tokens": 5610,
               "cache_creation": {
-                "ephemeral_5m_input_tokens": 2436,
+                "ephemeral_5m_input_tokens": 5610,
                 "ephemeral_1h_input_tokens": 0
               },
               "type": "message"
             }
           ],
-          "output_tokens": 290,
+          "output_tokens": 641,
           "output_tokens_details": {
-            "thinking_tokens": 145
+            "thinking_tokens": 315
           },
           "service_tier": "standard",
           "inference_geo": "global"
@@ -157,28 +184,27 @@
     },
     {
       "n": 3,
-      "wireHash": "171c92d5c876c708300e88cdf176c09f8acf5571d548cbe816e96e69aa12eac2",
-      "bodyHash": "9cbb44c9afefebdab89f147084188004965a92c948b33016f88b945dd3451b2c",
+      "wireHash": "9517e3ff13541b2d133ad12e070611e930ae0a987f0a59ccaa4bff6e4fee2a09",
+      "bodyHash": "eaef72e406f2b949d16d197ac1b60a499bc01ee49d697bb747e0c11968c84cb9",
       "loop": "resolve",
       "roundN": 1,
       "response": {
         "model": "claude-opus-5",
-        "id": "msg_011CeggEdRTEuWojDAFYchxd",
+        "id": "msg_011Ceh6uRn6a3U1EtXzm7SB9",
         "type": "message",
         "role": "assistant",
         "content": [
           {
             "type": "thinking",
-            "thinking": "I notice two entries share the same INN and OGRN, suggesting they're duplicate records for the same entity (Rosoboronexport). I'm comparing which one is more complete - the one with 33 sources and a fuller ownership graph looks like the richer, canonical record.\n\nOne appears sourced from trade/sanctions aggregation while the other has ru_inn, ru_ogrn, an OFAC SDN number, 33 sources, and a legal predecessor link to FSUE Rosoboronexport — that looks like the EGRUL-linked entity. I should pull the actual records for both to confirm.",
-            "signature": "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"
+            "thinking": "I'm comparing the two entries sharing the same INN to determine which is canonical — the one with 33 sources including registry ownership data, directors, and subsidiary_of Rostec looks like the authoritative legal entity record, since its registration date matches the OGRN issued in 2011.\n\nI want to check the search hit with an address in its label to see if that's actually a separate node, and pull the entity records for the 33-source node to confirm its alias data before settling on which is canonical.",
+            "signature": "CAIStwoKjgEIERgCKkCPKwjwJ+DNl0VZZp0vwKhoYILdmnwojMnig9FXMtT6hPZpawrHOTAoXghTIQyTKCgyKnNMvIuOD/LT4WUaecUpMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiRjNjQ3ZWRhMS0zYTdmLTQyMTUtYjYzMC03M2YxNmE4YjdmZWKoAc2k59QGEgzFx8LTYPQ+Wkt1kIkaDPAFcB+F+hIMnL64eyIwVwPihuzNRoAg0Nf2O+li0QLUeLmhwnp23ByfmOLVLe/zHccOUX8vU7k4Kya2gb4YKtUIOtd9sz6Q+yIYAE5HDZSCduosOaqSOJUJdkW5JwfNPsxsu633hitfXsdHcZsVx4N+u/kndgplgxgBhRsfTwGj6pQzeOViH+trc7FG76g7NUXpMbBAov8+3cckfn6ZH3euDutCH7cvfoXob/J3fY1afwpONc5s9wthIvHy8/Oc2rtobBIsIa7196iHgwm+CKN9etgMVJqFebYJWcNnoq1U34Y7vNjz2OUJH6cd7do47WU4d9xaZMKyY4bUD9uYK8SPphHxglw9CriHOtmSiJ2ux72JsPLmkGktLfF4gbzhhVpqhcUNPr9qXXzQx2nluTu/Oa46P4WeK2gfr6+lcpC0oVKGMfblOdgw7wxrPNmGr0MCEihr3z2ysRjcB40SXHdloIIzIlwQv9g6KHxnJ0iAhGq5rWx4/DSOxj8FJELN1dPLnX4VO1C/adkL1qri+wKfWNMobhb7GvyJqhZ8xOwQmVwkgBwu1ddzh/4md3/o3pZQRqmQ0oEadgjx3XAScG+hkLc6Gt7hAXd38xTnMwT3UIs08WPIrlOJBW9bFzvINOG6Gl8WYiSBzQZ+g4VoQ/nph3wOsKXjgZXK/xvosVAAIDmpuoKum7abS3ERBRKWqWDWWRvXZ8wbFpAyASuzTFA8NUxSK/gA2mxRwgtv0DZshWn1w/OBt/rEWu17lfIpWYR13lTnhfJnr/UjgzPnfe/bQrQSKNhLwkUxkIdOvQVfd8zPPSjfkChZiQdSyVJP8fwCg5Mh5DgVmr0zxC6vuyOvnRQwPeMHBBmnn/YK+I+rXZR5pgM4Ku1sBVYLy4CPCVbVPF92nHFCtmdZ/xsJ3bLjVzCAJgGGDnBv0NHwmvGEghfW6yuNABd/s2cKeLOINTb4jImlFxNav2HPKAhW4em6MibVee3J6b1hBMyCTA1fPaSbzSDexG5hMjd5mBH6iDeGv4INAiMrBAttsM3qHL0uJlYT7/WQAYbt130Nv996hoB/N8KiWZgazMIVpIO02DsKckQ4athecSLxnyZtHKVsFZ0ACFpPX44t4eY3pO5kFyy2UpU4iCkSwjUk/eSjSiBBLwcNiHNoRoKzBZxvgNh+tI/9wz/5Gkexf1SWvYi9JiOtEalsVBDSft3ELdIE1xJnKRYBArRASpzOoLdJW8T8HeV46hKSWZtqtI3S5SrmvNFoDP9m73c051J/Z7qdlroFz4w7AeJskxBHsBUF0rrwCIqeq78jcjXnRqDW8u8OCDiVZumGgVZVmT/N+yp8FBUhR3BKrLqxtXYDKqJdd78bOZalWWr+gJXJ5NA/xNasr0wqv38x9k4+ajXz9itm8rAq38fdqRymgHxTo7IJoboKJ+yL0vUH2Q0Ffhn/bHEEArwtkBg0KjorrAYqd/DuRzbREOv5C57KWmuGc9wEi+op/PgmyJsHakKh6drOmOKGSft4fGAPxfBNxBL3MxqCq5uneuT7KlC6Uf0ow9RUMqmGfB84lU4YAQ=="
           },
           {
             "type": "tool_use",
-            "id": "toolu_01Knu5dcP8pS38fw8vongk3b",
-            "name": "find_candidates_by_name_town",
+            "id": "toolu_01Q7SxATPHabSNr8BUxVUtNd",
+            "name": "sayari_get_entity",
             "input": {
-              "nameVariant": "АО \"Рособоронэкспорт\" Москва Стромынка 27",
-              "whyThisVariant": "Current Russian legal-form (AO) plus registered street, to see which Sayari entity carries the EGRUL registry record at the roster address."
+              "entityId": "WYo6FXs2cZA04TDofmEgXw"
             },
             "caller": {
               "type": "direct"
@@ -186,10 +212,11 @@
           },
           {
             "type": "tool_use",
-            "id": "toolu_011ZXqVZvpGHuxE7KLKShYcZ",
-            "name": "sayari_get_entity",
+            "id": "toolu_01YDZY5jVdLeqVsVmKgfsoVz",
+            "name": "find_candidates_by_name_town",
             "input": {
-              "entityId": "qyR17dKyPxuYWU75y6FOrw"
+              "nameVariant": "Rosoboronexport JSC Moscow",
+              "whyThisVariant": "English transliteration used on sanctions lists and trade records, to surface any additional node at 27 Stromynka not yet in the candidate set."
             },
             "caller": {
               "type": "direct"
@@ -201,28 +228,28 @@
         "stop_details": null,
         "usage": {
           "input_tokens": 2,
-          "cache_creation_input_tokens": 3802,
-          "cache_read_input_tokens": 5231,
+          "cache_creation_input_tokens": 1742,
+          "cache_read_input_tokens": 8405,
           "cache_creation": {
-            "ephemeral_5m_input_tokens": 3802,
+            "ephemeral_5m_input_tokens": 1742,
             "ephemeral_1h_input_tokens": 0
           },
           "iterations": [
             {
               "input_tokens": 2,
-              "output_tokens": 921,
-              "cache_read_input_tokens": 5231,
-              "cache_creation_input_tokens": 3802,
+              "output_tokens": 676,
+              "cache_read_input_tokens": 8405,
+              "cache_creation_input_tokens": 1742,
               "cache_creation": {
-                "ephemeral_5m_input_tokens": 3802,
+                "ephemeral_5m_input_tokens": 1742,
                 "ephemeral_1h_input_tokens": 0
               },
               "type": "message"
             }
           ],
-          "output_tokens": 921,
+          "output_tokens": 676,
           "output_tokens_details": {
-            "thinking_tokens": 697
+            "thinking_tokens": 462
           },
           "service_tier": "standard",
           "inference_geo": "global"
@@ -231,24 +258,399 @@
     },
     {
       "n": 4,
-      "wireHash": "48a770b4f39c921923dbc3be6d09f714f00fcd1ddc2b16d51d1238571b69c633",
-      "bodyHash": "8ed9e937dc774f410a3d42a09966a8cb2c894c6e09b09fde591ded68648301da",
+      "wireHash": "7e54f8a8b53469c767be96c821c49df4ec32b61a9e913df6363285dcdc2f6d27",
+      "bodyHash": "6e7459909c67d598725cca50a82d64264526b7f5a834658dfb70687436a05d8b",
       "loop": "resolve",
       "roundN": 1,
       "response": {
         "model": "claude-opus-5",
-        "id": "msg_011CeggFqML1CdKL8gJSLYpR",
+        "id": "msg_011Ceh6vR2EiUABReRSVzLj4",
         "type": "message",
         "role": "assistant",
         "content": [
           {
             "type": "thinking",
-            "thinking": "That qyR17 entry turns out to just be a sanctions-list artifact typed \"person,\" so it's not relevant. I see another entry, WYo6FXs2cZA04TDofmEgXw, whose label includes an address, so I'm going to fetch that one instead.",
-            "signature": "CAIS8wIKjgEIERgCKkDJCSeqwq8QUNqEqWsGvjxu7GF42XEkk6gOY6ijeVd0i3UIdUVQfCdKVKBYLm4HBQfyWTasSA2y+MqDrowrqZk8Mg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiRjNjQ3ZWRhMS0zYTdmLTQyMTUtYjYzMC03M2YxNmE4YjdmZWKoAYON5tQGEgwwpX1lAxj1FPvQgCkaDBls6FkIxEglUD+0ICIwWJVkAeNnHeTUH4VWvYioWB0HdkNKwA6K8qPPGK9Lsag0YnyKk/ON3N1IikYJb5BJKpEBRbYhmOonJIgB8moBUfHYTdlIaNyCEqhbzqqlndNcTzT8QaLBrMG8RksNSyc3l+01Rz2lLfWYk3YucOhAt64LPqBVBlVba9iPpM1ljuEOSaIneZZyQlQwz5ZppCRRe1bj7pukoqBIF70Ru+Jlva9vUqt2DTh5T9yze8DivoulDSXD/I1PaaG0Nc6I7aVmVncaExgB"
+            "thinking": "I'm comparing two shipping-record fragment nodes with the same INN: one registry-backed with 33 sources, ownership ties to Rostec and sanctions data, versus another with just 7 sources focused on TIN/KPP and trade info. The registry entity seems like the stronger anchor since it has richer identity and relationship data, though I'm noting a discrepancy between the current legal form (АО) and address in one node versus the older OAO designation in the other.\n\nI'm leaning toward picking the richer node since it's tied to Rostec as a subsidiary rather than parent, and its trade relationships look more substantive than the other node's, which seems derived mainly from customs data with no officer or ownership info. There's no possibly-same-as link between them in Sayari, so I want to verify which one the system treats as primary by checking identifiers like the Russian tax registry TIN/KPP details more closely.\n\nLocality and street both check out against Stromynka 27, Moscow. The name and alias context align too, since Rosoboronexport's English and Russian names share identical INN/OGRN across candidates, confirming same legal person. Business purpose and liveness both pass — state-owned arms exporter, active since 2011, consistent with defence-sector sanctions listings.",
+            "signature": "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"
           },
           {
             "type": "tool_use",
-            "id": "toolu_01S3KUn4nMaYinVvnJub7rwW",
+            "id": "toolu_0165BAjGHSbLg5mtaMmUhHCq",
+            "name": "submit_match_proposal",
+            "input": {
+              "entityId": "9LtTGZXn_LlN05C47cwZ5w",
+              "confidence": "medium",
+              "reasoning": "Three candidate nodes (-nvekxAbgzUC-f4LdTmqCg, 9LtTGZXn_LlN05C47cwZ5w, qyR17dKyPxuYWU75y6FOrw) all carry the identical Russian INN 7718852163 and OGRN 1117746521452, so they are duplicate representations of one legal person, not competing companies. qyR17 is typed as a person (Ukrainian NAZK sanctions extract, 1 source) and cannot be the counterparty. yQQLlvljql9QqVXnUf9MJA, I1H8K, QdgAYgrOjtbvvv7JDDWQQw and WYo6FXs2cZA04TDofmEgXw are single-source shipping/end-user list fragments with no identifiers. The choice is between the two substantive nodes with the roster INN: -nvekxAbgz (7 sources, TIN/KPP plus customs-derived trade edges only, no officers, no ownership) and 9LtTGZXn (33 sources, registrationDate 2011-07-01 consistent with the OGRN, ru_inn/ru_ogrn, directors, officers, branch, legal predecessor, and — decisively — the subsidiary_of hop to the state parent D-jLpScdAGFGgR4dtYnu_A). The identity standard asks for the registered legal counterparty with the group recorded through an ownership hop; 9LtTGZXn is that registry-backed node and it is not the parent itself. Its addresses include both \"27 Stromynka Ul., Moscow, 107076, Russia\" and the Cyrillic \"ул. Стромынка, д. 27, г. Москва, 107076\", matching the roster line exactly. The \"Открытое акционерное общество\" label is a legal-form/rename variant of the same OGRN, not a different company. Medium rather than high confidence only because Sayari has not merged the duplicate -nvekxAbgz node (psaCount 0 on both), so an evaluator could reasonably land on that id for the same underlying company.",
+              "verdicts": [
+                {
+                  "discriminator": "country",
+                  "verdict": "pass",
+                  "reasoning": "Entity country RUS matches roster country RUS."
+                },
+                {
+                  "discriminator": "locality",
+                  "verdict": "pass",
+                  "reasoning": "Addresses list Moscow with postcode 107076, identical to the roster locality and postcode."
+                },
+                {
+                  "discriminator": "street",
+                  "verdict": "pass",
+                  "reasoning": "Holds both '27 Stromynka Ul., Moscow, 107076' and 'ул. Стромынка, д. 27' — the exact roster street and number."
+                },
+                {
+                  "discriminator": "name_cover",
+                  "verdict": "pass",
+                  "reasoning": "Label 'Открытое акционерное общество «Рособоронэкспорт»' covers the roster name Rosoboronexport; OAO/AO is a legal-form variant on the same OGRN 1117746521452."
+                },
+                {
+                  "discriminator": "alias_context",
+                  "verdict": "pass",
+                  "reasoning": "Russian, Ukrainian and English forms across the candidate set all resolve to INN 7718852163 / OGRN 1117746521452, so the alias set belongs to this legal person and not to a divested or renamed third party."
+                },
+                {
+                  "discriminator": "lei_witness",
+                  "verdict": "unavailable",
+                  "reasoning": "No LEI on this or any candidate and no GLEIF record to test; absence is not treated as contrary evidence."
+                },
+                {
+                  "discriminator": "business_purpose",
+                  "verdict": "pass",
+                  "reasoning": "State-owned, export-control and BIS/OFAC listings plus arms-related shipping edges are consistent with the state arms-export intermediary a roster would name as supplier."
+                },
+                {
+                  "discriminator": "liveness",
+                  "verdict": "pass",
+                  "reasoning": "closed=false, registration date 2011-07-01, and live officer, director and thousands of current trade relationship rows."
+                }
+              ]
+            },
+            "caller": {
+              "type": "direct"
+            }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1395,
+          "cache_read_input_tokens": 10147,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 1395,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 2797,
+              "cache_read_input_tokens": 10147,
+              "cache_creation_input_tokens": 1395,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 1395,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "type": "message"
+            }
+          ],
+          "output_tokens": 2797,
+          "output_tokens_details": {
+            "thinking_tokens": 1387
+          },
+          "service_tier": "standard",
+          "inference_geo": "global"
+        }
+      }
+    },
+    {
+      "n": 5,
+      "wireHash": "817c6691a2abb14eb33ee3f6de80baed17d244723d623f580d6927b119240176",
+      "bodyHash": "345b81115311d19d7ac134a1c252625eab7fd8fd377e1e8f4d59381db221be17",
+      "loop": "resolve",
+      "roundN": 1,
+      "response": {
+        "model": "claude-opus-5",
+        "id": "msg_011Ceh6yVFZhsmg4yVPfDHh1",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Proposal recorded: **9LtTGZXn_LlN05C47cwZ5w** — Открытое акционерное общество «Рособоронэкспорт», INN 7718852163 / OGRN 1117746521452, ул. Стромынка д. 27, Moscow 107076. Confidence medium; the residual risk is duplicate-node selection (-nvekxAbgzUC-f4LdTmqCg carries the same INN), not a wrong-company risk."
+          }
+        ],
+        "stop_reason": "end_turn",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 4350,
+          "cache_read_input_tokens": 11542,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 4350,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 157,
+              "cache_read_input_tokens": 11542,
+              "cache_creation_input_tokens": 4350,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 4350,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "type": "message"
+            }
+          ],
+          "output_tokens": 157,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global"
+        }
+      }
+    },
+    {
+      "n": 6,
+      "wireHash": "cb6175c4d23880e71b81ad061c996e0762a7d5ae8847a09ae01f2155fe4a1c81",
+      "bodyHash": "1705912d7c4498099268829f7721f761678a3bc48ed4e1f552627cb270665afd",
+      "loop": "resolve",
+      "roundN": 1,
+      "response": {
+        "model": "claude-opus-5",
+        "id": "msg_011Ceh6ymhmtP6vp79LDGovz",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I'll examine the roster row and the leading candidates."
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_017R43bvLnR8iWa3B2eqjsq9",
+            "name": "get_supplier",
+            "input": {
+              "supplierId": "Rosoboronexport"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01QG7sYdWa1h3jKLHrnb17GT",
+            "name": "sayari_get_entity",
+            "input": {
+              "entityId": "-nvekxAbgzUC-f4LdTmqCg"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2506,
+          "cache_read_input_tokens": 0,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 2506,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 148,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 2506,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 2506,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "type": "message"
+            }
+          ],
+          "output_tokens": 148,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard",
+          "inference_geo": "global"
+        }
+      }
+    },
+    {
+      "n": 7,
+      "wireHash": "36c411ec372ff17a062443afac91acf3aa7de4e3c1a5ebddb92ab0d34d018213",
+      "bodyHash": "4dce6ad1ca70ba84838db2f98e052e22fd2321cafa72d29e41efd230005d9c22",
+      "loop": "resolve",
+      "roundN": 1,
+      "response": {
+        "model": "claude-opus-5",
+        "id": "msg_011Ceh6z2qrPDYTL1pc5L43Y",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "I found a strong match at Stromynka 27, Moscow with TIN 7718852163 — this is the current AO Rosoboronexport, registered in 2011. I'm also checking other candidate entries, including the older OJSC form and a Ukrainian-language version, to rule out duplicates or mismatches.",
+            "signature": "CAISqQUKjgEIERgCKkAe1M1GcZMu2SpHqSp29wHorgSVBvPvWf71B0WcdM8TT8I8n2tWO2Nk2CiH82/NN1oT/c+rZQ6xTUUbmJHvPYLbMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiRjNjQ3ZWRhMS0zYTdmLTQyMTUtYjYzMC03M2YxNmE4YjdmZWKoAYel59QGEgwW39yvf8OYIIZotPoaDJB7s8kL9HevrDHvwSIwr0wY2H4nFJwv1M6H5RNldVQUI9JULrSSDnyNH/iPYiY/4jg2KSbTzwEweCruzLzPKscDpfUlu9fABGeQa5rdu6lmmKwzEN0Sx57Qg+5B+GvP++a3P7HyNGHiZjbl+xvUdQRkq9O4qyImPi5MJ7g9kGvn4VGWVLoSbzByWq1VDoZaC9T+3biMn08a4LRDH3M5/h47ogFgG+x6K4MzzhHQYHKaohXNQArJT1MBWxgQmI8wXPTEfocNkGfOc541CSJxBzJzHoMI33vM4kzHZSLxu0ka1C4V+cL4REtVjdpwbKvt5EjejeBFp2Nh5ZIaQ7Kcw5Sex/BB2u3y2Jf1y+g5NSQbFJjpUEoFDl4UbS5jqxXSvpzBqp18Rf7ZA4VyrGHtwITBEKtON6w2/6pzPydVf/XXrRuKRGbDXjoKvTeuQwhpioNM4zVz2uNS524IZkeoVsdYvuyTB8dec8l1eAPL9VeozXuGoUvTg/WWs4DMS6qGUF+2vPn4wpCmlJgVM5F2lbmnbB0iFsD+gXgjVN79U8EWvV2u2PpDoFWg3we+CN84n+NShcAEDJypMA9fA/URl8/5mjEYrcKGbQSTH37teuzqhKlZNZUB3KnjLaz7IZhlgTrTF/LU7fvw5j7bSEz4liieSITY9YNHEfX4M5ckTEK3359obV9giv0YAQ=="
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01G5kJtSRWbSxdb46zuzMoSh",
+            "name": "sayari_get_entity",
+            "input": {
+              "entityId": "9LtTGZXn_LlN05C47cwZ5w"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01CxA481uiXXVQy4e7v7x7cS",
+            "name": "sayari_get_entity",
+            "input": {
+              "entityId": "yQQLlvljql9QqVXnUf9MJA"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2441,
+          "cache_read_input_tokens": 2506,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 2441,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 354,
+              "cache_read_input_tokens": 2506,
+              "cache_creation_input_tokens": 2441,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 2441,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "type": "message"
+            }
+          ],
+          "output_tokens": 354,
+          "output_tokens_details": {
+            "thinking_tokens": 209
+          },
+          "service_tier": "standard",
+          "inference_geo": "global"
+        }
+      }
+    },
+    {
+      "n": 8,
+      "wireHash": "265668f611fb34e50a33b30bda92050626eee58cc4bcf8c5e72bec635772175e",
+      "bodyHash": "0617991d1368bf622023aa75f7e3a13bcda5fa1d9d924b195dd092e206551160",
+      "loop": "resolve",
+      "roundN": 1,
+      "response": {
+        "model": "claude-opus-5",
+        "id": "msg_011Ceh6zh2mFR5cdSstfpv2g",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "I'm spotting two duplicate entries for the same entity, AO/ОАО \"Рособоронэкспорт\", sharing identical INN 7718852163 and OGRN 1117746521452 — I need to determine which record is the canonical one, noting that 9LtTGZXn has a registration date of 2011-07-01 and more supporting sources.\n\n9LtTGZXn seems like the stronger canonical record with 33 sources covering registry, sanctions, and ownership data, and its name aligns with the roster's \"Rosoboronexport\" too. I'll check qyR17 briefly and pull a record from 9LtTGZXn to confirm.",
+            "signature": "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"
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01GxpPeNz94umRNCHDtUVFsj",
+            "name": "sayari_get_entity",
+            "input": {
+              "entityId": "qyR17dKyPxuYWU75y6FOrw"
+            },
+            "caller": {
+              "type": "direct"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01F3HhxuBU29qXdRE3eDpytq",
+            "name": "find_candidates_by_name_town",
+            "input": {
+              "nameVariant": "АО \"Рособоронэкспорт\" Стромынка 27 Москва",
+              "whyThisVariant": "Native-language legal name plus roster street to see whether the graph holds a single canonical registry entity or duplicates sharing INN 7718852163."
+            },
+            "caller": {
+              "type": "direct"
+            }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 3866,
+          "cache_read_input_tokens": 4947,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 3866,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 866,
+              "cache_read_input_tokens": 4947,
+              "cache_creation_input_tokens": 3866,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 3866,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "type": "message"
+            }
+          ],
+          "output_tokens": 866,
+          "output_tokens_details": {
+            "thinking_tokens": 640
+          },
+          "service_tier": "standard",
+          "inference_geo": "global"
+        }
+      }
+    },
+    {
+      "n": 9,
+      "wireHash": "9b03c74d7683aa180339a643f771f68cd904474c61e5171622138482edae028d",
+      "bodyHash": "05a1ce06d4bbff65db22e842c0ab6103f416b983ab3e5db7370ec7560eee92c1",
+      "loop": "resolve",
+      "roundN": 1,
+      "response": {
+        "model": "claude-opus-5",
+        "id": "msg_011Ceh71vkYUPD4cE4YQdEAu",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "There's a new candidate to fetch, WYo6FXs2cZA04TDofmEgXw, while the \"Оборонительные системы\" one seems irrelevant since it's a different company. I'll go ahead and pull the new candidate's details.",
+            "signature": "CAISoAMKjgEIERgCKkDsVrwNMAbN9dk45kxochxRxAGF+wR//x9bs1+Bf8tB7qVDWA7hQE3DYwAw2RE2StNXieyCFQxe5alWAy4HWr8AMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiRjNjQ3ZWRhMS0zYTdmLTQyMTUtYjYzMC03M2YxNmE4YjdmZWKoAZ2l59QGEgxxzqg0g8eqsUXene8aDMQh1sqMFaj/yc18byIwNm6CVCNJ6u/Z6hYrZN+o0WTVxQcFvMhski6w9dN6SIWyChMbgUZx3smdIVqKC5UEKr4BZpUjru8PYS3vEV456QxNJFZyxquWGJ3KppAw+RYIYqkaMouC2u3xO4YfH6S9tB4VcAUm7Pl3U8R1WGrlcq0bcpqQcEKxlOy7JxdjZYBXZxSuNXvWnk8KqcDMKK8bBroVZEpCzi0YlCjs364LeEukVOKtoWqAJLB0VHq/7N30DFdMS09PbhN4OGVJsieGctjQ/bap15UO3Pr3OoiN/OP0sXiLZIM7sYTHUtDZS7GXwCZEvhzwp/ZOSH4niu02jhgB"
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01Q3VThCyHhE6MzCWUYc2zfP",
             "name": "sayari_get_entity",
             "input": {
               "entityId": "WYo6FXs2cZA04TDofmEgXw"
@@ -263,434 +665,28 @@
         "stop_details": null,
         "usage": {
           "input_tokens": 2,
-          "cache_creation_input_tokens": 1608,
-          "cache_read_input_tokens": 9033,
+          "cache_creation_input_tokens": 1553,
+          "cache_read_input_tokens": 8813,
           "cache_creation": {
-            "ephemeral_5m_input_tokens": 1608,
+            "ephemeral_5m_input_tokens": 1553,
             "ephemeral_1h_input_tokens": 0
           },
           "iterations": [
             {
               "input_tokens": 2,
-              "output_tokens": 138,
-              "cache_read_input_tokens": 9033,
-              "cache_creation_input_tokens": 1608,
+              "output_tokens": 147,
+              "cache_read_input_tokens": 8813,
+              "cache_creation_input_tokens": 1553,
               "cache_creation": {
-                "ephemeral_5m_input_tokens": 1608,
+                "ephemeral_5m_input_tokens": 1553,
                 "ephemeral_1h_input_tokens": 0
               },
               "type": "message"
             }
           ],
-          "output_tokens": 138,
+          "output_tokens": 147,
           "output_tokens_details": {
-            "thinking_tokens": 64
-          },
-          "service_tier": "standard",
-          "inference_geo": "global"
-        }
-      }
-    },
-    {
-      "n": 5,
-      "wireHash": "07c74296a10a70af563e023a9fea022feb27a679491e0c14accab8a141b976dd",
-      "bodyHash": "c4cbd70b9c53e46bb136a84cda5b86de3fcc48c7865f6fd4a8f91d8810a08f8e",
-      "loop": "resolve",
-      "roundN": 1,
-      "response": {
-        "model": "claude-opus-5",
-        "id": "msg_011CeggGDhk8DHRjaDmxKayB",
-        "type": "message",
-        "role": "assistant",
-        "content": [
-          {
-            "type": "thinking",
-            "thinking": "That shipment data stub isn't useful. I need to decide between the two candidate entities sharing the same INN/OGRN — 9LtTGZXn looks more complete with its 2011 registration date matching the OGRN, 33 sources, an ownership link to Rostec, and a legal predecessor FSUE, suggesting it's the fuller registered entity Sayari treats as primary.\n\nThe other candidate, -nvekx, only has 7 sources mostly from trade/customs plus AUS sanctions data, and its identifiers (ru_tin/ru_kpp/ru_registration_number) come from Russian trade/tax records rather than EGRUL, unlike 9LtTGZXn's ru_inn/ru_ogrn fields. Still, 9LtTGZXn's label uses the outdated \"Открытое акционерное общество\" form even though the company converted to AO around 2015 — though since the INN matches, this isn't a divestiture trap, just a stale label. I'm trying to figure out which entity an independent evaluator would pick as canonical, possibly by checking which one's label matches the current legal name and address, but without record IDs for either entity I can't pull the underlying EGRUL records directly to confirm — I'll need to reason from the entity-level fields alone about which one represents the actual contract counterparty.\n\nThe customs registration numbers on -nvekx confirm it's trade-declaration data, reinforcing that 9LtTGZXn is the actual company entity. The historic legal form name matches the roster's Rosoboronexport listing, so I'm confirming pass verdicts on country, locality, street, and name cover before moving to check the alias context.",
-            "signature": "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"
-          },
-          {
-            "type": "tool_use",
-            "id": "toolu_01TW3s1wCwEWrZq3V7JBi5G1",
-            "name": "submit_match_proposal",
-            "input": {
-              "entityId": "9LtTGZXn_LlN05C47cwZ5w",
-              "verdicts": [
-                {
-                  "discriminator": "country",
-                  "verdict": "pass",
-                  "reasoning": "Sayari country=RUS, Russian registry identifiers INN 7718852163 / OGRN 1117746521452."
-                },
-                {
-                  "discriminator": "locality",
-                  "verdict": "pass",
-                  "reasoning": "Addresses include 'Moscow 107076', matching the roster city and postcode exactly."
-                },
-                {
-                  "discriminator": "street",
-                  "verdict": "pass",
-                  "reasoning": "Carries '27 Stromynka Ul., Moscow, 107076' and the Cyrillic 'ул. Стромынка, д. 27' — the roster street."
-                },
-                {
-                  "discriminator": "name_cover",
-                  "verdict": "pass",
-                  "reasoning": "Label 'Открытое акционерное общество «Рособоронэкспорт»' is the roster name in Cyrillic with a legal form attached."
-                },
-                {
-                  "discriminator": "alias_context",
-                  "verdict": "pass",
-                  "reasoning": "The OAO/AO difference is a legal-form change, not a divestiture: candidate -nvekxAbg (АО) carries the identical OGRN 1117746521452 and INN 7718852163, so both records denote the one legal entity."
-                },
-                {
-                  "discriminator": "lei_witness",
-                  "verdict": "unavailable",
-                  "reasoning": "No LEI on any candidate and no GLEIF record; a sanctioned Russian state exporter would not hold one — absence is not contrary evidence."
-                },
-                {
-                  "discriminator": "business_purpose",
-                  "verdict": "pass",
-                  "reasoning": "State arms-export intermediary: state_owned, export_controls, subsidiary_of the Rostec SOE parent — the parent is captured by the ownership hop, not by matching to it."
-                },
-                {
-                  "discriminator": "liveness",
-                  "verdict": "pass",
-                  "reasoning": "closed=false, registration date 2011-07-01, 33 sources with current directors and live shipment/sanctions records."
-                }
-              ],
-              "confidence": "medium",
-              "reasoning": "Four of the five roster candidates resolve to the same Russian legal entity by identifier (OGRN 1117746521452 / INN 7718852163), so the question is which Sayari record is the company itself rather than a data artefact. qyR17dKy is typed 'person' — a Ukrainian NAZK sanctions-list artefact. yQQLlvljql9 is a single-source, zero-relationship stub from a Japanese METI end-user list. WYo6FXs2 is a shipment-manifest stub with the address baked into the label and no country. -nvekxAbg is registry-shaped in its address strings but its identifiers (ru_tin/ru_kpp/ru_registration_number) and its purely trade-type relationships (ships_to, notify_party_of, procures_from — no officers, no shareholders, no parent) mark it as a customs-declaration cluster. 9LtTGZXn is the registry-backed entity: EGRUL-style ru_inn/ru_ogrn, a registration date matching the 2011 OGRN, 33 sources, directors and officers, a legal predecessor (the former FSUE), and the subsidiary_of hop to the Rostec state parent — which is how the group parent should be recorded. Its address set includes both the Latin and Cyrillic forms of 27 Stromynka. The stray '21 Gogolevsky Blvd' (Rostec HQ) and junk 'Sdnf Sdnf' rows are over-merge noise from sanctions feeds, not a sign the record is the parent or an investment arm — the INN/OGRN pin it to the operating exporter at Stromynka 27. Confidence is medium only because the duplicate AO record -nvekxAbg is defensible if the evaluator prefers the current legal-form label over registry depth."
-            },
-            "caller": {
-              "type": "direct"
-            }
-          }
-        ],
-        "stop_reason": "tool_use",
-        "stop_sequence": null,
-        "stop_details": null,
-        "usage": {
-          "input_tokens": 2,
-          "cache_creation_input_tokens": 425,
-          "cache_read_input_tokens": 10641,
-          "cache_creation": {
-            "ephemeral_5m_input_tokens": 425,
-            "ephemeral_1h_input_tokens": 0
-          },
-          "iterations": [
-            {
-              "input_tokens": 2,
-              "output_tokens": 2684,
-              "cache_read_input_tokens": 10641,
-              "cache_creation_input_tokens": 425,
-              "cache_creation": {
-                "ephemeral_5m_input_tokens": 425,
-                "ephemeral_1h_input_tokens": 0
-              },
-              "type": "message"
-            }
-          ],
-          "output_tokens": 2684,
-          "output_tokens_details": {
-            "thinking_tokens": 1343
-          },
-          "service_tier": "standard",
-          "inference_geo": "global"
-        }
-      }
-    },
-    {
-      "n": 6,
-      "wireHash": "e299c630c4a491e3c752a0e3e8313227d9e4e8d3614c10136b7a38a9362eca15",
-      "bodyHash": "5f5d8d34f2073b5446309b4db28894a61c4186e1a24d12f2c0071aa88f03d0ef",
-      "loop": "resolve",
-      "roundN": 1,
-      "response": {
-        "model": "claude-opus-5",
-        "id": "msg_011CeggK3BoYhpronrTq1HYj",
-        "type": "message",
-        "role": "assistant",
-        "content": [
-          {
-            "type": "text",
-            "text": "Proposal recorded: **9LtTGZXn_LlN05C47cwZ5w** — the registry-backed Rosoboronexport entity (INN 7718852163 / OGRN 1117746521452) at 27 Stromynka, Moscow 107076, with the Rostec parent captured via the ownership hop. Confidence: medium."
-          }
-        ],
-        "stop_reason": "end_turn",
-        "stop_sequence": null,
-        "stop_details": null,
-        "usage": {
-          "input_tokens": 2,
-          "cache_creation_input_tokens": 4176,
-          "cache_read_input_tokens": 11066,
-          "cache_creation": {
-            "ephemeral_5m_input_tokens": 4176,
-            "ephemeral_1h_input_tokens": 0
-          },
-          "iterations": [
-            {
-              "input_tokens": 2,
-              "output_tokens": 115,
-              "cache_read_input_tokens": 11066,
-              "cache_creation_input_tokens": 4176,
-              "cache_creation": {
-                "ephemeral_5m_input_tokens": 4176,
-                "ephemeral_1h_input_tokens": 0
-              },
-              "type": "message"
-            }
-          ],
-          "output_tokens": 115,
-          "output_tokens_details": {
-            "thinking_tokens": 0
-          },
-          "service_tier": "standard",
-          "inference_geo": "global"
-        }
-      }
-    },
-    {
-      "n": 7,
-      "wireHash": "339d5ac8add7a931dbb8ffc30a5398ae6a3ec1d49b6015b3034c73575148d7c1",
-      "bodyHash": "a870f2f49adaed9851a445a510bd23fe0f4e9b9d30e609c6663ffec7ad3a368f",
-      "loop": "resolve",
-      "roundN": 1,
-      "response": {
-        "model": "claude-opus-5",
-        "id": "msg_011CeggKKpgF2t9ARjSAiDcY",
-        "type": "message",
-        "role": "assistant",
-        "content": [
-          {
-            "type": "text",
-            "text": "I'll start by pulling the roster row detail and the leading candidates."
-          },
-          {
-            "type": "tool_use",
-            "id": "toolu_01YTWNCBZiTVWUXbzySEndzq",
-            "name": "get_supplier",
-            "input": {
-              "supplierId": "Rosoboronexport"
-            },
-            "caller": {
-              "type": "direct"
-            }
-          },
-          {
-            "type": "tool_use",
-            "id": "toolu_015yUGHdByFyC83x6JfKXAsa",
-            "name": "sayari_get_entity",
-            "input": {
-              "entityId": "-nvekxAbgzUC-f4LdTmqCg"
-            },
-            "caller": {
-              "type": "direct"
-            }
-          },
-          {
-            "type": "tool_use",
-            "id": "toolu_019tgdALURE7m7P58WRLsDEP",
-            "name": "sayari_get_entity",
-            "input": {
-              "entityId": "9LtTGZXn_LlN05C47cwZ5w"
-            },
-            "caller": {
-              "type": "direct"
-            }
-          }
-        ],
-        "stop_reason": "tool_use",
-        "stop_sequence": null,
-        "stop_details": null,
-        "usage": {
-          "input_tokens": 2,
-          "cache_creation_input_tokens": 1122,
-          "cache_read_input_tokens": 1384,
-          "cache_creation": {
-            "ephemeral_5m_input_tokens": 1122,
-            "ephemeral_1h_input_tokens": 0
-          },
-          "iterations": [
-            {
-              "input_tokens": 2,
-              "output_tokens": 224,
-              "cache_read_input_tokens": 1384,
-              "cache_creation_input_tokens": 1122,
-              "cache_creation": {
-                "ephemeral_5m_input_tokens": 1122,
-                "ephemeral_1h_input_tokens": 0
-              },
-              "type": "message"
-            }
-          ],
-          "output_tokens": 224,
-          "output_tokens_details": {
-            "thinking_tokens": 0
-          },
-          "service_tier": "standard",
-          "inference_geo": "global"
-        }
-      }
-    },
-    {
-      "n": 8,
-      "wireHash": "e12683917a479929d7c462bc88527e477122e92ad199b12199940a7c8d21b074",
-      "bodyHash": "0e8d46bb4ee7a50550ccd420484ce72d261f50903d97cddc9c8b0f2f1e52430e",
-      "loop": "resolve",
-      "roundN": 1,
-      "response": {
-        "model": "claude-opus-5",
-        "id": "msg_011CeggKe8G1UTEkoAdHXYFE",
-        "type": "message",
-        "role": "assistant",
-        "content": [
-          {
-            "type": "thinking",
-            "thinking": "I notice two candidates share the same INN and OGRN, meaning they're duplicate records for the same legal entity — one has 33 sources with fuller registry data including registration date and ownership ties to Rostec, while the other has only 7 sources focused on trade data, so the richer one seems the better pick. I'm also checking another candidate with Ukrainian-language content to see if it's relevant.",
-            "signature": "CAIS7wYKjgEIERgCKkAS1y8+VZSgYJ9buW9XnvRH8mRcKF2RnhRhdX3MgSNelYn2wB/pbqVL1kI0VhZN8rJIFvP9nb3igQITPxccSk9FMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiRjNjQ3ZWRhMS0zYTdmLTQyMTUtYjYzMC03M2YxNmE4YjdmZWKoAb2N5tQGEgwo06BNCwgo+50MC/EaDFEuAE8+qdf2QUU0QyIwHMtH22nk19Uncnl4r32eyLbFmSVmcJKKsR4DkWTs9tfK52YkLCxC/jWdFBJkRLvMKo0FwZ8Kg0AsuaxqNFfex8d5007UmhnZCJtl3WfOqpAsqSWlE1isTrfZ2J1ouUsHJPQcUWxItFkVkhD7FVT1nKzjqVt3owwMDfPgr8zMnHIW4K21QJsz2XbBq22yrKoWHu9EoKLlUxQV6vttqPHklK9+xPBlk40DsNe4FBgWUFm10U47ssuV1n0eoCRdPEOOHjylCnM9lRGV4FdLZ3r3X1k3hQff8CNyQRs6/E+QVywkispWp++SkU6+IDEHWSOvW9oJ2E2pBedBXDTie0E0pTUCtBtuZzAqBlKiOtkPo277Yq4vQE6DcaBrYrHM6rfPuFt9gnqRmPYrKQ/nEtom/F+RmbKMSNSRcwSIR/hH0Hgzi+uHppCAzcGae/scQwwaL+m0Na1Yo0FxboT6ZvhlOTSwqs8+sW9CXsHAWw/JjMfUav9q7mZlXoU7Jt6psEprSBf4czZozQT/YGFRI2iC/w4ULttNeAJVg/1naYqXBOR72fyYp2P0qvAXVi4KK5PsVmOYn67zif278U4kjLevM13cuxKjoI1/6B8JRd/lomsidlUL+6UzeS5vAn911kaTZAV1HVSiZqqXjYGn571ToHZwEFlCKplKdaiosl/A0oLpFZWbN6TCYTHXpsH/J7cvjyHpQVwVljReDay0kKt5wfTvukX/KMuuq7r/Kkwb/Re0cRwUgWpccExjzhkfqRuVTNoVZJRTtCa/yahIm/gJL8GL5Ua9X6am4VPU3xsYaD5Gdk4MnviM5nGC9NX9Ymt3N2pS4sA002UJfrNdC61GSN71RAP8IsivPiriAZSW2lsXOlgyGqELFCrIrB43B76XY7c58tqQJeRngBK0puTpUS3jhq8el6Dzx+MgGfHHYOoYAQ=="
-          },
-          {
-            "type": "text",
-            "text": "Two candidates share the same INN/OGRN. Let me check the remaining candidates."
-          },
-          {
-            "type": "tool_use",
-            "id": "toolu_0185jM7Z78LKqVhtaoRV5yJD",
-            "name": "sayari_get_entity",
-            "input": {
-              "entityId": "yQQLlvljql9QqVXnUf9MJA"
-            },
-            "caller": {
-              "type": "direct"
-            }
-          },
-          {
-            "type": "tool_use",
-            "id": "toolu_014mnK6WT4HRJDPTz8zB37FU",
-            "name": "sayari_get_entity",
-            "input": {
-              "entityId": "qyR17dKyPxuYWU75y6FOrw"
-            },
-            "caller": {
-              "type": "direct"
-            }
-          },
-          {
-            "type": "tool_use",
-            "id": "toolu_014DGCiw26hexkWPdCLnCZ9u",
-            "name": "sayari_get_entity",
-            "input": {
-              "entityId": "cxndmprHqW84VqEace3Aiw"
-            },
-            "caller": {
-              "type": "direct"
-            }
-          }
-        ],
-        "stop_reason": "tool_use",
-        "stop_sequence": null,
-        "stop_details": null,
-        "usage": {
-          "input_tokens": 2,
-          "cache_creation_input_tokens": 5609,
-          "cache_read_input_tokens": 2506,
-          "cache_creation": {
-            "ephemeral_5m_input_tokens": 5609,
-            "ephemeral_1h_input_tokens": 0
-          },
-          "iterations": [
-            {
-              "input_tokens": 2,
-              "output_tokens": 489,
-              "cache_read_input_tokens": 2506,
-              "cache_creation_input_tokens": 5609,
-              "cache_creation": {
-                "ephemeral_5m_input_tokens": 5609,
-                "ephemeral_1h_input_tokens": 0
-              },
-              "type": "message"
-            }
-          ],
-          "output_tokens": 489,
-          "output_tokens_details": {
-            "thinking_tokens": 249
-          },
-          "service_tier": "standard",
-          "inference_geo": "global"
-        }
-      }
-    },
-    {
-      "n": 9,
-      "wireHash": "5b1fd3a313b3a7e2890021d6e2be49db4c95e1cae56cdce04fca6a5d78e1b845",
-      "bodyHash": "28af95cf8b62e8dda0f407725de167816bc259a00cb8d4da77cf150ca51d6f24",
-      "loop": "resolve",
-      "roundN": 1,
-      "response": {
-        "model": "claude-opus-5",
-        "id": "msg_011CeggLa1jTsf1eDGD88xLu",
-        "type": "message",
-        "role": "assistant",
-        "content": [
-          {
-            "type": "thinking",
-            "thinking": "I can rule out the Ukrainian sanctions record (wrong type, person not company), the JPN METI end-user record (too thin, no identifiers), and the \"Оборонительные системы\" record (different company sharing the same building address). That leaves two real contenders sharing the same INN and OGRN — I need to figure out which is the canonical record between them.\n\n9LtTGZXn is richer: 33 sources, a registration date matching the OGRN year, ownership ties to Rostec, directors, and an OFAC SDN number, though its label uses the old \"Открытое акционерное общество\" legal form. -nvekxAbg uses the current \"АО\" form and includes registry TIN/KPP identifiers plus the exact roster address, but has fewer sources. Both represent the same real entity, so I'm leaning toward 9LtTGZXn as canonical given its ownership hop to the parent and matching registration date, though I'm now questioning whether it's actually a merged cluster given its address count discrepancies.\n\n9LtTGZXn seems distinguished by having OFAC SDN sourcing alongside registry data, while the other looks like a pure tax/EGRUL derivation. Given the richer sourcing, directors, and Rostec ownership hop, 9LtTGZXn is likely the canonical resolved entity, so I want to run a name search to confirm how Sayari surfaces the preferred record.",
-            "signature": "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"
-          },
-          {
-            "type": "text",
-            "text": "Let me search by name variants to see which record Sayari surfaces as canonical."
-          },
-          {
-            "type": "tool_use",
-            "id": "toolu_011jmf61pQ1w7piqpdoNxrw4",
-            "name": "find_candidates_by_name_town",
-            "input": {
-              "nameVariant": "АО \"Рособоронэкспорт\" Москва Стромынка 27",
-              "whyThisVariant": "Current Russian legal-form name (AO) plus the roster street, to see which registry-backed entity Sayari surfaces as canonical for INN 7718852163."
-            },
-            "caller": {
-              "type": "direct"
-            }
-          },
-          {
-            "type": "tool_use",
-            "id": "toolu_01UQp16T1Hcf5yVdrBjfZboV",
-            "name": "find_candidates_by_name_town",
-            "input": {
-              "nameVariant": "Rosoboronexport JSC Moscow",
-              "whyThisVariant": "English transliteration used on sanctions and trade records, to catch any further duplicate entities sharing OGRN 1117746521452."
-            },
-            "caller": {
-              "type": "direct"
-            }
-          }
-        ],
-        "stop_reason": "tool_use",
-        "stop_sequence": null,
-        "stop_details": null,
-        "usage": {
-          "input_tokens": 2,
-          "cache_creation_input_tokens": 2999,
-          "cache_read_input_tokens": 8115,
-          "cache_creation": {
-            "ephemeral_5m_input_tokens": 2999,
-            "ephemeral_1h_input_tokens": 0
-          },
-          "iterations": [
-            {
-              "input_tokens": 2,
-              "output_tokens": 1537,
-              "cache_read_input_tokens": 8115,
-              "cache_creation_input_tokens": 2999,
-              "cache_creation": {
-                "ephemeral_5m_input_tokens": 2999,
-                "ephemeral_1h_input_tokens": 0
-              },
-              "type": "message"
-            }
-          ],
-          "output_tokens": 1537,
-          "output_tokens_details": {
-            "thinking_tokens": 1214
+            "thinking_tokens": 73
           },
           "service_tier": "standard",
           "inference_geo": "global"
@@ -699,33 +695,29 @@
     },
     {
       "n": 10,
-      "wireHash": "c89d29ddce07f827bd9ffa55597baebaf940f1d3738fb291ab6c2d14f0a9173d",
-      "bodyHash": "943b34f0c28faf95ebc1267c7aaa0e7a7ecb83d2bd876a144d7fdfd88af8600a",
+      "wireHash": "4c37c5dc17e652b8ef70dead44750e84088dbb753b5df923a5be2907ed60fa6b",
+      "bodyHash": "f9c2f008915916d41cb2133d45a9cdd4352a64083a492974ebfc14092fd8cb1d",
       "loop": "resolve",
       "roundN": 1,
       "response": {
         "model": "claude-opus-5",
-        "id": "msg_011CeggNS34qSjPE5yKvvzT8",
+        "id": "msg_011Ceh72GWvqEdzXXK33Zkc7",
         "type": "message",
         "role": "assistant",
         "content": [
           {
             "type": "thinking",
-            "thinking": "Those shipment addresses aren't registry companies, so I'm down to two real contenders. Without record IDs I can't pull the underlying source data to see which one is registry-backed, so I need to decide between them based on the identity standard of a legal entity registered at a proper address.\n\nComparing them, -nvek's address matches the exact EGRUL format and it has KPP identifiers that only come from the Russian tax registry, while 9LtTGZXn has INN/OGRN plus a registration date, 33 sources, sanctions flags, officers, and ownership links to a Rostec parent. Since directors, shareholders, legal predecessor, and registration date are all classic EGRUL-derived fields, 9LtTGZXn looks like the fuller EGRUL entity record.\n\nChecking discriminators — country, locality, street, and exact name match all pass for Rosoboronexport, the OAO→AO naming is just a legal-form rename of the same OGRN, other addresses point to the parent Rostec rather than a divestiture, LEI isn't present anywhere so it's not usable as evidence, and the business purpose (state-owned arms export intermediary with export-control flags) fits consistently. This confirms 9LtTGZXn_LlN05C47cwZ5w as the registered legal entity, with -nvekxAbg being a trade/customs-derived record with tax IDs appended rather than officer or shareholder data.\n\nGiven the duplicate OGRN record between these two entries, I'm landing on medium confidence for record selection, even though I'm fairly certain about the underlying legal entity's identity.",
-            "signature": "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"
-          },
-          {
-            "type": "text",
-            "text": "Findings before recording:\n\n- **`9LtTGZXn`** and **`-nvekxAbg`** carry the *same* INN 7718852163 / OGRN 1117746521452 — duplicate records for one legal entity. `9LtTGZXn` is the registry-backed one: registration date 2011-07-01, directors, shareholders, branch, legal predecessor, and the `subsidiary_of` hop to the parent (Rostec) — exactly the EGRUL-shaped record. `-nvekxAbg` has no officers or ownership at all, only customs/sanctions traffic with tax identifiers appended.\n- **`cxndmpr`** is the \"right building, wrong company\" trap: Оборонительные системы, INN 0411017748, a *different* company that also lists Stromynka 27.\n- **`qyR17dK`** is typed `person` — a Ukrainian NAZK sanctions listing, not a company record.\n- **`yQQLlvljql`** is a single-source JPN METI end-user stub with no identifiers.\n- The parent's address (21 Gogolevsky Blvd) appearing on `9LtTGZXn` is the parent hop, not grounds to match to the parent."
+            "thinking": "This looks like a thin shipment-derived stub versus the richer registry-backed entity. Comparing the two candidates, 9LtTGZXn stands out as the canonical record since it has registration date, Rostec ownership, directors, OFAC SDN number, and 33 sources backing it, even though its label uses the older OAO name while the identifiers match current registration.\n\nI'll go with 9LtTGZXn since it has ownership edges to Rostec while -nvekx lacks any ownership structure, suggesting it's a trade-data-derived duplicate rather than the canonical registered entity. Weighing the legal form variant (OAO vs AO under the same OGRN) as a natural rename, I'll settle on high confidence for 9LtTGZXn as the correct pick.",
+            "signature": "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"
           },
           {
             "type": "tool_use",
-            "id": "toolu_01GUuUp87PRAoCp9decgvRk1",
+            "id": "toolu_01SmV53ARpMkcoV3pudJMkQM",
             "name": "submit_match_verdict",
             "input": {
               "entityId": "9LtTGZXn_LlN05C47cwZ5w",
               "confidence": "medium",
-              "reasoning": "Roster row resolves to the registered legal entity INN 7718852163 / OGRN 1117746521452 at 27 Stromynka St, Moscow 107076. Two candidates carry that identical INN/OGRN (9LtTGZXn and -nvekxAbg), so they are duplicate records of one company; I select 9LtTGZXn because it is the registry-shaped record — registration date 2011-07-01 consistent with the 2011 OGRN, directors, shareholders, branch, legal predecessor, and the subsidiary_of hop to the state parent. -nvekxAbg carries no officers or ownership rows at all, only customs/sanctions traffic with tax identifiers appended, i.e. a trade-derived shadow of the same company. cxndmpr is rejected as the right-building/wrong-company trap: Оборонительные системы, a distinct INN 0411017748, merely also listing Stromynka 27. qyR17dK is typed person (Ukrainian NAZK listing), not the counterparty record. yQQLlvljql is a one-source end-user-list stub with no identifiers. The parent's Gogolevsky Blvd address on the chosen entity is the ownership hop, not a reason to match upward to the group parent. Confidence held at medium only because the unmerged duplicate leaves genuine ambiguity over which record is canonical, not over which company is meant.",
+              "reasoning": "Three candidates carry the same Russian registry identity (INN 7718852163 / OGRN 1117746521452) at ул. Стромынка 27, Moscow 107076 — the roster address exactly. Of those, 9LtTGZXn is the registry-backed record: registration date 2011-07-01, 33 sources, directors/officers, and the ownership hop subsidiary_of Rostec, i.e. the operating legal counterparty with the parent recorded through the hop rather than by matching to it. -nvekxAbgzUC-f4LdTmqCg shares the same INN/OGRN and address but is a trade-data duplicate (7 sources, only shipment/procurement edges, no registration date or ownership); qyR17 is typed as a person and is a single Ukrainian NAZK sanctions listing of the same OGRN; WYo6 is an address-string shipment stub with no identifiers; and cxndmpr (\"Оборонительные системы\") is a different company entirely. Residual uncertainty is only the duplicate-record split, not the identity: the label's \"Открытое акционерное общество\" is the pre-rename legal form of the same OGRN, not a different entity.",
               "verdicts": [
                 {
                   "discriminator": "country",
@@ -735,37 +727,37 @@
                 {
                   "discriminator": "locality",
                   "verdict": "pass",
-                  "reasoning": "Addresses give Moscow with postcode 107076, matching the roster locality and postcode exactly."
+                  "reasoning": "Addresses give г. Москва / Moscow 107076, matching the roster locality and postcode."
                 },
                 {
                   "discriminator": "street",
                   "verdict": "pass",
-                  "reasoning": "Registered address appears in both Cyrillic (ул. Стромынка, д. 27) and English (27 Stromynka Str.) forms, matching the roster street and number."
+                  "reasoning": "Lists '27 Stromynka Ul., Moscow, 107076' and 'ул. Стромынка, д. 27' — the roster street and number verbatim."
                 },
                 {
                   "discriminator": "name_cover",
                   "verdict": "pass",
-                  "reasoning": "«Рособоронэкспорт» is the exact Cyrillic form of the roster name Rosoboronexport, with no extra qualifier beyond legal form."
+                  "reasoning": "«Рособоронэкспорт» transliterates to the roster name Rosoboronexport; OAO/AO differ only in legal form on the same OGRN 1117746521452."
                 },
                 {
                   "discriminator": "alias_context",
                   "verdict": "pass",
-                  "reasoning": "OAO/OJSC label is the pre-rename legal form of the same OGRN 1117746521452, a rename not a divestiture; the Gogolevsky Blvd address is the parent's, reached via the ownership hop."
+                  "reasoning": "Aliases across candidates (AO, OJSC, ROE, Ukrainian АТ form) all resolve to INN 7718852163, so no divested-brand alias is in play."
                 },
                 {
                   "discriminator": "lei_witness",
                   "verdict": "unavailable",
-                  "reasoning": "No LEI on this or any candidate; absence is not evidence either way for a sanctioned Russian state entity."
+                  "reasoning": "No LEI on this or any candidate; absence is not evidence either way for a Russian sanctioned state entity."
                 },
                 {
                   "discriminator": "business_purpose",
                   "verdict": "pass",
-                  "reasoning": "State-owned status, export-control and arms-related sanctions designations fit a defence-export intermediary, consistent with the roster row."
+                  "reasoning": "State-owned arms-export intermediary: state_owned, export_controls and BIS/OFAC listings, consistent with a defence supplier roster row."
                 },
                 {
                   "discriminator": "liveness",
                   "verdict": "pass",
-                  "reasoning": "closed=false, registered 2011, with current sanctions listings and active shipment relationships indicating an operating entity."
+                  "reasoning": "closed=false with current multi-jurisdiction sanctions listings and active shipment/ownership edges — the entity is live."
                 }
               ]
             },
@@ -779,28 +771,28 @@
         "stop_details": null,
         "usage": {
           "input_tokens": 2,
-          "cache_creation_input_tokens": 2084,
-          "cache_read_input_tokens": 11114,
+          "cache_creation_input_tokens": 434,
+          "cache_read_input_tokens": 10366,
           "cache_creation": {
-            "ephemeral_5m_input_tokens": 2084,
+            "ephemeral_5m_input_tokens": 434,
             "ephemeral_1h_input_tokens": 0
           },
           "iterations": [
             {
               "input_tokens": 2,
-              "output_tokens": 2659,
-              "cache_read_input_tokens": 11114,
-              "cache_creation_input_tokens": 2084,
+              "output_tokens": 2259,
+              "cache_read_input_tokens": 10366,
+              "cache_creation_input_tokens": 434,
               "cache_creation": {
-                "ephemeral_5m_input_tokens": 2084,
+                "ephemeral_5m_input_tokens": 434,
                 "ephemeral_1h_input_tokens": 0
               },
               "type": "message"
             }
           ],
-          "output_tokens": 2659,
+          "output_tokens": 2259,
           "output_tokens_details": {
-            "thinking_tokens": 1106
+            "thinking_tokens": 1172
           },
           "service_tier": "standard",
           "inference_geo": "global"
@@ -809,19 +801,19 @@
     },
     {
       "n": 11,
-      "wireHash": "158899c288af88554386d3a0e94ebcfbe3529723eb823d7bbd9c73ca958832b1",
-      "bodyHash": "7a4709bfb41c6ac736f4489fc169f4f276199603ce9a424cfb2dbf643e515606",
+      "wireHash": "00d1ea6b5ee0306f68fa6afce46b0ed08ee6ae1920f96984d06bade716416b2f",
+      "bodyHash": "4252d7577842ad7c807850c5693e5ede2a3b01193316eb3f89db7aabcc20c1fe",
       "loop": "resolve",
       "roundN": 1,
       "response": {
         "model": "claude-opus-5",
-        "id": "msg_011CeggRMczcVJt5uMjwoDxp",
+        "id": "msg_011Ceh74hQCYCraGoH5sSF1o",
         "type": "message",
         "role": "assistant",
         "content": [
           {
             "type": "text",
-            "text": "Verdict recorded.\n\n**Pick:** `9LtTGZXn_LlN05C47cwZ5w` — Открытое акционерное общество «Рособоронэкспорт», INN 7718852163 / OGRN 1117746521452, 27 Stromynka St, Moscow 107076. Confidence: medium.\n\nThe one open question I could not close in this round is the unmerged duplicate: `-nvekxAbg` carries the *identical* INN and OGRN, so it is the same legal person, not a rival one. I split them on record shape rather than identity — `9LtTGZXn` has the EGRUL fingerprint (registration date matching the OGRN vintage, directors, shareholders, branch, legal predecessor, ownership hop to the state parent), while `-nvekxAbg` has zero officers or ownership and reads as a customs-derived record with tax identifiers attached. If a later round can fetch the underlying source records for each, that would confirm or overturn the split; it is the reason I did not go to high.\n\nThree candidates were eliminated on hard grounds rather than preference: `cxndmpr` is a genuinely different company (INN 0411017748) that merely shares the Stromynka 27 building, `qyR17dK` is typed as a person, and `yQQLlvljql` is a single-source stub with no identifiers at all."
+            "text": "Verdict recorded: **9LtTGZXn_LlN05C47cwZ5w** (Рособоронэкспорт, INN 7718852163 / OGRN 1117746521452, ул. Стромынка 27, Moscow 107076), confidence medium — chosen over the co-identified duplicate `-nvekxAbgzUC-f4LdTmqCg` because it carries the registry record, registration date, officers and the subsidiary_of Rostec ownership hop."
           }
         ],
         "stop_reason": "end_turn",
@@ -829,26 +821,26 @@
         "stop_details": null,
         "usage": {
           "input_tokens": 2,
-          "cache_creation_input_tokens": 3853,
-          "cache_read_input_tokens": 13198,
+          "cache_creation_input_tokens": 3423,
+          "cache_read_input_tokens": 10800,
           "cache_creation": {
-            "ephemeral_5m_input_tokens": 3853,
+            "ephemeral_5m_input_tokens": 3423,
             "ephemeral_1h_input_tokens": 0
           },
           "iterations": [
             {
               "input_tokens": 2,
-              "output_tokens": 439,
-              "cache_read_input_tokens": 13198,
-              "cache_creation_input_tokens": 3853,
+              "output_tokens": 160,
+              "cache_read_input_tokens": 10800,
+              "cache_creation_input_tokens": 3423,
               "cache_creation": {
-                "ephemeral_5m_input_tokens": 3853,
+                "ephemeral_5m_input_tokens": 3423,
                 "ephemeral_1h_input_tokens": 0
               },
               "type": "message"
             }
           ],
-          "output_tokens": 439,
+          "output_tokens": 160,
           "output_tokens_details": {
             "thinking_tokens": 0
           },
@@ -883,7 +875,7 @@
           {
             "type": "company",
             "label": "АО \"РОСОБОРОНЭКСПОРТ\"",
-            "score": 248.10397,
+            "score": 248.10384,
             "profile": "corporate",
             "sources": [
               "66dfefb726ae00fde8f09f34c5578d35",
@@ -1187,7 +1179,7 @@
           {
             "type": "company",
             "label": "Открытое акционерное общество «Рособоронэкспорт»",
-            "score": 215.57845,
+            "score": 215.5784,
             "profile": "corporate",
             "sources": [
               "fdfedf11a5122e2aef9dc3f176c7427d",
@@ -1664,7 +1656,7 @@
           {
             "type": "person",
             "label": "Акціонерне товариство \"Рособоронекспорт\"",
-            "score": 166.35666,
+            "score": 166.35654,
             "profile": "corporate",
             "sources": [
               "e6e4acebdea4e9e71af8d3586d34fcdd"
@@ -1936,7 +1928,7 @@
           {
             "type": "company",
             "label": "АКЦИОНЕРНОЕ ОБЩЕСТВО \"ОБОРОНИТЕЛЬНЫЕ СИСТЕМЫ\"",
-            "score": 146.96948,
+            "score": 146.96939,
             "profile": "corporate",
             "sources": [
               "417400a1ac439843fda5bb2f05fb4161",
@@ -2283,7 +2275,7 @@
           {
             "type": "company",
             "label": "Rosoboronexport OJSC (ROE)",
-            "score": 139.17926,
+            "score": 139.17915,
             "profile": "corporate",
             "sources": [
               "417400a1ac439843fda5bb2f05fb4161"
@@ -2454,7 +2446,7 @@
           {
             "type": "company",
             "label": "Открытое акционерное общество \"Конструкторское бюро приборостроения\"",
-            "score": 137.96942,
+            "score": 137.96935,
             "profile": "corporate",
             "sources": [
               "fdfedf11a5122e2aef9dc3f176c7427d",
@@ -3013,7 +3005,7 @@
           {
             "type": "company",
             "label": "АКЦИОНЕРНОЕ ОБЩЕСТВО \"КОНЦЕРН ВОЗДУШНО-КОСМИЧЕСКОЙ ОБОРОНЫ \"АЛМАЗ - АНТЕЙ\"",
-            "score": 130.56104,
+            "score": 130.56097,
             "profile": "corporate",
             "sources": [
               "fdfedf11a5122e2aef9dc3f176c7427d",
@@ -3919,7 +3911,7 @@
           ]
         }
       },
-      "bodyHash": "a843ede2f2d6797a6441f87e17f0d4589b9eaebcd336820d95f2d5dd45069e72",
+      "bodyHash": "6e38f7a03dd0e45ee29cd9e3a82a23452ebbf219d33389f2e5f71875d7f56929",
       "via": "sdk"
     },
     {
@@ -7369,9 +7361,6 @@
                     "metadata": {
                       "source": [
                         "EU Sanctions Map"
-                      ],
-                      "from_date": [
-                        "2024-06-23"
                       ]
                     }
                   },
@@ -7958,7 +7947,8 @@
                   "29 / 141 Verejskaya Street, Moscow, 121357, RU",
                   "121357, Fédération de Russie, Moscou, Vereyskaya st., 29 building 141, RUSSIE",
                   "г. Москва, ул. Усачева, д. 24",
-                  "Russian Federation"
+                  "Vereyskaya Str. 29, Building 141, Moskau, Russian Federation",
+                  "121357, МОСКВА ГОРОД, УЛИЦА ВЕРЕЙСКАЯ, ДОМ 29, СТРОЕНИЕ 141"
                 ],
                 "countries": [
                   "RUS"
@@ -8113,7 +8103,7 @@
                     "source_type": "sanctions_lists"
                   },
                   "ded706ef28cdc649b6fc5142bc542890": {
-                    "count": 1261,
+                    "count": 1269,
                     "label": "EU Sanctions Map",
                     "country": "XXX",
                     "source_type": "sanctions_lists"
@@ -19154,7 +19144,7 @@
         "userRelationshipCount": {},
         "userRelatedEntitiesCount": 0
       },
-      "bodyHash": "94d87741227c86c0694e8774d33e49f20dc5e31eca79051a3107ff3698490f25",
+      "bodyHash": "64c8a5cacbc18fb91fc403e449d230cd4f78b74a673709050e364f493d2606d4",
       "via": "sdk"
     },
     {
@@ -20148,7 +20138,7 @@
               },
               {
                 "record": [
-                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_eu_journal_sanctions/1788307200000"
+                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_eu_journal_sanctions/1788393600000"
                 ],
                 "sources": [
                   "24ca9e1480ab586a153d3ae12a7b83a0"
@@ -20379,8 +20369,8 @@
                 ],
                 "sources": [
                   "fdfedf11a5122e2aef9dc3f176c7427d",
-                  "24ca9e1480ab586a153d3ae12a7b83a0",
-                  "a4be698ea3263f7f7f3906d1c98cffc2"
+                  "a4be698ea3263f7f7f3906d1c98cffc2",
+                  "24ca9e1480ab586a153d3ae12a7b83a0"
                 ],
                 "editable": false,
                 "properties": {
@@ -20906,9 +20896,9 @@
                 "properties": {
                   "x": 37.701307040500126,
                   "y": 55.795396904365816,
-                  "city": "Moscou",
+                  "city": "Moscow",
                   "date": "2022-06-28",
-                  "road": "Stromynka Str.",
+                  "road": "Stromynka Ul.",
                   "type": "registered",
                   "value": "27 Stromynka Ul., Moscow, 107076, Russia",
                   "country": "RUS",
@@ -20918,7 +20908,7 @@
                   "Geocoding Added By": "Sayari",
                   "Geocoding Information": "Geocoded with ArcGIS World Geocoder"
                 },
-                "recordCount": 3532
+                "recordCount": 3540
               },
               {
                 "record": [
@@ -20932,7 +20922,7 @@
                 "properties": {
                   "x": 37.701307040500126,
                   "y": 55.795396904365816,
-                  "city": "Г.москва",
+                  "city": "Г. Москва",
                   "date": "2019-06-24",
                   "road": "Ул. Стромынка",
                   "type": "registered",
@@ -20940,7 +20930,7 @@
                   "country": "RUS",
                   "postcode": "107076",
                   "translated": "st. Stromynka, 27, Moscow, 107076, Russian Federation",
-                  "houseNumber": "Д.27",
+                  "houseNumber": "Д. 27",
                   "Translated By": "Google",
                   "precisionCode": "1",
                   "Geocoding Added By": "Sayari",
@@ -21241,7 +21231,7 @@
                   "value": "RUS",
                   "context": "address"
                 },
-                "recordCount": 3565
+                "recordCount": 3573
               }
             ],
             "size": {
@@ -22740,7 +22730,7 @@
               },
               {
                 "record": [
-                  "ded706ef28cdc649b6fc5142bc542890/eu-sanctions-map/1788381353279"
+                  "ded706ef28cdc649b6fc5142bc542890/eu-sanctions-map/1788411969730"
                 ],
                 "sources": [
                   "ded706ef28cdc649b6fc5142bc542890"
@@ -22751,7 +22741,7 @@
                   "reason": "Restrictive measures in view of Russia's actions destabilising the situation in Ukraine (sectoral restrictive measures)",
                   "Legal Basis": "Annex IV of Council Regulation (EU) No 833/2014"
                 },
-                "recordCount": 2528
+                "recordCount": 2544
               },
               {
                 "record": [
@@ -22818,7 +22808,7 @@
               },
               {
                 "record": [
-                  "ded706ef28cdc649b6fc5142bc542890/eu-sanctions-map/1788381353279"
+                  "ded706ef28cdc649b6fc5142bc542890/eu-sanctions-map/1788411969730"
                 ],
                 "sources": [
                   "ded706ef28cdc649b6fc5142bc542890"
@@ -22829,11 +22819,11 @@
                   "reason": "Restrictive measures in view of Russia's actions destabilising the situation in Ukraine (sectoral restrictive measures)",
                   "Legal Basis": "Annex IV of Council Regulation (EU) No 833/2014"
                 },
-                "recordCount": 2528
+                "recordCount": 2544
               },
               {
                 "record": [
-                  "ded706ef28cdc649b6fc5142bc542890/eu-sanctions-map/1788381353279"
+                  "ded706ef28cdc649b6fc5142bc542890/eu-sanctions-map/1788411969730"
                 ],
                 "sources": [
                   "ded706ef28cdc649b6fc5142bc542890"
@@ -22844,7 +22834,7 @@
                   "reason": "Restrictive measures in view of Russia's actions destabilising the situation in Ukraine (sectoral restrictive measures)",
                   "Legal Basis": "Annex IV of Council Regulation (EU) No 833/2014"
                 },
-                "recordCount": 2528
+                "recordCount": 2544
               },
               {
                 "record": [
@@ -22980,27 +22970,6 @@
               },
               {
                 "record": [
-                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_ofac_sdn/1788307200000"
-                ],
-                "sources": [
-                  "24ca9e1480ab586a153d3ae12a7b83a0"
-                ],
-                "editable": false,
-                "properties": {
-                  "URL": "https://sanctionssearch.ofac.treas.gov/Details.aspx?id=18782",
-                  "list": "USA Treasury OFAC Specially Designated Nationals (SDN) List",
-                  "type": "sanctioned_usa_ofac_sdn",
-                  "Notes": "For more information on directives, please visit the following link: http://www.treasury.gov/resource-center/sanctions/Programs/Pages/ukraine.aspx#directives",
-                  "Source": "USA Treasury OFAC Specially Designated Nationals (SDN) List",
-                  "program": "Executive Order - Convential Arms (Iran), Executive Order 14024 (Russia), Executive Order 13662 (Ukraine)",
-                  "Measures": "IRAN-CON-ARMS-EO, RUSSIA-EO14024, 13662 Sectoral Directive 3, Block, UKRAINE-EO13662",
-                  "fromDate": "2023-04-20",
-                  "Legal Basis": "Executive Order - Convential Arms (Iran), Executive Order 14024 (Russia), Executive Order 13662 (Ukraine)"
-                },
-                "recordCount": 1
-              },
-              {
-                "record": [
                   "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_ofac_sdn/1786492800000"
                 ],
                 "sources": [
@@ -23017,28 +22986,6 @@
                   "Measures": "UKRAINE-EO13662, Block, RUSSIA-EO14024, IRAN-CON-ARMS-EO, 13662 Sectoral Directive 3",
                   "fromDate": "2023-04-20",
                   "Legal Basis": "Executive Order 14024 (Russia), Executive Order 13662 (Ukraine), Executive Order - Convential Arms (Iran)"
-                },
-                "recordCount": 1
-              },
-              {
-                "record": [
-                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_ofac_cons/1788307200000"
-                ],
-                "sources": [
-                  "24ca9e1480ab586a153d3ae12a7b83a0"
-                ],
-                "editable": false,
-                "properties": {
-                  "URL": "https://sanctionssearch.ofac.treas.gov/Details.aspx?id=18782",
-                  "list": "OFAC Non-SDN Consolidated Sanctions List",
-                  "type": "sanctioned_other",
-                  "Notes": "For more information on directives, please visit the following link: http://www.treasury.gov/resource-center/sanctions/Programs/Pages/ukraine.aspx#directives",
-                  "Source": "USA Treasury OFAC Non-SDN Consolidated Sanctions List",
-                  "program": "UKRAINE-EO13662",
-                  "Measures": "RUSSIA-EO14024, UKRAINE-EO13662, 13662 Sectoral Directive 3, IRAN-CON-ARMS-EO, Block",
-                  "fromDate": "2023-04-20",
-                  "authority": "Office of Foreign Assets Control",
-                  "Legal Basis": "Executive Order - Convential Arms (Iran), Executive Order 13662 (Ukraine), Executive Order 14024 (Russia)"
                 },
                 "recordCount": 1
               },
@@ -23066,28 +23013,7 @@
               },
               {
                 "record": [
-                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_ofac_sdn/1788307200000"
-                ],
-                "sources": [
-                  "24ca9e1480ab586a153d3ae12a7b83a0"
-                ],
-                "editable": false,
-                "properties": {
-                  "URL": "https://sanctionssearch.ofac.treas.gov/Details.aspx?id=18782",
-                  "list": "USA Treasury OFAC Specially Designated Nationals (SDN) List",
-                  "type": "sanctioned",
-                  "Notes": "For more information on directives, please visit the following link: http://www.treasury.gov/resource-center/sanctions/Programs/Pages/ukraine.aspx#directives",
-                  "Source": "USA Treasury OFAC Specially Designated Nationals (SDN) List",
-                  "program": "Executive Order - Convential Arms (Iran), Executive Order 14024 (Russia), Executive Order 13662 (Ukraine)",
-                  "Measures": "IRAN-CON-ARMS-EO, RUSSIA-EO14024, 13662 Sectoral Directive 3, Block, UKRAINE-EO13662",
-                  "fromDate": "2023-04-20",
-                  "Legal Basis": "Executive Order - Convential Arms (Iran), Executive Order 14024 (Russia), Executive Order 13662 (Ukraine)"
-                },
-                "recordCount": 1
-              },
-              {
-                "record": [
-                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_ofac_cons/1788307200000"
+                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_ofac_cons/1788393600000"
                 ],
                 "sources": [
                   "24ca9e1480ab586a153d3ae12a7b83a0"
@@ -23100,10 +23026,74 @@
                   "Notes": "For more information on directives, please visit the following link: http://www.treasury.gov/resource-center/sanctions/Programs/Pages/ukraine.aspx#directives",
                   "Source": "USA Treasury OFAC Non-SDN Consolidated Sanctions List",
                   "program": "UKRAINE-EO13662",
-                  "Measures": "RUSSIA-EO14024, UKRAINE-EO13662, 13662 Sectoral Directive 3, IRAN-CON-ARMS-EO, Block",
+                  "Measures": "13662 Sectoral Directive 3, UKRAINE-EO13662, IRAN-CON-ARMS-EO, RUSSIA-EO14024, Block",
                   "fromDate": "2023-04-20",
                   "authority": "Office of Foreign Assets Control",
-                  "Legal Basis": "Executive Order - Convential Arms (Iran), Executive Order 13662 (Ukraine), Executive Order 14024 (Russia)"
+                  "Legal Basis": "Executive Order - Convential Arms (Iran), Executive Order 14024 (Russia), Executive Order 13662 (Ukraine)"
+                },
+                "recordCount": 1
+              },
+              {
+                "record": [
+                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_ofac_sdn/1788393600000"
+                ],
+                "sources": [
+                  "24ca9e1480ab586a153d3ae12a7b83a0"
+                ],
+                "editable": false,
+                "properties": {
+                  "URL": "https://sanctionssearch.ofac.treas.gov/Details.aspx?id=18782",
+                  "list": "USA Treasury OFAC Specially Designated Nationals (SDN) List",
+                  "type": "sanctioned",
+                  "Notes": "For more information on directives, please visit the following link: http://www.treasury.gov/resource-center/sanctions/Programs/Pages/ukraine.aspx#directives",
+                  "Source": "USA Treasury OFAC Specially Designated Nationals (SDN) List",
+                  "program": "Executive Order 14024 (Russia), Executive Order 13662 (Ukraine), Executive Order - Convential Arms (Iran)",
+                  "Measures": "UKRAINE-EO13662, 13662 Sectoral Directive 3, RUSSIA-EO14024, IRAN-CON-ARMS-EO, Block",
+                  "fromDate": "2023-04-20",
+                  "Legal Basis": "Executive Order 14024 (Russia), Executive Order 13662 (Ukraine), Executive Order - Convential Arms (Iran)"
+                },
+                "recordCount": 1
+              },
+              {
+                "record": [
+                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_ofac_cons/1788393600000"
+                ],
+                "sources": [
+                  "24ca9e1480ab586a153d3ae12a7b83a0"
+                ],
+                "editable": false,
+                "properties": {
+                  "URL": "https://sanctionssearch.ofac.treas.gov/Details.aspx?id=18782",
+                  "list": "OFAC Non-SDN Consolidated Sanctions List",
+                  "type": "sanctioned_other",
+                  "Notes": "For more information on directives, please visit the following link: http://www.treasury.gov/resource-center/sanctions/Programs/Pages/ukraine.aspx#directives",
+                  "Source": "USA Treasury OFAC Non-SDN Consolidated Sanctions List",
+                  "program": "UKRAINE-EO13662",
+                  "Measures": "13662 Sectoral Directive 3, UKRAINE-EO13662, IRAN-CON-ARMS-EO, RUSSIA-EO14024, Block",
+                  "fromDate": "2023-04-20",
+                  "authority": "Office of Foreign Assets Control",
+                  "Legal Basis": "Executive Order - Convential Arms (Iran), Executive Order 14024 (Russia), Executive Order 13662 (Ukraine)"
+                },
+                "recordCount": 1
+              },
+              {
+                "record": [
+                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_ofac_sdn/1788393600000"
+                ],
+                "sources": [
+                  "24ca9e1480ab586a153d3ae12a7b83a0"
+                ],
+                "editable": false,
+                "properties": {
+                  "URL": "https://sanctionssearch.ofac.treas.gov/Details.aspx?id=18782",
+                  "list": "USA Treasury OFAC Specially Designated Nationals (SDN) List",
+                  "type": "sanctioned_usa_ofac_sdn",
+                  "Notes": "For more information on directives, please visit the following link: http://www.treasury.gov/resource-center/sanctions/Programs/Pages/ukraine.aspx#directives",
+                  "Source": "USA Treasury OFAC Specially Designated Nationals (SDN) List",
+                  "program": "Executive Order 14024 (Russia), Executive Order 13662 (Ukraine), Executive Order - Convential Arms (Iran)",
+                  "Measures": "UKRAINE-EO13662, 13662 Sectoral Directive 3, RUSSIA-EO14024, IRAN-CON-ARMS-EO, Block",
+                  "fromDate": "2023-04-20",
+                  "Legal Basis": "Executive Order 14024 (Russia), Executive Order 13662 (Ukraine), Executive Order - Convential Arms (Iran)"
                 },
                 "recordCount": 1
               },
@@ -23507,26 +23497,6 @@
               },
               {
                 "record": [
-                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_trade_csl/1788307200000"
-                ],
-                "sources": [
-                  "24ca9e1480ab586a153d3ae12a7b83a0"
-                ],
-                "editable": false,
-                "properties": {
-                  "URL": "https://www.bis.gov/licensing/guidance-on-end-user-and-end-use-controls-and-us-person-controls, https://www.trade.gov/consolidated-screening-list",
-                  "list": "USA Consolidated Screening List",
-                  "type": "export_controls",
-                  "reason": "All items subject to the EAR.  (See §§ 734.9(g),3 746.8(a)(3), and 744.21(b) of the EAR)",
-                  "program": "Entity List (EL) - Bureau of Industry and Security",
-                  "Measures": "Policy of denial for all items subject to the EAR apart from food and medicine designated as EAR99, which will be reviewed on a case-by-case basis. See §§ 746.8(b) and 744.21(e)",
-                  "fromDate": "2022-03-03",
-                  "authority": "Department of the Commerce - International Trade Administration, Entity List (EL) - Bureau of Industry and Security"
-                },
-                "recordCount": 1
-              },
-              {
-                "record": [
                   "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_trade_csl/1786492800000"
                 ],
                 "sources": [
@@ -23535,26 +23505,6 @@
                 "editable": false,
                 "properties": {
                   "URL": "https://www.trade.gov/consolidated-screening-list, https://www.bis.gov/licensing/guidance-on-end-user-and-end-use-controls-and-us-person-controls",
-                  "list": "USA Consolidated Screening List",
-                  "type": "usa_bis",
-                  "reason": "All items subject to the EAR.  (See §§ 734.9(g),3 746.8(a)(3), and 744.21(b) of the EAR)",
-                  "program": "Entity List (EL) - Bureau of Industry and Security",
-                  "Measures": "Policy of denial for all items subject to the EAR apart from food and medicine designated as EAR99, which will be reviewed on a case-by-case basis. See §§ 746.8(b) and 744.21(e)",
-                  "fromDate": "2022-03-03",
-                  "authority": "Department of the Commerce - International Trade Administration, Entity List (EL) - Bureau of Industry and Security"
-                },
-                "recordCount": 1
-              },
-              {
-                "record": [
-                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_trade_csl/1788307200000"
-                ],
-                "sources": [
-                  "24ca9e1480ab586a153d3ae12a7b83a0"
-                ],
-                "editable": false,
-                "properties": {
-                  "URL": "https://www.bis.gov/licensing/guidance-on-end-user-and-end-use-controls-and-us-person-controls, https://www.trade.gov/consolidated-screening-list",
                   "list": "USA Consolidated Screening List",
                   "type": "usa_bis",
                   "reason": "All items subject to the EAR.  (See §§ 734.9(g),3 746.8(a)(3), and 744.21(b) of the EAR)",
@@ -23618,6 +23568,46 @@
                   "License Policy": "Policy of denial for all items subject to the EAR apart from food and medicine designated as EAR99, which will be reviewed on a case-by-case basis. See §§ 746.8(b) and 744.21(e)",
                   "License Requirement": "All items subject to the EAR.  (See §§ 734.9(g),3 746.8(a)(3), and 744.21(b) of the EAR)",
                   "Federal Register Notice": "87 FR 12240; 87 FR 34136"
+                },
+                "recordCount": 1
+              },
+              {
+                "record": [
+                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_trade_csl/1788393600000"
+                ],
+                "sources": [
+                  "24ca9e1480ab586a153d3ae12a7b83a0"
+                ],
+                "editable": false,
+                "properties": {
+                  "URL": "https://www.trade.gov/consolidated-screening-list, https://www.bis.gov/licensing/guidance-on-end-user-and-end-use-controls-and-us-person-controls",
+                  "list": "USA Consolidated Screening List",
+                  "type": "export_controls",
+                  "reason": "All items subject to the EAR.  (See §§ 734.9(g),3 746.8(a)(3), and 744.21(b) of the EAR)",
+                  "program": "Entity List (EL) - Bureau of Industry and Security",
+                  "Measures": "Policy of denial for all items subject to the EAR apart from food and medicine designated as EAR99, which will be reviewed on a case-by-case basis. See §§ 746.8(b) and 744.21(e)",
+                  "fromDate": "2022-03-03",
+                  "authority": "Entity List (EL) - Bureau of Industry and Security, Department of the Commerce - International Trade Administration"
+                },
+                "recordCount": 1
+              },
+              {
+                "record": [
+                  "24ca9e1480ab586a153d3ae12a7b83a0/NK-jLcvcAFxBd2aYNeqUvit3a_us_trade_csl/1788393600000"
+                ],
+                "sources": [
+                  "24ca9e1480ab586a153d3ae12a7b83a0"
+                ],
+                "editable": false,
+                "properties": {
+                  "URL": "https://www.trade.gov/consolidated-screening-list, https://www.bis.gov/licensing/guidance-on-end-user-and-end-use-controls-and-us-person-controls",
+                  "list": "USA Consolidated Screening List",
+                  "type": "usa_bis",
+                  "reason": "All items subject to the EAR.  (See §§ 734.9(g),3 746.8(a)(3), and 744.21(b) of the EAR)",
+                  "program": "Entity List (EL) - Bureau of Industry and Security",
+                  "Measures": "Policy of denial for all items subject to the EAR apart from food and medicine designated as EAR99, which will be reviewed on a case-by-case basis. See §§ 746.8(b) and 744.21(e)",
+                  "fromDate": "2022-03-03",
+                  "authority": "Entity List (EL) - Bureau of Industry and Security, Department of the Commerce - International Trade Administration"
                 },
                 "recordCount": 1
               },
@@ -24096,7 +24086,7 @@
             "source_type": "sanctions_lists"
           },
           "ded706ef28cdc649b6fc5142bc542890": {
-            "count": 1270,
+            "count": 1278,
             "label": "EU Sanctions Map",
             "country": "XXX",
             "source_type": "sanctions_lists"
@@ -24355,7 +24345,7 @@
           ],
           "next": "WFhYfHRyYWRlX2RhdGFfYnRkX2hpc3RvcmljYWx8ZnwyMDI1LTAxLTIxfGY3MmU1MmY5YjE5M2Y5OGNkZGIzNjYzOTJkZmI5OGFmfDE3Mzc0MTc2MDAwMDA",
           "size": {
-            "count": 23992,
+            "count": 24000,
             "qualifier": "eq"
           },
           "limit": 20
@@ -26034,8 +26024,7 @@
                     "metadata": {
                       "source": [
                         "USA Commerce BIS Entity List - Analyst Content",
-                        "USA Consolidated Screening List",
-                        "OpenSanctions - Global Sanctions List"
+                        "USA Consolidated Screening List"
                       ],
                       "from_date": [
                         "2016-12-27"
@@ -26065,12 +26054,10 @@
                     "value": true,
                     "metadata": {
                       "source": [
-                        "OpenSanctions - Global Sanctions List",
+                        "EU Sanctions Map",
                         "USA Treasury OFAC Specially Designated Nationals (SDN) List",
-                        "EU Financial Sanctions List",
-                        "Ukraine Sanctions List",
-                        "Switzerland SECO Sanctions List",
-                        "France National Asset Freeze Register"
+                        "France National Asset Freeze Register",
+                        "Ukraine Sanctions List"
                       ],
                       "from_date": [
                         "2023-04-01"
@@ -26150,15 +26137,6 @@
                       ]
                     }
                   },
-                  "formerly_sanctioned": {
-                    "level": "high",
-                    "value": true,
-                    "metadata": {
-                      "source": [
-                        "EU Sanctions Map"
-                      ]
-                    }
-                  },
                   "sanctioned_che_seco": {
                     "level": "critical",
                     "value": true,
@@ -26201,15 +26179,6 @@
                       ]
                     }
                   },
-                  "export_controls_other": {
-                    "level": "critical",
-                    "value": true,
-                    "metadata": {
-                      "source": [
-                        "OpenSanctions - Global Sanctions List"
-                      ]
-                    }
-                  },
                   "psa_eu_50_percent_rule": {
                     "level": "high",
                     "value": 1,
@@ -26242,10 +26211,10 @@
                     "value": true,
                     "metadata": {
                       "source": [
-                        "EU Financial Sanctions List"
+                        "EU Sanctions Map"
                       ],
                       "from_date": [
-                        "2026-04-23"
+                        "2026-04-22"
                       ]
                     }
                   },
@@ -26254,8 +26223,7 @@
                     "value": true,
                     "metadata": {
                       "source": [
-                        "USA Treasury OFAC Specially Designated Nationals (SDN) List",
-                        "OpenSanctions - Global Sanctions List"
+                        "USA Treasury OFAC Specially Designated Nationals (SDN) List"
                       ],
                       "from_date": [
                         "2025-01-15"
@@ -26339,18 +26307,6 @@
                   },
                   "sanctioned_eu_ec_sanctions_map": {
                     "level": "critical",
-                    "value": true,
-                    "metadata": {
-                      "source": [
-                        "EU Sanctions Map"
-                      ],
-                      "from_date": [
-                        "2026-04-22"
-                      ]
-                    }
-                  },
-                  "formerly_sanctioned_eu_sanctions": {
-                    "level": "elevated",
                     "value": true,
                     "metadata": {
                       "source": [
@@ -26448,18 +26404,6 @@
                     "metadata": {
                       "traversal_path": [
                         "zmg1dqjtTKIVD7JpOFXtqQ|has_shareholder|0_xJBb0YClDewq41ZXPbPQ|subsidiary_of|zXh47GddUNA_0ss28GNdYQ"
-                      ]
-                    }
-                  },
-                  "formerly_sanctioned_eu_ec_sanctions_map": {
-                    "level": "elevated",
-                    "value": true,
-                    "metadata": {
-                      "source": [
-                        "EU Sanctions Map"
-                      ],
-                      "from_date": [
-                        "2026-04-22"
                       ]
                     }
                   },
@@ -26635,8 +26579,8 @@
                   "603950, Нижегородская, Нижний Новгород, Гагарина, дом 174",
                   "174, pr-kt Gagarina, GSP-299, Nizhny Novgorod, 603950, Russia",
                   "Gagarin Prospect 174, Nizhny Novgorod, 606950, RU",
-                  "Novgorod city Gagarin avenue, 174, Russian Federation Nizhny Novgorod city, 603950 RUSSIAN FEDERATION",
-                  "Irchi Kazaka street, 37, Makhachkala city,, 367030, RUSSIAN FEDERATION"
+                  "Nizhny Novgorod region Gagarin avenue, 174, Nizhny Novgorod city 603950 RUSSIAN FEDERATION",
+                  "603950, НИЖЕГОРОДСКАЯ ОБЛАСТЬ, ГОРОД НИЖНИЙ НОВГОРОД, ПРОСПЕКТ ГАГАРИНА, 174"
                 ],
                 "countries": [
                   "RUS"
@@ -26675,14 +26619,19 @@
                     "value": "1020502527066"
                   },
                   {
-                    "type": "usa_ofac_sdn_number",
-                    "label": "Usa Ofac Sdn Number",
-                    "value": "52653"
+                    "type": "eu_fsd_id",
+                    "label": "Eu Fsd Id",
+                    "value": "182588"
                   },
                   {
-                    "type": "fra_asset_freeze_id",
-                    "label": "Fra Asset Freeze Id",
-                    "value": "8887"
+                    "type": "unknown",
+                    "label": "Unknown",
+                    "value": "526101001"
+                  },
+                  {
+                    "type": "unknown",
+                    "label": "Unknown",
+                    "value": "5261077695"
                   }
                 ],
                 "referenceId": "56bce0e008204712e302271ddd7b4fb1/1115261005738_5261077695_AO-NNPO-IMENI-M-V-FRUNZE.html/1552661755844:96e130d1615ed6cd0535e1bfa8dd25a2",
@@ -26691,12 +26640,6 @@
                     "count": 1,
                     "label": "Switzerland SECO Sanctions List",
                     "country": "CHE",
-                    "source_type": "sanctions_lists"
-                  },
-                  "24ca9e1480ab586a153d3ae12a7b83a0": {
-                    "count": 4,
-                    "label": "OpenSanctions - Global Sanctions List",
-                    "country": "XXX",
                     "source_type": "sanctions_lists"
                   },
                   "3322a755c28851ec06eda3280cc2a2b2": {
@@ -26766,7 +26709,7 @@
                     "source_type": "regulatory_enforcement_data"
                   },
                   "ded706ef28cdc649b6fc5142bc542890": {
-                    "count": 220,
+                    "count": 671,
                     "label": "EU Sanctions Map",
                     "country": "XXX",
                     "source_type": "sanctions_lists"
@@ -26784,7 +26727,7 @@
                     "source_type": "adverse_media_/_negative_news_data"
                   },
                   "f4ce10ac8bdc0bd9bcb31cb868b4b539": {
-                    "count": 8,
+                    "count": 7,
                     "label": "EU Financial Sanctions List",
                     "country": "XXX",
                     "source_type": "sanctions_lists"
@@ -26800,28 +26743,28 @@
                   "name": 41,
                   "shares": 1,
                   "status": 2,
-                  "address": 6,
-                  "contact": 9,
+                  "address": 4,
+                  "contact": 7,
                   "country": 1,
                   "financials": 3,
                   "identifier": 37,
                   "company_type": 3,
                   "business_purpose": 100,
-                  "risk_intelligence": 27,
+                  "risk_intelligence": 19,
                   "additional_information": 4
                 },
                 "attributeCounts": {
                   "name": 41,
                   "shares": 1,
                   "status": 2,
-                  "address": 6,
-                  "contact": 9,
+                  "address": 4,
+                  "contact": 7,
                   "country": 1,
                   "financials": 3,
                   "identifier": 37,
                   "company_type": 3,
                   "business_purpose": 100,
-                  "risk_intelligence": 27,
+                  "risk_intelligence": 19,
                   "additional_information": 4
                 },
                 "logisticsEntity": false,
@@ -35008,7 +34951,7 @@
         "userRelationshipCount": {},
         "userRelatedEntitiesCount": 0
       },
-      "bodyHash": "c2aa941dd0157df5c7f076e7bb2324537ae1dfa67a98b5baa52a557952d062b1",
+      "bodyHash": "267f20b8db0499950d9e1eb7392618b924bb4e4ddbce5d9e83e1ce266525b07b",
       "via": "sdk"
     },
     {
@@ -48916,6 +48859,81 @@
         "offset": 0
       },
       "bodyHash": "e463d75fd4fbd0cadd40a51683906a92d30df295f0d0afc2215e81fb19a0dda5",
+      "via": "sdk"
+    },
+    {
+      "source": "sayari",
+      "endpoint": "search.searchEntity",
+      "paramsHash": "f8161eb9ea2973873999c6429d0d70c41021e4cfc28aaaec991d24c9477a7ffc",
+      "params": {
+        "q": "АО \"Рособоронэкспорт\" Стромынка 27 Москва",
+        "limit": 10
+      },
+      "body": {
+        "data": [
+          {
+            "id": "WYo6FXs2cZA04TDofmEgXw",
+            "pep": false,
+            "risk": {},
+            "type": "company",
+            "label": "АО \"РОСОБОРОНЭКСПОРТ\", 107076, Г. МОСКВА, УЛ. СТРОМЫНКА, Д. 27,",
+            "closed": false,
+            "degree": 1,
+            "matches": {
+              "name": [
+                "АО \"<em>РОСОБОРОНЭКСПОРТ</em>\", 107076, Г. МОСКВА, УЛ. СТРОМЫНКА, Д. 27,",
+                "<em>МОСКВА</em>, УЛ. <em>СТРОМЫНКА</em>, Д. <em>27</em>,",
+                "STROMYNKA, D. <em>27</em>,"
+              ]
+            },
+            "psaCount": 0,
+            "addresses": [],
+            "countries": [],
+            "entityUrl": "/v1/entity/WYo6FXs2cZA04TDofmEgXw",
+            "sanctioned": false,
+            "tradeCount": {
+              "sent": 0,
+              "received": 0
+            },
+            "coordinates": [],
+            "identifiers": [],
+            "referenceId": "66dfefb726ae00fde8f09f34c5578d35/eb634b5ecf0b979fb56b89b061cdf94b/1760313600000:72e6a7d6ee2aef0d6da284105d962f49",
+            "sourceCount": {
+              "66dfefb726ae00fde8f09f34c5578d35": {
+                "count": 1,
+                "label": "Russia Imports & Exports (January 2022 - Present)",
+                "country": "RUS",
+                "source_type": "trade_data"
+              }
+            },
+            "attributeCount": {
+              "name": 1
+            },
+            "attributeCounts": {
+              "name": 1
+            },
+            "logisticsEntity": false,
+            "userRecordCount": 0,
+            "relationshipCount": {
+              "carrier_of": 1
+            },
+            "userAttributeCount": {},
+            "userAttributeCounts": {},
+            "relatedEntitiesCount": 1,
+            "userRelationshipCount": {},
+            "userRelatedEntitiesCount": 0
+          }
+        ],
+        "next": false,
+        "size": {
+          "count": 1,
+          "qualifier": "eq"
+        },
+        "limit": 10,
+        "facets": {},
+        "offset": 0
+      },
+      "bodyHash": "cf3ad427895a1d0d118bd4d3c8831db938722175ebe1ecbcc0673a1f9f994acd",
       "via": "sdk"
     },
     {
