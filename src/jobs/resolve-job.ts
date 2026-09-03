@@ -9,6 +9,7 @@ import {
   resolveSupplier,
   type MatchLadder,
   type MatchLadderCheckpoint,
+  type PrepassCandidateInfo,
   type ResolveOutcome,
 } from './resolve';
 import { makeRunRound, type ResolveRoundDeps } from './resolve-round';
@@ -73,6 +74,10 @@ export async function runResolveJob(
       ...(supplier.rosterCountry ? { country: [supplier.rosterCountry] } : {}),
     },
   });
+  const prepassCandidates: PrepassCandidateInfo[] = prepassCandidateIds(prepass.data).slice(
+    0,
+    PREPASS_CANDIDATES,
+  );
 
   return resolveSupplier(
     {
@@ -101,9 +106,11 @@ export async function runResolveJob(
         country: supplier.rosterCountry,
         hasCategory: categories.length > 0,
       },
-      prepassEntityIds: prepassCandidateIds(prepass.data)
-        .slice(0, PREPASS_CANDIDATES)
-        .map((candidate) => candidate.entityId),
+      prepassEntityIds: prepassCandidates.map((candidate) => candidate.entityId),
+      // What each of those rows said about itself — `score`, `match_strength`,
+      // `explanation` and `highlight` — so the ladder can carry Sayari's own
+      // evidence onto every CandidateRecord it settles (ticket 01 item A).
+      prepassInfo: new Map(prepassCandidates.map((candidate) => [candidate.entityId, candidate])),
       jobId: deps.jobId,
     },
   );
