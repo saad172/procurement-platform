@@ -465,6 +465,15 @@ export const jobKind = pgEnum('job_kind', [
   'recommend',
   'discover',
   'dossier',
+  /**
+   * The *Check every pair* Job (network spec §7): runs `findAndWriteShortestPath`
+   * for every accepted-Supplier pair on one Category, confirm-gated, with
+   * estimate n(n−1)/2. Distinct from the recommend Job's own narrower
+   * shortestPath check, which runs only the award against each other Pick at
+   * submission (§4.2, the ninth submit check) — this Job is the wider,
+   * on-demand sweep over the whole roster a Category is bidding.
+   */
+  'pairs',
 ]);
 
 /** What a Job is about: a Supplier, a Category, an entity, or the Program. */

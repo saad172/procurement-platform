@@ -134,6 +134,13 @@
       "when": 1788473989475,
       "tag": "0018_flimsy_captain_flint",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788474815360,
+      "tag": "0019_small_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

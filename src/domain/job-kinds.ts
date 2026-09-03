@@ -28,6 +28,7 @@ const LABELS: Record<string, string> = {
   recommend: 'recommend',
   discover: 'Discover',
   dossier: 'Dossier',
+  pairs: 'Check every pair',
 };
 
 /**
@@ -51,6 +52,8 @@ const SENTENCES: Record<string, string> = {
     'Argues which Supplier one Category should go with, and under what conditions, from the Shortlist.',
   discover: 'Searches trade data for companies on no imported list, and classifies what it finds.',
   dossier: 'An opt-in research write-up on one Supplier, by an agent that chooses what to look at.',
+  pairs:
+    'Runs the shortest-path check for every accepted-Supplier pair bidding one Category, so a Concentration stored Networks cannot see still turns up. It runs no model.',
 };
 
 /** Falls back to the raw kind, because an unnamed kind is better than nothing. */

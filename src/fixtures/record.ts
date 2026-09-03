@@ -74,10 +74,12 @@ async function loadRecordableJob(db: Database, jobId: string) {
  * **upstream bodies**, which is precisely what a later Job's replay needs:
  * `assess` reads enrichments, and enrichments come from those bodies.
  *
- * Three kinds run **no model at all**: `enrich`'s fan-out, `fetch_entity`'s
- * single call and the Deep Traversal's paged walk are all our code calling
- * upstreams. CONTEXT draws the line for the last one — a Deep Traversal
- * *"expands the ownership graph and involves no agent"*.
+ * Four kinds run **no model at all**: `enrich`'s fan-out, `fetch_entity`'s
+ * single call, the Deep Traversal's paged walk and the *Check every pair*
+ * sweep are all our code calling upstreams. CONTEXT draws the line for the
+ * Deep Traversal — *"expands the ownership graph and involves no agent"* —
+ * and `pairs` is the same shape again, one `findAndWriteShortestPath` call
+ * per pair rather than one paged walk (network spec §7, ticket 04).
  *
  * `resolve` joins them for a different reason (finding 107, `rules-r0`): it
  * *is* a model-driven kind, and the auto-accept gate in front of it is **plain
@@ -89,7 +91,7 @@ async function loadRecordableJob(db: Database, jobId: string) {
  * The distinction that matters is *no turns* versus *turns we cannot replay*.
  * The second is still refused, below.
  */
-const NO_TURN_JOB_KINDS = new Set(['enrich', 'fetch_entity', 'traverse', 'resolve']);
+const NO_TURN_JOB_KINDS = new Set(['enrich', 'fetch_entity', 'traverse', 'resolve', 'pairs']);
 
 async function loadTurnRows(
   db: Database,

@@ -10,6 +10,7 @@ import {
   DOSSIER_BUDGET_USD,
 } from '@/config/constants';
 import { deepTraversalParamsSchema } from '@/domain/deep-traversal-params';
+import { loadAcceptedBidders } from '@/jobs/pairs';
 import { enqueueJob, openRun } from '@/jobs/runs';
 import { isFullEntityFetch } from '@/upstream/params';
 import { defineTool, type Estimate, type ToolContext } from '../define';
@@ -347,6 +348,79 @@ const enqueueDiscover = defineTool({
 });
 
 /**
+ * A **Check every pair** action — person-triggered, one Category, every
+ * accepted-Supplier pair (network spec §7; ticket 04, unit 04e).
+ *
+ * The Category page derives Concentration for free from Paths the automatic
+ * enrich Job already stored (`findConcentrations`, `src/db/queries/family-
+ * paths.ts`), and the recommend Job runs its own narrower shortestPath check
+ * at submission — the award against each other Pick, at most three calls
+ * (§4.2). This tool is the wider sweep those two do not cover: every pair on
+ * the Category's whole roster of accepted bidders, run on demand.
+ */
+const enqueueCheckEveryPair = defineTool({
+  name: 'enqueue_check_every_pair',
+  enqueues: 'pairs',
+  description:
+    'Run the shortest-path check between every pair of accepted suppliers bidding one category, to surface a Concentration stored networks have not already found.',
+  input: z.object({ programId: z.string(), categoryId: z.string() }),
+  surfaces: ['chat'],
+  effect: 'write',
+  spends: ['sayari'],
+  latency: 'fast',
+  /**
+   * **Arithmetic over local rows, exactly like `enqueueDeepTraversal`'s own
+   * estimator** — never a guess, never a call. `n` is read with the same
+   * query `runPairsCheck` itself runs (`loadAcceptedBidders`, `src/jobs/
+   * pairs.ts`), so the estimate cannot drift from what the Job actually does,
+   * and the ceiling is the unordered-pair count over that `n`: `n(n-1)/2`
+   * (network spec §7).
+   *
+   * The true call count can land under this ceiling — a pair whose two
+   * Suppliers settled on the same Profile is skipped rather than sent
+   * upstream (`runPairsCheck`'s own doc comment), and a pair the recommend
+   * Job already checked is a free cache hit — but the estimate never assumes
+   * either discount: it is a worst case, not a forecast, the same discipline
+   * `enqueueDeepTraversal`'s own comment states.
+   */
+  confirm: async (input, ctx): Promise<Estimate> => {
+    const bidders = await loadAcceptedBidders(ctx.db, input.categoryId);
+    const n = bidders.length;
+    const pairs = (n * (n - 1)) / 2;
+    return {
+      what:
+        n < 2
+          ? 'This category has fewer than two accepted suppliers, so there is no pair to check.'
+          : `Check every pair among this category's ${n} accepted suppliers for a shared Concentration.`,
+      spends: { sayariCalls: { min: 0, max: pairs } },
+      basis:
+        n < 2
+          ? 'Local rows only: fewer than two accepted suppliers bid this category.'
+          : `${n} accepted supplier(s) bidding this category make ${n}×${n - 1}/2 = ${pairs} unordered pair(s), one shortestPath call each in the worst case.`,
+      caveats: [
+        'A pair whose suppliers already settled on the same profile is skipped — there is no second network to be joined to.',
+        'This finds a Concentration between accepted suppliers only. A supplier still in Needs Review has no profile to check against.',
+      ],
+    };
+  },
+  handler: async (input, ctx) => {
+    const runId = await openRun(ctx.db, {
+      programId: input.programId,
+      trigger: 'pairs',
+      subjectLabel: 'check every pair',
+      supplierCount: 1,
+    });
+    const jobId = await enqueueJob(ctx.db, {
+      runId,
+      kind: 'pairs',
+      subjectType: 'category',
+      subjectId: input.categoryId,
+    });
+    return { ok: true, data: { runId, jobId } };
+  },
+});
+
+/**
  * Flag-gated in a way a union member could not be (SPEC §15.2).
  *
  * `DOSSIER_ENABLED` is off in both environments, so this refuses rather than
@@ -528,6 +602,7 @@ export const JOB_STARTS = [
   enqueueRerunRecommendation,
   enqueueDeepTraversal,
   enqueueDiscover,
+  enqueueCheckEveryPair,
   enqueueDossier,
   enqueueMatchSettlement,
 ];

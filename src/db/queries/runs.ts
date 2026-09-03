@@ -402,7 +402,16 @@ export async function suppliersNeeding(
  * Ordered by the pipeline, not by count, so the phases read left to right in
  * the order they happen.
  */
-const PHASE_ORDER = ['resolve', 'enrich', 'assess', 'recommend', 'discover', 'traverse', 'dossier'];
+const PHASE_ORDER = [
+  'resolve',
+  'enrich',
+  'assess',
+  'recommend',
+  'discover',
+  'traverse',
+  'pairs',
+  'dossier',
+];
 
 export type RunPhase = { kind: string; progress: RunProgress };
 

@@ -425,7 +425,9 @@ describe('the real catalog', () => {
       .forSurface('chat')
       .filter((t) => t.effect === 'write');
     expect(writes.every((t) => t.name.startsWith('enqueue_'))).toBe(true);
-    expect(writes).toHaveLength(7);
+    // Eight, since `enqueue_check_every_pair` joined the catalog (network
+    // spec §7; ticket 04, unit 04e) — the *Check every pair* action.
+    expect(writes).toHaveLength(8);
   });
 
   it('has no tool that writes a match — the agents propose and code settles', async () => {
