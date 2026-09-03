@@ -191,6 +191,17 @@ export const enrichmentSource = pgEnum('enrichment_source', [
    * pipeline made on its own indistinguishable from one a person asked for.
    */
   'sayari_owner_edges',
+  /**
+   * The watchlist read, the second automatic call per accepted Profile
+   * (network spec §4.1, ticket 02): `traversal.watchlist`, `maxDepth: 4`,
+   * `psa: true`, `limit: 50`, the endpoint's default 31 relationship types.
+   * Automatic, like `sayari_ownership_family`, and kept apart from it for the
+   * same three reasons that source's own doc comment gives: it is not the
+   * same read (a different endpoint, a different filter), and the two write
+   * Paths of different `kind`s (`family` versus `watchlist`) that a person
+   * reading the Enrichments panel should be able to tell apart.
+   */
+  'sayari_watchlist',
   'world_bank',
   'gleif',
   'usitc',

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."enrichment_source" ADD VALUE 'sayari_watchlist' BEFORE 'world_bank';
