@@ -30,10 +30,21 @@ type SdkCall<T> = () => Promise<T>;
  * `qs.stringify(params, { arrayFormat: 'repeat' })` is what the SDK's own
  * fetcher uses (`node_modules/@sayari/sdk/core/fetcher/createRequestUrl.js`),
  * not `key[]=value` and not a comma-joined single value. A caller that wants
- * the SDK's other array encoding — the single JSON-stringified value it uses
- * for `risk_categories` (`(0, json_1.toJson)(riskCategories)` in
- * `.../traversal/client/Client.js`) — pre-stringifies it and passes a plain
- * string here instead.
+ * a single pre-built string value instead of a repeated array — the shape
+ * `TraversalWalkParams.riskCategories` uses for a bare, non-enum category —
+ * passes a plain string here.
+ *
+ * **Not** the single JSON-stringified value the SDK's own `ownership`/`ubo`/
+ * `watchlist`/`traversal` methods produce for a populated `riskCategories`
+ * array (`(0, json_1.toJson)(...)` in `.../traversal/client/Client.js`,
+ * reached two different ways depending on the method — see `endpoints.ts`'s
+ * `downstreamQuery` doc comment). That encoding is live-verified (03f) to be
+ * flatly rejected by Sayari's API with a `422` for *any* array, one element
+ * or many — a genuine defect in the SDK, not a second valid encoding this
+ * fallback should be able to reproduce on request. `risk_categories` is
+ * routed around the SDK entirely when populated (`dispatchTraversalWalk`,
+ * `endpoints.ts`) rather than given a way to opt into the SDK's own broken
+ * encoding here.
  */
 export type RawRequest = {
   path: string;
