@@ -10,7 +10,7 @@ import type { RiskFactor } from './risk-factors';
 
 export type CriterionKey =
   | 'compliance_risk'
-  | 'ownership_exposure'
+  | 'network_exposure'
   | 'country_resilience'
   | 'tariff_exposure'
   | 'proximity'

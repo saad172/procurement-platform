@@ -273,7 +273,7 @@ describe('Ownership exposure names WHY it is unknown', () => {
     const r = scoreSupplier(noOwners());
     // The complete fixture claims one owner edge in relationshipCount, so with
     // no owners passed this reads as a truncated window, not an absence.
-    const ownership = r.criteria.find((c) => c.key === 'ownership_exposure')!;
+    const ownership = r.criteria.find((c) => c.key === 'network_exposure')!;
     expect(ownership.outcome.status).toBe('unknown');
     if (ownership.outcome.status === 'unknown') {
       expect(ownership.outcome.reason).toMatch(/did not look far enough/);
@@ -286,7 +286,7 @@ describe('Ownership exposure names WHY it is unknown', () => {
       ...input,
       profile: { ...input.profile!, relationshipCount: {}, psaCount: 33 },
     });
-    const ownership = r.criteria.find((c) => c.key === 'ownership_exposure')!;
+    const ownership = r.criteria.find((c) => c.key === 'network_exposure')!;
     if (ownership.outcome.status === 'unknown') {
       expect(ownership.outcome.reason).toMatch(/split across 33 records/);
     }
@@ -298,7 +298,7 @@ describe('Ownership exposure names WHY it is unknown', () => {
       ...input,
       profile: { ...input.profile!, relationshipCount: {}, psaCount: 0 },
     });
-    const ownership = r.criteria.find((c) => c.key === 'ownership_exposure')!;
+    const ownership = r.criteria.find((c) => c.key === 'network_exposure')!;
     if (ownership.outcome.status === 'unknown') {
       expect(ownership.outcome.reason).toMatch(/records no owner/);
     }

@@ -266,8 +266,8 @@ export const CRITERIA = [
       'Every entity-level risk factor except the country-derived ones, plus sanctioned / PEP / closed. The only Criterion where a single finding can be disqualifying rather than merely bad.',
   },
   {
-    key: 'ownership_exposure',
-    label: 'Ownership exposure',
+    key: 'network_exposure',
+    label: 'Network exposure',
     weight: 17,
     isWeighted: true,
     blurb:
