@@ -85,6 +85,13 @@
       "when": 1788379471668,
       "tag": "0011_volatile_titanium_man",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788407857918,
+      "tag": "0012_lovely_blue_blade",
+      "breakpoints": true
     }
   ]
 }

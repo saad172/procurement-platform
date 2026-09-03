@@ -77,9 +77,33 @@ export const entity = pgTable(
      *
      * When two Sayari endpoints disagree about an entity's risk we union them
      * with per-factor provenance, because the traversal payload and `getEntity`
-     * returned 10 and 6 factors for the same company (SPEC §8.2).
+     * returned 10 and 6 factors for the same company (SPEC §8.2 D5). `upsertEntity`
+     * (`src/jobs/resolve.ts`) does the merging, on every write: it keeps the
+     * union of factor names and the worse level where two sightings disagree.
+     *
+     * **This column's shape stays exactly Sayari's own — `level`, `value`,
+     * `metadata`, nothing added.** `src/tools/catalog/reads.ts` hands
+     * `entity.risk` to a model turn **verbatim, with no projection**
+     * (`risk: match.entity.risk`); an extra key here is an extra key in a live
+     * prompt, invisibly different from every recorded fixture predating it —
+     * measured directly, as two assess/recommend replays that went red the
+     * first time provenance was tried inline. So provenance lives on the
+     * sibling `risk_sources` column instead, joined back only where a caller
+     * explicitly asks for it (`attachRiskSources`,
+     * `src/domain/scoring/risk-factors.ts`) — never through this column's own
+     * reader.
      */
     risk: jsonb('risk'),
+
+    /**
+     * Which endpoint(s) have ever reported each factor in `risk`, keyed by
+     * the same factor names: `{ [name]: string[] }` — `getEntity`,
+     * `ownership`, `traversal`, … `upsertEntity` maintains it beside `risk` on
+     * every merge (SPEC §8.2 D5). Kept apart from `risk` itself rather than
+     * inline so that column's shape never has to change for a reader that
+     * cannot tolerate one — see `risk`'s own comment.
+     */
+    riskSources: jsonb('risk_sources'),
 
     /** `possibly_same_as` count. A Twin is evidence, never identity. */
     psaCount: integer('psa_count'),
