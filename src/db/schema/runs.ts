@@ -90,6 +90,18 @@ export const job = pgTable(
     kind: jobKind('kind').notNull(),
     subjectType: jobSubjectType('subject_type').notNull(),
     subjectId: text('subject_id').notNull(),
+    /**
+     * A generic jsonb bag for a Job's own inputs, beyond `subjectType`/
+     * `subjectId` — first needed by `enqueue_deep_traversal`'s optional
+     * `relationships`/`riskCategories`/`countries`/`minShares`/`sanctioned`/
+     * `pep`/`excludeClosedEntities` (network spec §4.4, ticket 02), and left
+     * loosely typed rather than scoped to Deep Traversal alone: it is a
+     * foundational, once-only schema decision, and later Job kinds (a trade
+     * Job's parameters among them) are expected to reuse this same column
+     * rather than each growing one of their own. Null where a Job needs
+     * nothing beyond its subject.
+     */
+    params: jsonb('params').$type<Record<string, unknown>>(),
     state: jobState('state').notNull().default('queued'),
 
     /** Sized so that a cap firing on a healthy run is a bug (SPEC §18.3). */

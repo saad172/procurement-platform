@@ -238,6 +238,47 @@ export const geocodePrecision = pgEnum('geocode_precision', [
 /** Sayari's own risk levels. We deduct on these, never on a scale of our own. */
 export const riskLevel = pgEnum('risk_level', ['high', 'elevated', 'relevant']);
 
+// ── Network ──────────────────────────────────────────────────────────────────
+
+/**
+ * One shape for every Path (network spec §6, ticket 02).
+ *
+ * `family` is the downward, ownership-only, psa-routed subset the Corporate
+ * family read has always produced — `family_member` migrates into `graph_path`
+ * rows of this kind. `watchlist` and `deep_traversal` come from the same
+ * automatic and on-demand traversal reads (network spec §4.1, §4.4);
+ * `shortest_path` is the recommend Job's Concentration check (§4.2, §7);
+ * `supply_chain` is the trade Job's upstream tiers (§4.3). A Path's `kind` is
+ * part of its identity — `graph_path`'s unique key is (root, terminal, kind),
+ * not (root, terminal) — because the same two entities can be joined by a
+ * family Path and, separately, a shortest-path Concentration.
+ */
+export const graphPathKind = pgEnum('graph_path_kind', [
+  'family',
+  'watchlist',
+  'shortest_path',
+  'deep_traversal',
+  'supply_chain',
+]);
+
+/**
+ * Which way a Path was walked (network spec §6).
+ *
+ * `down`/`up` are ownership's two directions; `either` is the watchlist read,
+ * which follows any relationship type outward without a fixed direction;
+ * `upstream` is the trade Job's supply-chain tiers (§4.3), the one direction
+ * that is never ownership at all. Not reused across kinds — `family` is
+ * always `down`, `supply_chain` is always `upstream` — but each Path still
+ * states its own, because a Path is what a diagram and a chain row render
+ * from, and neither should have to infer direction from `kind`.
+ */
+export const graphPathDirection = pgEnum('graph_path_direction', [
+  'down',
+  'up',
+  'either',
+  'upstream',
+]);
+
 // ── Narrative ────────────────────────────────────────────────────────────────
 
 /** A Dossier is an `assessment`, not a table of its own (SPEC §3.6). */
