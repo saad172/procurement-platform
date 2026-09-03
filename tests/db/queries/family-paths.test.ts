@@ -471,3 +471,196 @@ describe('loadNetworkExposurePaths — family + watchlist, hop classification', 
     expect(familyOnly.map((p) => p.terminalEntityId)).toEqual([FAMILY_MEMBER]);
   });
 });
+
+/**
+ * The bug this ticket fixes: `possibly_same_as` hops routed through the
+ * MIDDLE of an otherwise-current-ownership chain used to fail `viaOwnership`
+ * because `isOwnership('possibly_same_as')` is (correctly) `false`, and the
+ * old computation required EVERY hop, psa included, to individually pass
+ * `isOwnership`. A live Yazaki Path had exactly this shape —
+ * `has_subsidiary → possibly_same_as → possibly_same_as → shareholder_of`,
+ * all four hops current — and never deducted.
+ */
+describe('loadNetworkExposurePaths — possibly_same_as hops are skipped, not required to be ownership', () => {
+  const ROOT = 'test-root-psa-hops';
+  const HOP_1 = 'test-psa-hop-1';
+  const HOP_2 = 'test-psa-hop-2';
+  const OWNED_THROUGH_PSA = 'test-owned-through-psa';
+  const PSA_ONLY = 'test-psa-only-no-real-edge';
+  const TRADE_AFTER_PSA = 'test-trade-after-psa';
+
+  async function seedPsaRoutedFamily() {
+    const db = await getTestDb();
+    await resetDerived(db);
+
+    await db.insert(t.entity).values([
+      { id: ROOT, label: 'Root Co', country: 'JPN' },
+      { id: HOP_1, label: 'Root Co (record 2)', country: 'JPN' },
+      { id: HOP_2, label: 'Root Co (record 3)', country: 'JPN' },
+      { id: OWNED_THROUGH_PSA, label: 'Owned Through Psa', country: 'ROU' },
+      { id: PSA_ONLY, label: 'Psa Only, No Real Edge', country: 'MAR' },
+      { id: TRADE_AFTER_PSA, label: 'Trade After Psa', country: 'CHN' },
+    ]);
+
+    const [upstreamResponse] = await db
+      .insert(t.upstreamResponse)
+      .values({
+        source: 'sayari',
+        endpoint: 'traversal.ownership',
+        paramsHash: 'test-hash-psa-hops',
+        params: { entityId: ROOT },
+        body: {},
+        bodyHash: 'test-body-hash-psa-hops',
+        via: 'sdk',
+      })
+      .returning({ id: t.upstreamResponse.id });
+    const [enrichmentFamily] = await db
+      .insert(t.enrichment)
+      .values({
+        source: 'sayari_ownership_family',
+        subjectKind: 'entity',
+        subjectKey: ROOT,
+        requestParams: { entityId: ROOT },
+        upstreamResponseId: upstreamResponse!.id,
+      })
+      .returning({ id: t.enrichment.id });
+
+    // Root --has_subsidiary--> Hop 1 --possibly_same_as--> Hop 2
+    //      --possibly_same_as--> Owned Through Psa — the exact live Yazaki
+    // shape: two psa hops sandwiched between two real, current ownership
+    // edges. `possibly_same_as` never appears in `RELATIONSHIP_TYPES`
+    // (`isOwnership('possibly_same_as')` is `false`), so this chain proves
+    // `viaOwnership` skips the psa hops rather than requiring them to pass.
+    const [edgeSubsidiary] = await db
+      .insert(t.entityRelationship)
+      .values({
+        fromEntityId: ROOT,
+        toEntityId: HOP_1,
+        relationshipType: 'has_subsidiary',
+        sourceRecordId: 'source/rec-psa-1/1700000000000',
+      })
+      .returning({ id: t.entityRelationship.id });
+    const [edgePsaA] = await db
+      .insert(t.entityRelationship)
+      .values({
+        fromEntityId: HOP_1,
+        toEntityId: HOP_2,
+        relationshipType: 'possibly_same_as',
+        sourceRecordId: 'source/rec-psa-2/1700000000000',
+      })
+      .returning({ id: t.entityRelationship.id });
+    const [edgePsaB] = await db
+      .insert(t.entityRelationship)
+      .values({
+        fromEntityId: HOP_2,
+        toEntityId: OWNED_THROUGH_PSA,
+        relationshipType: 'possibly_same_as',
+        sourceRecordId: 'source/rec-psa-3/1700000000000',
+      })
+      .returning({ id: t.entityRelationship.id });
+
+    // Root --possibly_same_as--> Psa Only — zero real relationship edges, the
+    // edge case worth its own row: record-linking to a twin of the SAME
+    // company asserts nothing about ownership of anything else, so this must
+    // stay `viaOwnership: false` rather than vacuously `true` for having no
+    // hop that fails `isOwnership`.
+    const [edgePsaOnly] = await db
+      .insert(t.entityRelationship)
+      .values({
+        fromEntityId: ROOT,
+        toEntityId: PSA_ONLY,
+        relationshipType: 'possibly_same_as',
+        sourceRecordId: 'source/rec-psa-only/1700000000000',
+      })
+      .returning({ id: t.entityRelationship.id });
+
+    // Root --possibly_same_as--> Hop 1 --ships_to--> Trade After Psa — proves
+    // skipping the psa hop does not turn every psa-adjacent Path into
+    // `viaOwnership: true`: the one non-psa hop here is trade, not
+    // ownership, so this must still be `false`.
+    const [edgeTradeAfterPsa] = await db
+      .insert(t.entityRelationship)
+      .values({
+        fromEntityId: HOP_1,
+        toEntityId: TRADE_AFTER_PSA,
+        relationshipType: 'ships_to',
+        sourceRecordId: 'source/rec-psa-trade/1700000000000',
+      })
+      .returning({ id: t.entityRelationship.id });
+
+    await db.insert(t.graphPath).values([
+      {
+        rootEntityId: ROOT,
+        terminalEntityId: OWNED_THROUGH_PSA,
+        kind: 'family',
+        direction: 'down',
+        hopDepth: 2,
+        edgeIds: [edgeSubsidiary!.id, edgePsaA!.id, edgePsaB!.id],
+        exploredCount: 10,
+        truncated: false,
+        enrichmentId: enrichmentFamily!.id,
+      },
+      {
+        rootEntityId: ROOT,
+        terminalEntityId: PSA_ONLY,
+        kind: 'family',
+        direction: 'down',
+        hopDepth: 1,
+        edgeIds: [edgePsaOnly!.id],
+        exploredCount: 10,
+        truncated: false,
+        enrichmentId: enrichmentFamily!.id,
+      },
+      {
+        rootEntityId: ROOT,
+        terminalEntityId: TRADE_AFTER_PSA,
+        kind: 'family',
+        direction: 'down',
+        hopDepth: 1,
+        edgeIds: [edgePsaOnly!.id, edgeTradeAfterPsa!.id],
+        exploredCount: 10,
+        truncated: false,
+        enrichmentId: enrichmentFamily!.id,
+      },
+    ]);
+
+    return { db };
+  }
+
+  it('a psa hop sandwiched between two current ownership edges still deducts (the live Yazaki bug)', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const { db } = await seedPsaRoutedFamily();
+
+    const { paths } = await loadNetworkExposurePaths(db, ROOT);
+    const owned = paths.find((p) => p.terminalEntityId === OWNED_THROUGH_PSA)!;
+    expect(owned.edges.map((e) => e.relationshipType)).toEqual([
+      'has_subsidiary',
+      'possibly_same_as',
+      'possibly_same_as',
+    ]);
+    expect(owned.viaOwnership).toBe(true);
+  });
+
+  it('a Path that is ENTIRELY possibly_same_as hops, with no real edge, is not viaOwnership', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const { db } = await seedPsaRoutedFamily();
+
+    const { paths } = await loadNetworkExposurePaths(db, ROOT);
+    const psaOnly = paths.find((p) => p.terminalEntityId === PSA_ONLY)!;
+    expect(psaOnly.edges.map((e) => e.relationshipType)).toEqual(['possibly_same_as']);
+    expect(psaOnly.viaOwnership).toBe(false);
+  });
+
+  it('skipping a psa hop does not launder a genuinely non-ownership hop into viaOwnership', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const { db } = await seedPsaRoutedFamily();
+
+    const { paths } = await loadNetworkExposurePaths(db, ROOT);
+    const tradeAfterPsa = paths.find((p) => p.terminalEntityId === TRADE_AFTER_PSA)!;
+    expect(tradeAfterPsa.edges.map((e) => e.relationshipType)).toEqual([
+      'possibly_same_as',
+      'ships_to',
+    ]);
+    expect(tradeAfterPsa.viaOwnership).toBe(false);
+  });
+});

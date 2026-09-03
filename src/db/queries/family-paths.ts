@@ -2,7 +2,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { sharePercentageOf } from '@/domain/parse-relationships';
-import { isOwnership } from '@/domain/relationships';
+import { isOwnership, isPossiblySameAs } from '@/domain/relationships';
 
 /**
  * One hop of a Path, hydrated from `entity_relationship` (network spec §6).
@@ -165,13 +165,21 @@ export async function loadFamilyPaths(db: Database, rootEntityId: string): Promi
 /** One Path feeding Network exposure — `FamilyPath`'s shape, plus which read found it and whether it qualifies as ownership/control (network spec §5). */
 export type NetworkExposurePath = FamilyPath & {
   /**
-   * `'family'` — downward, ownership-only by construction: `traversal.ownership`
-   * narrows to five ownership relationship types, so `viaOwnership` is always
-   * `true` for one of these once its edges are hydrated. Includes the
-   * filtered, risk-focused second page of the same kind once it exists
-   * (`graph_path.filtered`, network spec §4.1) — not written yet (a later
-   * unit's job), so today every `family` row here is unfiltered, and a root
-   * with none at all is simply an empty array, never an error.
+   * `'family'` — downward, `traversal.ownership` narrows to five ownership
+   * relationship types **plus whatever `possibly_same_as` hops Sayari routes
+   * the walk through to reach them** (record-linking, not a sixth
+   * relationship type the endpoint returns on purpose). So a `family` row is
+   * NOT "ownership-only, `viaOwnership` always true once hydrated" the way
+   * this comment used to claim — `viaOwnership` still has real work to do on
+   * a `family` row, skipping the psa hops and checking what's left, exactly
+   * as it does for `watchlist` (see `viaOwnership`'s own comment below; a
+   * live Yazaki family Path shaped
+   * `has_subsidiary → possibly_same_as → possibly_same_as → shareholder_of`
+   * is what disproved the old claim). Includes the filtered, risk-focused
+   * second page of the same kind once it exists (`graph_path.filtered`,
+   * network spec §4.1) — not written yet (a later unit's job), so today every
+   * `family` row here is unfiltered, and a root with none at all is simply an
+   * empty array, never an error.
    *
    * `'watchlist'` — either direction, terminates at a Listed entity. The
    * endpoint's own default 31 relationship types span ownership, control and
@@ -179,16 +187,41 @@ export type NetworkExposurePath = FamilyPath & {
    */
   kind: PathKind;
   /**
-   * True when every hop of this Path's own edge chain is a **current**
-   * ownership/control edge — `isOwnership(e.relationshipType) && !e.former`
-   * for every hop — by `isOwnership` (`src/domain/relationships.ts`), **the
-   * same classification the rest of this codebase already uses, not a second
-   * one**. A `former` hop breaks the chain exactly like a trade hop does: the
-   * entity is no longer CURRENTLY reached by ownership through that route
+   * True when every **non-`possibly_same_as`** hop of this Path's own edge
+   * chain is a **current** ownership/control edge —
+   * `isOwnership(e.relationshipType) && !e.former` for every such hop — AND
+   * at least one non-psa hop exists.
+   *
+   * `possibly_same_as` is Sayari's own record-linking between two records of
+   * the *same* company (`isPossiblySameAs`, `src/domain/relationships.ts`),
+   * not an ownership or trade assertion about two different ones, and Sayari
+   * splitting a larger company across records makes routing through one or
+   * two psa hops the ORDINARY way to reach a real subsidiary or owner, not a
+   * rare exception (`src/upstream/endpoints.ts`'s doc comment on
+   * `sayariTraversalOwnership` measured every path in one family running
+   * through one or two of them). Requiring every hop, psa included, to
+   * individually pass `isOwnership` — the bug this comment used to describe
+   * as the design — meant a completely current, real ownership chain lost its
+   * `viaOwnership` the moment Sayari happened to split a record along the
+   * way, which per that measurement is the common case, not the rare one.
+   * `ownershipHopDepth` (`src/jobs/family-members.ts`) already skips psa hops
+   * for the same reason when counting hop depth; this is the same rule
+   * applied to the ownership-or-not judgment, via the same shared predicate.
+   *
+   * A psa hop is therefore transparent here: skipped, never required to be
+   * `isOwnership`, and never itself enough to break the chain. What DOES
+   * break it is unchanged — a `former` hop or a genuinely lateral/trade hop
+   * among the non-psa ones, exactly like before
    * (`entity_relationship.former`'s own schema comment — "only current edges
-   * are scored"). `false` for a Path with zero hydrated edges too (the
-   * migration-0013 gap): an unresolved chain proves nothing about what kind
-   * of chain it was, so it gets the same safe treatment as a trade hop —
+   * are scored").
+   *
+   * A Path that is entirely psa hops (zero non-psa edges) is `false`, not
+   * vacuously `true`: record-linking between records of the SAME company
+   * asserts nothing about ownership of any OTHER company, so there is no
+   * ownership claim in that chain to honor. This is the same "zero
+   * qualifying edges is not evidence of ownership" reasoning the old comment
+   * already applied to a Path with zero hydrated edges at all (the
+   * migration-0013 gap) — both get the same safe treatment as a trade hop:
    * shown, never deducted.
    */
   viaOwnership: boolean;
@@ -223,11 +256,18 @@ export async function loadNetworkExposurePaths(
 }> {
   const rows = await loadPathRows(db, rootEntityId, ['family', 'watchlist']);
 
-  const paths: NetworkExposurePath[] = rows.map((row) => ({
-    ...row,
-    viaOwnership:
-      row.edges.length > 0 && row.edges.every((e) => isOwnership(e.relationshipType) && !e.former),
-  }));
+  const paths: NetworkExposurePath[] = rows.map((row) => {
+    // `possibly_same_as` hops are record-linking, not ownership steps —
+    // skipped here for the same reason `ownershipHopDepth`
+    // (`src/jobs/family-members.ts`) skips them when counting hop depth. See
+    // `viaOwnership`'s own doc comment above for the full reasoning.
+    const nonPsaEdges = row.edges.filter((e) => !isPossiblySameAs(e.relationshipType));
+    return {
+      ...row,
+      viaOwnership:
+        nonPsaEdges.length > 0 && nonPsaEdges.every((e) => isOwnership(e.relationshipType) && !e.former),
+    };
+  });
 
   const coverageFor = (kind: PathKind): NetworkPathCoverage => {
     const ofKind = rows.filter((r) => r.kind === kind);
