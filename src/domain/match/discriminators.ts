@@ -118,6 +118,29 @@ export type CandidateFacts = {
    * cut short.
    */
   relationshipsTruncated: boolean;
+  /**
+   * What Sayari's own resolution response said about this Candidate — present
+   * only for the five pre-pass Candidates the batch resolution actually
+   * scored, and absent for one an agent found by climbing a query rung, which
+   * returns no score of its own (ticket 01 item A/B, SPEC §6.2/§6.6).
+   *
+   * `highlight` and `explanation` are cited, never scored on: `name_cover` and
+   * `alias_context` name which field Sayari highlighted and how it graded the
+   * name match, but the citation cannot move a verdict — no single
+   * Discriminator settles a Match, and `score` is never compared between
+   * Candidates (SPEC §6.3, spec §11).
+   */
+  resolution?:
+    | {
+        score: number | undefined;
+        matchStrength: string | undefined;
+        /** Sayari's own per-field match-quality record — `matchQuality`,
+         * `highQualityMatchName`, the matched/uploaded text, keyed by field. */
+        explanation: unknown;
+        /** Sayari's own per-field highlighted-match-text record, keyed by field. */
+        highlight: unknown;
+      }
+    | undefined;
 };
 
 /** Words a legal name carries that say nothing about which company it is. */
@@ -236,12 +259,90 @@ export function runDiscriminators(
     countryDiscriminator(address, candidate),
     localityDiscriminator(address),
     streetDiscriminator(address),
-    nameCover(roster, candidate),
-    aliasContext(roster, candidate),
+    // `highlight` and per-field `matchQuality` are CITED, not scored on: the
+    // citation is appended to the reasoning a wholly separate function already
+    // decided, so it cannot move either verdict (ticket 01 item B, SPEC §6.2).
+    withResolutionCitation(nameCover(roster, candidate), candidate, 'name'),
+    withResolutionCitation(aliasContext(roster, candidate), candidate, 'name'),
     leiWitness(roster, candidate),
     businessPurpose(roster, candidate),
     liveness(candidate),
   ];
+}
+
+/**
+ * Appends what Sayari's own resolution response said about one field, as a
+ * citation on an already-decided verdict.
+ *
+ * **This can never move a verdict.** It runs after `result` is fully decided
+ * and only ever appends a sentence to `result.reasoning`; the `verdict` it
+ * received is the `verdict` it returns, unchanged. Silent when the Candidate
+ * carries no resolution block (every Candidate an agent found by climbing a
+ * query rung) or when the field the resolution response scored carries
+ * nothing for this field.
+ */
+function withResolutionCitation(
+  result: DiscriminatorResult,
+  candidate: CandidateFacts,
+  field: string,
+): DiscriminatorResult {
+  const highlighted = resolutionHighlightField(candidate.resolution, field);
+  const quality = resolutionFieldQuality(candidate.resolution, field);
+  if (highlighted.length === 0 && !quality) return result;
+
+  const citation = [
+    `Sayari's own resolution`,
+    highlighted.length > 0 ? ` highlighted "${stripHighlightMarkup(highlighted[0]!)}" in the ${field} field` : ` scored the ${field} field`,
+    quality ? `, grading it ${quality}` : '',
+    '.',
+  ].join('');
+  return { ...result, reasoning: `${result.reasoning} ${citation}` };
+}
+
+/** The raw highlighted match strings Sayari returned for one field, e.g. `highlight.name`. */
+function resolutionHighlightField(
+  resolution: CandidateFacts['resolution'],
+  field: string,
+): string[] {
+  const block = resolution?.highlight;
+  if (!block || typeof block !== 'object') return [];
+  const entries = (block as Record<string, unknown>)[field];
+  return Array.isArray(entries) ? entries.filter((e): e is string => typeof e === 'string') : [];
+}
+
+/**
+ * How Sayari's own resolution graded the match on one field of its
+ * `explanation` block.
+ *
+ * The field that carries the grade differs by field: the resolution
+ * response's `address` entries carry their own `matchQuality` string
+ * (`"high"` / `"medium"` / `"low"`), while its `name` entries carry
+ * `highQualityMatchName` — a boolean rather than a string. Both answer the
+ * same question, *how well did this match*, so both are read here rather
+ * than only the string form.
+ */
+function resolutionFieldQuality(
+  resolution: CandidateFacts['resolution'],
+  field: string,
+): string | undefined {
+  const block = resolution?.explanation;
+  if (!block || typeof block !== 'object') return undefined;
+  const entries = (block as Record<string, unknown>)[field];
+  if (!Array.isArray(entries)) return undefined;
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const row = entry as Record<string, unknown>;
+    if (typeof row.matchQuality === 'string') return row.matchQuality;
+    if (typeof row.highQualityMatchName === 'boolean') {
+      return row.highQualityMatchName ? 'high' : 'low';
+    }
+  }
+  return undefined;
+}
+
+/** Strips Sayari's `<em>…</em>` match markup, so a citation reads as prose. */
+function stripHighlightMarkup(value: string): string {
+  return value.replace(/<\/?em>/g, '');
 }
 
 /**
