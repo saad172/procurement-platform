@@ -5,6 +5,7 @@ import { closeDirectDb, getDirectDb } from '@/db/client';
 import * as t from '@/db/schema';
 import { parseRelationships } from '@/domain/parse-relationships';
 import { storeRelationships } from '@/jobs/enrich';
+import { isFullEntityFetch } from '@/upstream/params';
 import { asc } from 'drizzle-orm';
 
 /**
@@ -130,10 +131,16 @@ async function main(): Promise<void> {
  *
  * Oldest first, so the newest fetch wins the row — the same latest-wins rule
  * the cache read itself uses.
+ *
+ * **Full fetches only** (N2). A stored `entity.getEntity` row can now be a
+ * relationship-filtered read (SPEC §16.6's typed owner-edge read widened the
+ * params it may carry) rather than the entity's full payload;
+ * `isFullEntityFetch` is what tells the two apart, so a filtered row is
+ * never linked as if it were the body this entity was projected from.
  */
 async function backfillProvenance(db: ReturnType<typeof getDirectDb>): Promise<number> {
   const bodies = await db
-    .select({ id: t.upstreamResponse.id, body: t.upstreamResponse.body })
+    .select({ id: t.upstreamResponse.id, body: t.upstreamResponse.body, params: t.upstreamResponse.params })
     .from(t.upstreamResponse)
     .where(
       and(
@@ -145,6 +152,7 @@ async function backfillProvenance(db: ReturnType<typeof getDirectDb>): Promise<n
 
   let linked = 0;
   for (const row of bodies) {
+    if (!isFullEntityFetch(row.params)) continue;
     const body = row.body as { data?: { id?: unknown }; id?: unknown };
     const entityId =
       typeof body?.data?.id === 'string'

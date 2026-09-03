@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   if (forceEntityId) {
     const fetched = await upstream.sayari.getEntity({ id: forceEntityId });
     const { upsertEntity } = await import('@/jobs/resolve');
-    await upsertEntity(db, fetched.data);
+    await upsertEntity(db, fetched.data, fetched.upstreamResponseId, 'getEntity');
     await settleMatch(db, {
       supplierId: supplier.id,
       status: 'accepted',
