@@ -181,7 +181,7 @@ describe('graph_path (kind family), read side', () => {
     expect(terminalEdgeOf(c)).toBeNull();
   });
 
-  it('get_supplier_family cites each member to the record asserting ITS OWN edge, not to the enrichment', async () => {
+  it('get_supplier_network cites each family-group member to the record asserting ITS OWN edge, not to the enrichment', async () => {
     if (!(await testDatabaseIsUp())) return;
     const { db, supplier } = await seedFamily();
 
@@ -192,19 +192,25 @@ describe('graph_path (kind family), read side', () => {
       runId: 'test-run',
       surface: 'job',
     };
-    const result = await getRegistry().byName.get('get_supplier_family')!.handler(
+    const result = await getRegistry().byName.get('get_supplier_network')!.handler(
       { supplierId: supplier.id },
       ctx,
     );
     if (!result.ok) throw new Error(result.objections.join('; '));
     // `{ data, widget }`, same as `citation-targets.test.ts`'s `call()`: the
     // model reads the `data` half.
-    const family = (result.data as { data: unknown }).data as {
-      explored: number;
-      reachable: number | null;
-      truncated: boolean;
-      members: { entityId: string; recordId: string | null; enrichmentId: string }[];
+    const network = (result.data as { data: unknown }).data as {
+      groups: {
+        family: {
+          explored: number;
+          reachable: number | null;
+          truncated: boolean;
+          members: { entityId: string; recordId: string | null; enrichmentId: string }[];
+        };
+        watchlist: { explored: number; members: unknown[] };
+      };
     };
+    const family = network.groups.family;
 
     // The row count, not a stored counter — `graph_path`'s unique
     // (root, terminal, kind) index is what makes that safe now.
@@ -213,6 +219,11 @@ describe('graph_path (kind family), read side', () => {
     // MEMBER_C's row is truncated; the envelope says so even though the
     // other two Paths are not.
     expect(family.truncated).toBe(true);
+
+    // No watchlist Paths were seeded — an empty group is a real, reported
+    // state (network spec §9), not a failure.
+    expect(network.groups.watchlist.explored).toBe(0);
+    expect(network.groups.watchlist.members).toEqual([]);
 
     const byId = new Map(family.members.map((m) => [m.entityId, m]));
     // The ticket 02 "Done when": cited to the record asserting its OWN edge.

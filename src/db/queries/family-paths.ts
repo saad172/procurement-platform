@@ -62,11 +62,12 @@ export type FamilyPath = {
  * "Done when": *"a Family member … is cited to the record asserting its
  * edge, not to the read that found it"*).
  *
- * **The one join two presentations both need, built once.** `get_supplier_family`
- * (`src/tools/catalog/reads.ts`) reads this for its per-member citation and its
- * envelope; the Supplier page's chain rows (network spec §6, §8) read it for
- * the full ordered chain. Building the join twice would be two chances for the
- * edge-resolution logic to drift apart.
+ * **The one join the Supplier page's own presentation needs, built once.** The
+ * Supplier page's chain rows (network spec §6, §8) read this for the full
+ * ordered chain. `get_supplier_network` (`src/tools/catalog/reads.ts`, network
+ * spec §9) reads `loadNetworkPaths` below instead — the same join, widened
+ * past `kind = 'family'` for its per-kind grouping — rather than this
+ * function, so a change to one caller's shape never ripples into the other's.
  *
  * Ordered by hop depth then terminal id — the order a person reads a family
  * in, and the total order a prompt can rely on (mirrors `family_member`'s
@@ -142,4 +143,92 @@ export async function loadFamilyPaths(db: Database, rootEntityId: string): Promi
  */
 export function terminalEdgeOf(path: Pick<FamilyPath, 'edges'>): FamilyPathEdge | null {
   return path.edges.length ? path.edges[path.edges.length - 1]! : null;
+}
+
+/** `graph_path.kind` (network spec §6, §9): what found this Path. */
+export type NetworkPathKind =
+  | 'family'
+  | 'watchlist'
+  | 'shortest_path'
+  | 'deep_traversal'
+  | 'supply_chain';
+
+/** A `FamilyPath` widened with the `kind` that grouped it (network spec §9). */
+export type NetworkPath = FamilyPath & { kind: NetworkPathKind };
+
+/**
+ * Every Path rooted at one Profile, of ANY kind, each hydrated with the
+ * `entity_relationship` rows its `edge_ids` cite — the same join
+ * `loadFamilyPaths` builds, widened past `kind = 'family'` for
+ * `get_supplier_network`'s per-kind grouping (network spec §9: *"Paths grouped
+ * by kind"*).
+ *
+ * A **separate function rather than a `kind` parameter on `loadFamilyPaths`**,
+ * so a caller of one shape is never rippled by a change to the other's —
+ * `loadFamilyPaths` stays exactly what `supplier-page.ts` and the family-only
+ * tests already depend on. Some duplication of the query/hydration shape
+ * against `loadFamilyPaths` is deliberate for the same reason: two small
+ * functions that can drift independently, rather than one shared internal
+ * that a future edit to either caller has to reason about for both.
+ *
+ * Ordered by `kind` first, then hop depth, then terminal id — a caller groups
+ * by the leading key with nothing to re-sort.
+ */
+export async function loadNetworkPaths(db: Database, rootEntityId: string): Promise<NetworkPath[]> {
+  const paths = await db
+    .select({
+      kind: t.graphPath.kind,
+      terminalEntityId: t.graphPath.terminalEntityId,
+      hopDepth: t.graphPath.hopDepth,
+      truncated: t.graphPath.truncated,
+      reachableCount: t.graphPath.exploredCount,
+      enrichmentId: t.graphPath.enrichmentId,
+      discoveredByJob: t.graphPath.discoveredByJob,
+      edgeIds: t.graphPath.edgeIds,
+      label: t.entity.label,
+      country: t.entity.country,
+      sanctioned: t.entity.sanctioned,
+      risk: t.entity.risk,
+    })
+    .from(t.graphPath)
+    .innerJoin(t.entity, eq(t.entity.id, t.graphPath.terminalEntityId))
+    .where(eq(t.graphPath.rootEntityId, rootEntityId))
+    .orderBy(asc(t.graphPath.kind), asc(t.graphPath.hopDepth), asc(t.graphPath.terminalEntityId));
+
+  // One batched fetch for every edge every Path cites, across every kind —
+  // the same de-duplication `loadFamilyPaths` does, for the same reason: a
+  // shared intermediate hop should be fetched once, not once per kind.
+  const allEdgeIds = [...new Set(paths.flatMap((p) => p.edgeIds))];
+  const edgeRows = allEdgeIds.length
+    ? await db.select().from(t.entityRelationship).where(inArray(t.entityRelationship.id, allEdgeIds))
+    : [];
+  const edgeById = new Map(edgeRows.map((e) => [e.id, e] as const));
+
+  return paths.map((p) => ({
+    kind: p.kind as NetworkPathKind,
+    terminalEntityId: p.terminalEntityId,
+    label: p.label,
+    country: p.country,
+    sanctioned: p.sanctioned,
+    risk: p.risk,
+    hopDepth: p.hopDepth,
+    truncated: p.truncated,
+    reachableCount: p.reachableCount,
+    enrichmentId: p.enrichmentId,
+    discoveredByJob: p.discoveredByJob,
+    edges: p.edgeIds
+      .map((id) => edgeById.get(id))
+      .filter((e): e is NonNullable<typeof e> => e != null)
+      .map((e) => ({
+        id: e.id,
+        relationshipType: e.relationshipType,
+        fromEntityId: e.fromEntityId,
+        toEntityId: e.toEntityId,
+        former: e.former,
+        sharePercentage: sharePercentageOf(e.attributes),
+        startDate: e.startDate,
+        endDate: e.endDate,
+        sourceRecordId: e.sourceRecordId,
+      })),
+  }));
 }

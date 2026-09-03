@@ -71,7 +71,7 @@ describe('the ids a sentence can cite', () => {
     }
   });
 
-  it('get_supplier_family carries the enrichment id its counts belong to', async () => {
+  it('get_supplier_network carries the enrichment id its family group\'s counts belong to', async () => {
     if (!(await testDatabaseIsUp())) return;
     const db = await getTestDb();
     const supplier = await db.query.supplier.findFirst({
@@ -80,14 +80,19 @@ describe('the ids a sentence can cite', () => {
     const [run] = await db.select().from(t.run).limit(1);
     if (!supplier || !run) return;
 
-    const family = (await call(db, run.id, 'get_supplier_family', {
+    const network = (await call(db, run.id, 'get_supplier_network', {
       supplierId: supplier.id,
     })) as {
-      enrichmentId: string | null;
-      explored: number;
-      truncated: boolean;
-      members: { entityId: string; enrichmentId: string }[];
+      groups: {
+        family: {
+          enrichmentId: string | null;
+          explored: number;
+          truncated: boolean;
+          members: { entityId: string; enrichmentId: string }[];
+        };
+      };
     };
+    const family = network.groups.family;
 
     // The number and the id it can be cited through arrive together, which is
     // the whole of finding 106.
