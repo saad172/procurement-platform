@@ -124,23 +124,39 @@ export type CandidateFacts = {
    * scored, and absent for one an agent found by climbing a query rung, which
    * returns no score of its own (ticket 01 item A/B, SPEC §6.2/§6.6).
    *
-   * `highlight` and `explanation` are cited, never scored on: `name_cover` and
+   * `highlight` and `explanation` are noted, never scored on: `name_cover` and
    * `alias_context` name which field Sayari highlighted and how it graded the
-   * name match, but the citation cannot move a verdict — no single
-   * Discriminator settles a Match, and `score` is never compared between
-   * Candidates (SPEC §6.3, spec §11).
+   * name match, but the note cannot move a verdict — no single Discriminator
+   * settles a Match, and `score` is never compared between Candidates (SPEC
+   * §6.3, spec §11).
    */
-  resolution?:
-    | {
-        score: number | undefined;
-        matchStrength: string | undefined;
-        /** Sayari's own per-field match-quality record — `matchQuality`,
-         * `highQualityMatchName`, the matched/uploaded text, keyed by field. */
-        explanation: unknown;
-        /** Sayari's own per-field highlighted-match-text record, keyed by field. */
-        highlight: unknown;
-      }
-    | undefined;
+  resolution?: ResolutionEvidence | undefined;
+};
+
+/**
+ * Sayari's own resolution evidence for one Candidate — everything
+ * `match_candidate` has columns for (ticket 01 item A). One exported type
+ * (Reuse 2) rather than three restatements of the same four fields:
+ * `CandidateFacts.resolution` above, `PrepassCandidateInfo`
+ * (`src/jobs/resolve.ts`) and `CandidateRecord`'s own evidence fields
+ * (`src/domain/match/settle-match.ts`, as `Partial<ResolutionEvidence>` —
+ * there the four are individually optional, not merely undefined-valued).
+ */
+export type ResolutionEvidence = {
+  score: number | undefined;
+  matchStrength: string | undefined;
+  /**
+   * Sayari's own per-field match-quality record, **projected snake_case** —
+   * `match_quality`, `high_quality_match_name`, the matched/uploaded text,
+   * keyed by field (C1: every projected body runs through `snakeKeys`, which
+   * recurses into this block along with everything else, so the camelCase
+   * spelling the SDK actually sends never survives to here).
+   */
+  explanation: unknown;
+  /** Sayari's own per-field highlighted-match-text record, keyed by field — a
+   * different record from `explanation` (SPEC §6.2/§9), so its own column
+   * rather than folded in. */
+  highlight: unknown;
 };
 
 /** Words a legal name carries that say nothing about which company it is. */
@@ -259,11 +275,12 @@ export function runDiscriminators(
     countryDiscriminator(address, candidate),
     localityDiscriminator(address),
     streetDiscriminator(address),
-    // `highlight` and per-field `matchQuality` are CITED, not scored on: the
-    // citation is appended to the reasoning a wholly separate function already
-    // decided, so it cannot move either verdict (ticket 01 item B, SPEC §6.2).
-    withResolutionCitation(nameCover(roster, candidate), candidate, 'name'),
-    withResolutionCitation(aliasContext(roster, candidate), candidate, 'name'),
+    // `highlight` and per-field `match_quality` are appended as EVIDENCE, not
+    // scored on: the note is appended to the reasoning a wholly separate
+    // function already decided, so it cannot move either verdict (ticket 01
+    // item B, SPEC §6.2).
+    withResolutionEvidence(nameCover(roster, candidate), candidate, 'name'),
+    withResolutionEvidence(aliasContext(roster, candidate), candidate, 'name'),
     leiWitness(roster, candidate),
     businessPurpose(roster, candidate),
     liveness(candidate),
@@ -272,7 +289,7 @@ export function runDiscriminators(
 
 /**
  * Appends what Sayari's own resolution response said about one field, as a
- * citation on an already-decided verdict.
+ * note on an already-decided verdict.
  *
  * **This can never move a verdict.** It runs after `result` is fully decided
  * and only ever appends a sentence to `result.reasoning`; the `verdict` it
@@ -281,7 +298,7 @@ export function runDiscriminators(
  * query rung) or when the field the resolution response scored carries
  * nothing for this field.
  */
-function withResolutionCitation(
+function withResolutionEvidence(
   result: DiscriminatorResult,
   candidate: CandidateFacts,
   field: string,
@@ -290,13 +307,13 @@ function withResolutionCitation(
   const quality = resolutionFieldQuality(candidate.resolution, field);
   if (highlighted.length === 0 && !quality) return result;
 
-  const citation = [
+  const note = [
     `Sayari's own resolution`,
     highlighted.length > 0 ? ` highlighted "${stripHighlightMarkup(highlighted[0]!)}" in the ${field} field` : ` scored the ${field} field`,
     quality ? `, grading it ${quality}` : '',
     '.',
   ].join('');
-  return { ...result, reasoning: `${result.reasoning} ${citation}` };
+  return { ...result, reasoning: `${result.reasoning} ${note}` };
 }
 
 /** The raw highlighted match strings Sayari returned for one field, e.g. `highlight.name`. */
@@ -320,6 +337,17 @@ function resolutionHighlightField(
  * `highQualityMatchName` — a boolean rather than a string. Both answer the
  * same question, *how well did this match*, so both are read here rather
  * than only the string form.
+ *
+ * **Read as the PROJECTED keys, `match_quality` / `high_quality_match_name`**
+ * (C1). Every resolution body passes through `eitherCasing`
+ * (`src/upstream/projections/sayari.ts`), which recurses `snakeKeys` into
+ * this block along with the rest of the response — so the SDK's own
+ * camelCase never reaches here, on either dispatch path. Reading the
+ * camelCase spelling is why this grade note never fired on real data: verified
+ * against `tests/fixtures/resolve/rules-r0.json`, whose recorded body carries
+ * `highQualityMatchName: true` and whose stored `match_candidate.explanation`
+ * — snake_case, like every other projected jsonb column — carries
+ * `high_quality_match_name`.
  */
 function resolutionFieldQuality(
   resolution: CandidateFacts['resolution'],
@@ -332,15 +360,15 @@ function resolutionFieldQuality(
   for (const entry of entries) {
     if (!entry || typeof entry !== 'object') continue;
     const row = entry as Record<string, unknown>;
-    if (typeof row.matchQuality === 'string') return row.matchQuality;
-    if (typeof row.highQualityMatchName === 'boolean') {
-      return row.highQualityMatchName ? 'high' : 'low';
+    if (typeof row.match_quality === 'string') return row.match_quality;
+    if (typeof row.high_quality_match_name === 'boolean') {
+      return row.high_quality_match_name ? 'high' : 'low';
     }
   }
   return undefined;
 }
 
-/** Strips Sayari's `<em>…</em>` match markup, so a citation reads as prose. */
+/** Strips Sayari's `<em>…</em>` match markup, so a note reads as prose. */
 function stripHighlightMarkup(value: string): string {
   return value.replace(/<\/?em>/g, '');
 }

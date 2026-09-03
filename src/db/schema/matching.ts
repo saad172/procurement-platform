@@ -130,6 +130,13 @@ export const matchCandidate = pgTable(
     queryProvenance: text('query_provenance'),
     score: numeric('score', { precision: 12, scale: 6 }),
     matchStrength: text('match_strength'),
+    /**
+     * Sayari's own per-field match-quality record, stored **as projected —
+     * snake_case keys** (`match_quality`, `high_quality_match_name`), never
+     * the SDK's camelCase (C1): every resolution body runs through
+     * `eitherCasing`/`snakeKeys` before it reaches this column, on both
+     * dispatch paths.
+     */
     explanation: jsonb('explanation'),
     /**
      * Sayari's own per-query `highlight` block — the matched text snippets the

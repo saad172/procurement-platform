@@ -576,15 +576,21 @@ describe('name_cover reads what the candidate ADDS', () => {
 });
 
 /**
- * **Ticket 01 item B — `highlight` and per-field `matchQuality` are cited
+ * **Ticket 01 item B — `highlight` and per-field `match_quality` are noted
  * inputs, never a verdict input.**
  *
  * `name_cover` and `alias_context` name which field Sayari's own resolution
  * highlighted and how it graded the match, appended to a verdict a wholly
- * separate function already decided — so the citation can be asserted without
+ * separate function already decided — so the note can be asserted without
  * ever being able to move what it is attached to.
+ *
+ * **Shaped as the PROJECTED snake_case keys** (C1) — `match_quality`,
+ * `high_quality_match_name` — never the SDK's camelCase, because every
+ * resolution body runs through `snakeKeys` before `CandidateFacts.resolution`
+ * ever sees it (`tests/jobs/resolve-rules-r0.test.ts` pins the same shape
+ * against a recorded body).
  */
-describe('name_cover and alias_context cite the resolution response, and cannot move a verdict', () => {
+describe('name_cover and alias_context note the resolution response, and cannot move a verdict', () => {
   const AAM_ROW: RosterRow = {
     name: 'American Axle & Manufacturing',
     address: 'One Dauch Drive Detroit MI 48211',
@@ -599,14 +605,14 @@ describe('name_cover and alias_context cite the resolution response, and cannot 
     expect(verdictFor(results, 'alias_context').reasoning).not.toMatch(/Sayari's own resolution/);
   });
 
-  it('names the highlighted text and how the name field was graded — matchQuality shape', () => {
+  it('names the highlighted text and how the name field was graded — match_quality shape', () => {
     const withResolution = candidate({
       label: 'AMERICAN AXLE & MANUFACTURING INC',
       owners: [],
       resolution: {
         score: 216.92903,
         matchStrength: 'strong',
-        explanation: { name: [{ matchQuality: 'high', matched: 'x', uploaded: 'y' }] },
+        explanation: { name: [{ match_quality: 'high', matched: 'x', uploaded: 'y' }] },
         highlight: { name: ['<em>AMERICAN</em> <em>AXLE</em>'] },
       },
     });
@@ -619,14 +625,14 @@ describe('name_cover and alias_context cite the resolution response, and cannot 
     expect(nameCover.verdict).toBe('pass');
   });
 
-  it('reads `highQualityMatchName` too — the shape the resolution response actually uses for the name field', () => {
+  it('reads `high_quality_match_name` too — the shape the resolution response actually uses for the name field', () => {
     const withResolution = candidate({
       label: 'AMERICAN AXLE & MANUFACTURING INC',
       owners: [],
       resolution: {
         score: 216.92903,
         matchStrength: 'strong',
-        explanation: { name: [{ highQualityMatchName: true, matched: 'x', uploaded: 'y' }] },
+        explanation: { name: [{ high_quality_match_name: true, matched: 'x', uploaded: 'y' }] },
         highlight: { name: ['<em>AMERICAN</em> <em>AXLE</em>'] },
       },
     });
@@ -634,14 +640,14 @@ describe('name_cover and alias_context cite the resolution response, and cannot 
     expect(verdictFor(results, 'name_cover').reasoning).toMatch(/grading it high/);
   });
 
-  it('does not move a `fail` or `unavailable` verdict either — the citation is silent about the outcome', () => {
+  it('does not move a `fail` or `unavailable` verdict either — the note is silent about the outcome', () => {
     const thaiWithResolution = candidate({
       label: 'American Axle & Manufacturing (Thailand) Co., Ltd.',
       owners: [],
       resolution: {
         score: 1,
         matchStrength: 'weak',
-        explanation: { name: [{ highQualityMatchName: false, matched: 'x', uploaded: 'y' }] },
+        explanation: { name: [{ high_quality_match_name: false, matched: 'x', uploaded: 'y' }] },
         highlight: { name: ['<em>American</em> <em>Axle</em> (Thailand)'] },
       },
     });
@@ -649,13 +655,13 @@ describe('name_cover and alias_context cite the resolution response, and cannot 
       label: 'American Axle & Manufacturing (Thailand) Co., Ltd.',
       owners: [],
     });
-    const cited = verdictFor(runDiscriminators(AAM_ROW, thaiWithResolution), 'name_cover');
-    const uncited = verdictFor(runDiscriminators(AAM_ROW, withoutResolution), 'name_cover');
+    const noted = verdictFor(runDiscriminators(AAM_ROW, thaiWithResolution), 'name_cover');
+    const unnoted = verdictFor(runDiscriminators(AAM_ROW, withoutResolution), 'name_cover');
     // Same verdict either way — `unavailable` on the "(Thailand)" marker.
-    expect(cited.verdict).toBe(uncited.verdict);
-    expect(cited.verdict).toBe('unavailable');
-    expect(cited.reasoning).toMatch(/Sayari's own resolution/);
-    expect(cited.reasoning).toMatch(/grading it low/);
+    expect(noted.verdict).toBe(unnoted.verdict);
+    expect(noted.verdict).toBe('unavailable');
+    expect(noted.reasoning).toMatch(/Sayari's own resolution/);
+    expect(noted.reasoning).toMatch(/grading it low/);
   });
 
   it('names the highlighted text on alias_context too', () => {
@@ -665,7 +671,7 @@ describe('name_cover and alias_context cite the resolution response, and cannot 
       resolution: {
         score: 12,
         matchStrength: 'strong',
-        explanation: { name: [{ matchQuality: 'medium', matched: 'x', uploaded: 'y' }] },
+        explanation: { name: [{ match_quality: 'medium', matched: 'x', uploaded: 'y' }] },
         highlight: { name: ['<em>Bosch</em>'] },
       },
     });

@@ -161,7 +161,7 @@ describe('resolve/rules-r0 replays', () => {
     expect(accepted!.highlight).toHaveProperty('name');
 
     // Every one of the five pre-pass Candidates carries its OWN resolution
-    // row's evidence, not only the winner's.
+    // row's evidence, not only the accepted Candidate's (V3).
     for (const candidate of candidates) {
       expect(candidate.score, `${candidate.entity.label} should carry its own score`).not.toBeNull();
       expect(
@@ -171,13 +171,20 @@ describe('resolve/rules-r0 replays', () => {
     }
 
     /**
-     * **B: cited, never scored on.** `name_cover` and `alias_context` name
-     * which field Sayari's own resolution highlighted, as a citation appended
-     * to a verdict that was already decided — it never settles a Match on its
+     * **B: noted, never scored on.** `name_cover` and `alias_context` name
+     * which field Sayari's own resolution highlighted, as a note appended to
+     * a verdict that was already decided — it never settles a Match on its
      * own (SPEC §6.2).
+     *
+     * **C1**: `grading it high` is the field's own `match_quality`/
+     * `high_quality_match_name` grade, read as the PROJECTED snake_case keys
+     * — the bug this pins down never fired on real data because the old code
+     * read the SDK's camelCase, which `snakeKeys` had already converted away
+     * by the time this body was projected.
      */
     const nameCoverVerdict = verdicts.find((v) => v.discriminator === 'name_cover')!;
     expect(nameCoverVerdict.reasoning).toMatch(/Sayari's own resolution/);
+    expect(nameCoverVerdict.reasoning).toMatch(/grading it high/);
     const aliasContextVerdict = verdicts.find((v) => v.discriminator === 'alias_context')!;
     expect(aliasContextVerdict.reasoning).toMatch(/Sayari's own resolution/);
   });
