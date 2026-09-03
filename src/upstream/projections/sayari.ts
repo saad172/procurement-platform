@@ -517,17 +517,5 @@ export function matchStrengthValue(
   return undefined;
 }
 
-/**
- * `info.getUsage()` — **seven integer endpoint-class counters, account-wide,
- * over a rolling year, with no Program dimension and no dollars** (SPEC §18.1).
- *
- * `negativeNews` has no bucket here at all, which the UI footnotes. This is why
- * our own usage figure and Sayari's are shown separately scoped, with no delta
- * anywhere: reconciliation stays a human act.
- */
-export const usageSchema = z
-  .record(z.string(), z.unknown())
-  .and(z.object({ from: z.string().nullish(), to: z.string().nullish() }).partial().loose());
-
 /** The boot call. Deliberately routed raw, and it gates nothing (SPEC §16.7). */
 export const metadataSchema = z.unknown();

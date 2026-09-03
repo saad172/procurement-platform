@@ -18,7 +18,6 @@ import {
   searchEntitySchema,
   tradeSearchSchema,
   traversalSchema,
-  usageSchema,
 } from './projections/sayari';
 import type { DispatchDeps, EndpointDef } from './types';
 
@@ -596,24 +595,6 @@ export const sayariTradeSearchSuppliers = defineEndpoint({
   z.infer<typeof tradeSearchSchema>
 >);
 
-/** Account-wide, rolling-year, seven counters, no dollars (SPEC §18.1). */
-export const sayariUsage = defineEndpoint({
-  source: 'sayari',
-  endpoint: 'info.getUsage',
-  timeoutMs: SAYARI_FAST_MS,
-  defaults: {},
-  normalizeParams: (p) => flat(p),
-  dispatch: async (params, deps) => {
-    const client = getSayariClient(deps.credentials);
-    return viaSdkWithRawFallback(
-      () => client.info.getUsage(params as never, requestOptions(deps)),
-      () => ({ path: '/v1/usage' }),
-      deps,
-    );
-  },
-  projection: usageSchema,
-} as EndpointDef<Record<string, unknown>, unknown>);
-
 /**
  * The boot call (SPEC §16.7).
  *
@@ -839,7 +820,6 @@ export const ENDPOINTS = {
   sayariTraversal,
   sayariNegativeNews,
   sayariTradeSearchSuppliers,
-  sayariUsage,
   sayariMetadataRaw,
   gleifJoinLei,
   gleifSearchByName,
