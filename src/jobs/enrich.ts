@@ -11,6 +11,8 @@ import {
 import { upwardOwnershipTypes } from '@/domain/relationships';
 import {
   FAMILY_TRAVERSAL_LIMIT,
+  OWNERSHIP_EXPOSURE_RISK_CATEGORIES,
+  OWNERSHIP_EXPOSURE_TRAVERSAL_LIMIT,
   WATCHLIST_TRAVERSAL_LIMIT,
   WATCHLIST_TRAVERSAL_MAX_DEPTH,
 } from '@/config/constants';
@@ -631,6 +633,104 @@ export async function enrichWatchlist(
     coverage: { truncated, exploredCount, partialResults: apiPartial },
     discoveredByJob: null,
     source: 'watchlist',
+  });
+
+  return { enrichmentId, members, truncated, reachable: exploredCount };
+}
+
+// ── 6c. Filtered ownership exposure ──────────────────────────────────────────
+
+/**
+ * The third automatic call per accepted Profile (network spec §4.1):
+ * `traversal.ownership` again — same endpoint and direction as `enrichFamily`
+ * — with `riskCategories: [sanctions, export_controls, forced_labor]` and
+ * `excludeClosedEntities: true`, so the server itself returns the owned
+ * entities that carry exposure **wherever they sit in the explored set**, not
+ * the first fifty in server order the unfiltered page happens to return.
+ *
+ * **Writes into the same `graph_path` rows as `enrichFamily`, not a second
+ * set.** Both are `kind: 'family'`, `direction: 'down'` — the unique key on
+ * `graph_path` is `(root, terminal, kind)`, so a terminal this filtered page
+ * reaches that the unfiltered page already wrote upserts into that row and
+ * only sets `filtered: true` on it (sticky, per `writeGraphPaths`'s own
+ * conflict handling); a terminal only the filtered page reaches — the risk
+ * case the unfiltered page's first-fifty-in-server-order window could have
+ * missed — inserts a new row, `filtered: true` from the start. Network spec
+ * §4.1: *"the existing unfiltered family page stays as the first page of kind
+ * family; the filtered page is a second page of the same kind with
+ * `filtered: true` on its Paths"* — a second PAGE, not a second kind.
+ *
+ * **Its own `enrichment_source`, `sayari_ownership_exposure`, distinct from
+ * `sayari_ownership_family`** (see that enum's doc comment, `src/db/schema/
+ * enums.ts`): the request genuinely differs (`riskCategories`,
+ * `excludeClosedEntities` change what comes back, same as the reasoning that
+ * splits `sayari_owner_edges` off a shared endpoint), and — decisively —
+ * `fanOutEnrichments` calls this back to back with `enrichFamily` for the same
+ * Profile, so sharing a source would make `recordEnrichment`'s counted
+ * generation alternate family/filtered on every enrich pass rather than
+ * counting *how many times we asked this question*, and would make a *latest
+ * generation of `sayari_ownership_family`* read always resolve to this
+ * filtered call instead.
+ */
+export async function enrichOwnership(
+  ctx: EnrichContext,
+  args: { entityId: string },
+): Promise<{
+  enrichmentId: string;
+  members: FamilyMemberRisk[];
+  truncated: boolean;
+  reachable: number | null;
+}> {
+  const riskCategories = [...OWNERSHIP_EXPOSURE_RISK_CATEGORIES];
+  const result = await ctx.upstream.sayari.ownership({
+    id: args.entityId,
+    riskCategories,
+    excludeClosedEntities: true,
+    limit: OWNERSHIP_EXPOSURE_TRAVERSAL_LIMIT,
+  });
+  const enrichmentId = await recordEnrichment(ctx, {
+    source: 'sayari_ownership_exposure',
+    subjectKind: 'entity',
+    subjectKey: args.entityId,
+    requestParams: {
+      entityId: args.entityId,
+      riskCategories,
+      excludeClosedEntities: true,
+      limit: OWNERSHIP_EXPOSURE_TRAVERSAL_LIMIT,
+    },
+    result,
+  });
+
+  const paths = result.data.data ?? [];
+  const byId = new Map<string, GraphPathWrite>();
+
+  for (const path of paths) {
+    const entity = terminalEntityOf(path, args.entityId);
+    if (!entity || byId.has(entity.id)) continue;
+    const edgeIds = await storePathEdges(ctx, path, args.entityId, { source: 'ownership' });
+    byId.set(entity.id, {
+      entity,
+      hopDepth: ownershipHopDepth(path.path),
+      edgeIds,
+    });
+  }
+
+  const envelope = result.data;
+  const apiPartial = envelope.partial_results === true;
+  const truncated =
+    apiPartial || envelope.next === true || paths.length >= OWNERSHIP_EXPOSURE_TRAVERSAL_LIMIT;
+  const exploredCount = apiPartial ? null : (envelope.explored_count ?? null);
+
+  const members = await writeGraphPaths(ctx.db, {
+    rootEntityId: args.entityId,
+    enrichmentId,
+    kind: 'family',
+    direction: 'down',
+    members: [...byId.values()],
+    coverage: { truncated, exploredCount, partialResults: apiPartial },
+    discoveredByJob: null,
+    filtered: true,
+    source: 'ownership',
   });
 
   return { enrichmentId, members, truncated, reachable: exploredCount };

@@ -64,6 +64,24 @@ export const WATCHLIST_TRAVERSAL_LIMIT = 50;
 export const WATCHLIST_TRAVERSAL_MAX_DEPTH = 4;
 
 /**
+ * The filtered ownership page, the third automatic call per accepted Profile
+ * (network spec §4.1): `traversal.ownership` again, `riskCategories`,
+ * `excludeClosedEntities: true`, `limit: 50` — the owned entities that carry
+ * exposure wherever they sit in the explored set, not the first fifty in
+ * server order. One page, like the unfiltered family and watchlist reads.
+ *
+ * Kept as its own constant array rather than inlined, so the three categories
+ * that answer the Network exposure Criterion (SPEC §5) are named in one place
+ * a scoring change can find without touching the call site.
+ */
+export const OWNERSHIP_EXPOSURE_TRAVERSAL_LIMIT = 50;
+export const OWNERSHIP_EXPOSURE_RISK_CATEGORIES = [
+  'sanctions',
+  'export_controls',
+  'forced_labor',
+] as const;
+
+/**
  * How many pre-pass candidates rung R1 carries into the ladder.
  *
  * The pre-pass returns a ranked list, and every candidate past the cut costs a

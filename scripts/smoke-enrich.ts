@@ -2,13 +2,14 @@
 import 'dotenv/config';
 import { and, eq } from 'drizzle-orm';
 import { loadEnv } from '@/config/env';
-import { closeDirectDb, getDirectDb } from '@/db/client';
+import { closeDirectDb, getDirectDb, type Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { PROGRAM } from '@/db/seed-data/program';
 import { createUpstream } from '@/upstream';
 import { openRun } from '@/jobs/runs';
 import { enrichSupplier } from '@/jobs/enrich-supplier';
-import { computeFamilyExposure, describeFamilyExposure, unionRiskFactors } from '@/domain/family';
+import { unionRiskFactors } from '@/domain/family';
+import { effectiveLevel } from '@/domain/scoring/risk-factors';
 import { settleMatch } from '@/domain/match/settle-match';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
 
@@ -77,49 +78,7 @@ async function main(): Promise<void> {
   if (result.skipped) console.log(`  note                  ${result.skipped}`);
 
   const match = await db.query.match.findFirst({ where: eq(t.match.supplierId, supplier.id) });
-  if (match?.entityId) {
-    // `family_member` migrated into `graph_path` rows of kind `family`
-    // (network spec §6): `graph_path.explored_count` is what
-    // `family_member.reachable_count` used to be — the envelope's own figure.
-    const members = await db
-      .select()
-      .from(t.graphPath)
-      .where(and(eq(t.graphPath.rootEntityId, match.entityId), eq(t.graphPath.kind, 'family')));
-    const memberEntities = await Promise.all(
-      members.map(async (m) =>
-        db.query.entity.findFirst({ where: eq(t.entity.id, m.terminalEntityId) }),
-      ),
-    );
-    const byId = new Map(members.map((m) => [m.terminalEntityId, m]));
-    const exposure = computeFamilyExposure(
-      memberEntities.filter(Boolean).map((e) => ({
-        entityId: e!.id,
-        label: e!.label,
-        country: e!.country,
-        factors: unionRiskFactors([{ source: 'getEntity', risk: e!.risk }]).map((u) => u.factor),
-        hopDepth: byId.get(e!.id)?.hopDepth ?? 1,
-        fromDeepTraversal: byId.get(e!.id)?.discoveredByJob != null,
-      })),
-      {
-        explored: members.length,
-        // Read off the stored rows, the same facts the page reads.
-        reachable: members[0]?.exploredCount ?? null,
-        partial: members.some((m) => m.truncated),
-      },
-    );
-    console.log(`\n  FAMILY EXPOSURE: ${describeFamilyExposure(exposure)}`);
-    if (exposure.state === 'exposure_found') {
-      for (const m of exposure.members.slice(0, 5)) {
-        console.log(`    ${m.level.padEnd(9)} ${m.label}`);
-        console.log(`              ${m.factors.slice(0, 3).join(', ')}`);
-      }
-    }
-
-    const profile = await db.query.entity.findFirst({ where: eq(t.entity.id, match.entityId) });
-    const own = parseRiskObject(profile?.risk);
-    console.log(`\n  The parent itself carries ${own.length} risk factors:`);
-    for (const f of own.slice(0, 8)) console.log(`    ${(f.level ?? '?').padEnd(9)} ${f.name}`);
-  }
+  if (match?.entityId) await printFamilyRisk(db, match.entityId);
 
   const values = await db
     .select()
@@ -140,6 +99,57 @@ async function main(): Promise<void> {
 
   await db.update(t.run).set({ state: 'done', finishedAt: new Date() }).where(eq(t.run.id, runId));
   await closeDirectDb();
+}
+
+/**
+ * The family read's own findings, plus the Profile's own risk factors —
+ * split out of `main` only to keep it under the lint's line cap. No more
+ * standalone Family exposure badge (network spec §5, ticket 03 unit 03b): a
+ * member's own risk now scores inside Network exposure (`networkExposure`,
+ * `src/domain/scoring/criteria.ts`), printed among `CRITERION VALUES` below;
+ * this just lists what the family read found.
+ */
+async function printFamilyRisk(db: Database, rootEntityId: string): Promise<void> {
+  // `family_member` migrated into `graph_path` rows of kind `family`
+  // (network spec §6): `graph_path.explored_count` is what
+  // `family_member.reachable_count` used to be — the envelope's own figure.
+  const members = await db
+    .select()
+    .from(t.graphPath)
+    .where(and(eq(t.graphPath.rootEntityId, rootEntityId), eq(t.graphPath.kind, 'family')));
+  const memberEntities = await Promise.all(
+    members.map(async (m) => db.query.entity.findFirst({ where: eq(t.entity.id, m.terminalEntityId) })),
+  );
+  const byId = new Map(members.map((m) => [m.terminalEntityId, m]));
+  const reachable = members[0]?.exploredCount ?? null;
+  const partial = members.some((m) => m.truncated);
+  console.log(
+    `\n  FAMILY: ${members.length}${reachable != null ? ` of ${reachable} nodes explored` : partial ? ' explored to the cap' : ' explored'}`,
+  );
+  const withRisk = memberEntities
+    .filter((e): e is NonNullable<typeof e> => e != null)
+    .map((e) => ({
+      entity: e,
+      factors: unionRiskFactors([{ source: 'getEntity', risk: e.risk }]).map((u) => u.factor),
+      hopDepth: byId.get(e.id)?.hopDepth ?? 1,
+    }))
+    .filter(({ factors }) => factors.some((f) => effectiveLevel(f)))
+    .slice(0, 5);
+  for (const m of withRisk) {
+    console.log(`    hop${m.hopDepth}   ${m.entity.label}`);
+    console.log(
+      `              ${m.factors
+        .filter((f) => effectiveLevel(f))
+        .slice(0, 3)
+        .map((f) => `${effectiveLevel(f)}:${f.name}`)
+        .join(', ')}`,
+    );
+  }
+
+  const profile = await db.query.entity.findFirst({ where: eq(t.entity.id, rootEntityId) });
+  const own = parseRiskObject(profile?.risk);
+  console.log(`\n  The parent itself carries ${own.length} risk factors:`);
+  for (const f of own.slice(0, 8)) console.log(`    ${(f.level ?? '?').padEnd(9)} ${f.name}`);
 }
 
 main().catch((error: unknown) => {

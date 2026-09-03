@@ -216,8 +216,10 @@ async function categoryMarkers(db: Database, programId: string, cat: Subjects['c
 async function supplierMarkers(db: Database, programId: string, supplierId: string) {
   const data = await loadSupplierPage(db, { programId, supplierId, query: {} });
   if (!data) return [];
-  const familyMarker =
-    data.exposure.state === 'exposure_found' ? data.exposure.members[0]?.label : undefined;
+  // No more standalone Family exposure badge on the page data (network spec
+  // §5, ticket 03 unit 03b) — the chain rows (`familyChain`) are still here,
+  // and Network exposure's own raw inputs are among `data.scored?.criteria`.
+  const familyMarker = data.familyChain[0]?.label;
   return [
     data.described?.headline ?? undefined,
     data.sentences[0]?.text.slice(0, 30),

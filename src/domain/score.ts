@@ -6,12 +6,12 @@ import {
   PROXIMITY_ANCHOR_LINE,
   TARIFF_ANCHOR_LINE,
 } from './scoring/anchors';
-import { COMPLIANCE_ANCHOR_LINE, OWNERSHIP_ANCHOR_LINE } from './scoring/criteria';
+import { COMPLIANCE_ANCHOR_LINE, NETWORK_ANCHOR_LINE } from './scoring/criteria';
 import {
   complianceRisk,
   countryResilience,
   mediaSignal,
-  ownershipExposure,
+  networkExposure,
   proximity,
   tariffExposure,
 } from './scoring/criteria';
@@ -239,7 +239,7 @@ export function scoreSupplier(
   const outcomes: Record<CriterionKey, CriterionOutcome> = unresolved
     ? {
         compliance_risk: NOT_RESOLVED(COMPLIANCE_ANCHOR_LINE),
-        network_exposure: NOT_RESOLVED(OWNERSHIP_ANCHOR_LINE),
+        network_exposure: NOT_RESOLVED(NETWORK_ANCHOR_LINE),
         country_resilience: NOT_RESOLVED(COUNTRY_ANCHOR_LINE),
         tariff_exposure: NOT_RESOLVED(TARIFF_ANCHOR_LINE),
         proximity: NOT_RESOLVED(PROXIMITY_ANCHOR_LINE),
@@ -247,7 +247,7 @@ export function scoreSupplier(
       }
     : {
         compliance_risk: complianceRisk(input, band),
-        network_exposure: ownershipExposure(input),
+        network_exposure: networkExposure(input, band),
         country_resilience: countryResilience(input),
         tariff_exposure: tariffExposure(input),
         proximity: proximity(input),

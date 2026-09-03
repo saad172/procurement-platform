@@ -2,7 +2,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { latestCountryIndicators, latestNewsItems } from '@/db/queries/enrichments';
-import { computeFamilyExposure } from '@/domain/family';
+import { loadNetworkExposurePaths } from '@/db/queries/family-paths';
 import { nearestPlant } from '@/domain/geo';
 import type { CountrySource } from '@/domain/match/settle-match';
 import { scoreSupplier } from '@/domain/score';
@@ -14,6 +14,7 @@ import {
   enrichGeocode,
   enrichLei,
   enrichNegativeNews,
+  enrichOwnership,
   enrichTariff,
   enrichWatchlist,
   loadPlants,
@@ -232,6 +233,15 @@ async function fanOutEnrichments(
   const watchlist = await enrichWatchlist(ctx, { entityId: match.entityId });
   written.push(watchlist.enrichmentId);
 
+  // ── 2c. Filtered ownership exposure Paths — same cadence, spec §4.1 ──────
+  // Writes a second page into the SAME `kind: 'family'` graph_path rows
+  // `enrichFamily` above just wrote (`filtered: true`), never a separate set
+  // — see `enrichOwnership`'s own doc comment. Not in EXPECTED_ENRICHMENTS/
+  // checklist yet, same reason as watchlist: Network exposure scoring is
+  // ticket 03's job, this just makes sure the automatic read actually runs.
+  const ownershipExposure = await enrichOwnership(ctx, { entityId: match.entityId });
+  written.push(ownershipExposure.enrichmentId);
+
   // ── 3. Country indicators, shared across every Supplier in the country ───
   // Fetched for the country the Match settled on (SPEC §9.4), so the World Bank
   // rows a Supplier holds and the country its Criteria score are the same one.
@@ -389,6 +399,18 @@ async function assembleScoringInput(
   const newsRows = await latestNewsItems(db, match.entityId);
 
   /**
+   * **Read from `graph_path`, not from this run's own `fanOut`** (network
+   * spec §5, §6) — the family and watchlist reads already ran, unconditionally,
+   * inside `fanOutEnrichments` above (a different unit's territory: this
+   * function only assembles scoring input from Paths a prior write already
+   * committed). `loadNetworkExposurePaths` is the one join `networkExposure`
+   * (`src/domain/scoring/criteria.ts`) needs: every `family`/`watchlist` Path
+   * rooted at this Profile, each hop already classified ownership/control
+   * against trade, plus the two reads' own coverage.
+   */
+  const network = await loadNetworkExposurePaths(db, match.entityId);
+
+  /**
    * **What answered, not what was asked** — the checklist gates the
    * data-confidence band, and a band is a claim about coverage.
    *
@@ -457,24 +479,46 @@ async function assembleScoringInput(
       articles: newsRows.map((n) => scoreArticle(n.riskFlags)),
     },
     presentEnrichments,
+    networkPaths: mapNetworkPaths(network.paths),
+    networkCoverage: network.coverage,
   };
 }
 
-/** The family badge is computed, never stored — like the Score and the Shortlist. */
+/**
+ * `NetworkExposurePath[]` → `SupplierScoringInput['networkPaths']`. Split out
+ * of `assembleScoringInput` only to keep that function under the lint's line
+ * cap — the mapping itself is a straight field rename, not a decision.
+ */
+function mapNetworkPaths(
+  paths: Awaited<ReturnType<typeof loadNetworkExposurePaths>>['paths'],
+): NonNullable<SupplierScoringInput['networkPaths']> {
+  return paths.map((p) => ({
+    entityId: p.terminalEntityId,
+    label: p.label,
+    hopDepth: p.hopDepth,
+    sanctioned: p.sanctioned,
+    // `p.risk` already carries every endpoint's per-factor provenance —
+    // `upsertEntity` merges it on every write (SPEC §8.2 D5), same as the
+    // Profile's own `riskFactors` in `assembleScoringInput` above.
+    riskFactors: parseRiskObject(p.risk),
+    viaOwnership: p.viaOwnership,
+    kind: p.kind,
+  }));
+}
+
+/**
+ * **No longer computes the Family exposure badge** (network spec §5, ticket
+ * 03 unit 03b) — `computeFamilyExposure`/`FamilyExposure` are gone, folded
+ * into `networkExposure` (`src/domain/scoring/criteria.ts`), which
+ * `writeAllCriteria` already scored above this call. `skipped`'s one
+ * remaining job is the same plain fact `computeFamilyExposure`'s
+ * `not_covered` state used to gate on: zero family members came back.
+ */
 function finalizeEnrichResult(
   supplier: typeof t.supplier.$inferSelect,
   fanOut: FanOutResult,
   criterionValuesWritten: number,
 ): EnrichResult {
-  // Reads from `family_member` rows on demand.
-  const exposure = computeFamilyExposure(fanOut.family.members, {
-    explored: fanOut.family.members.length,
-    // Both facts as the envelope reported them: how many nodes the traversal
-    // visited where it says it finished, and whether it stopped short.
-    reachable: fanOut.family.reachable,
-    partial: fanOut.family.truncated,
-  });
-
   return {
     supplierId: supplier.id,
     enrichmentsWritten: fanOut.written,
@@ -482,7 +526,7 @@ function finalizeEnrichResult(
     criterionValuesWritten,
     familyMembers: fanOut.family.members.length,
     skipped:
-      exposure.state === 'not_covered'
+      fanOut.family.members.length === 0
         ? 'family not covered — the ownership graph returned nobody'
         : undefined,
   };

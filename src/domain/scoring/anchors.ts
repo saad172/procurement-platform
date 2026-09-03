@@ -153,6 +153,20 @@ export const DATA_CONFIDENCE = {
  * The Enrichments a Supplier with an accepted Match should have. The checklist
  * is what data confidence counts — **never a row count**, because country and
  * tariff Enrichments are shared across Suppliers and would inflate it.
+ *
+ * **`sayari_ownership_family` alone still stands for Network exposure's
+ * automatic-read coverage** (network spec §5, ticket 03 unit 03b), even
+ * though the Criterion itself now also draws on `sayari_watchlist` Paths and,
+ * once a later unit adds it, the filtered risk-focused ownership page. Both
+ * of those already run unconditionally per accepted Profile
+ * (`fanOutEnrichments`, `src/jobs/enrich-supplier.ts`) — but that function is
+ * out of this unit's scope, and it does not yet push `sayari_watchlist` into
+ * the `returned`/`presentEnrichments` list this array is checked against
+ * (`dataConfidence`, `src/domain/score.ts`). Listing `sayari_watchlist` here
+ * without that wiring would make `strong` permanently unreachable for every
+ * Supplier — `tests/jobs/enrich-checklist.test.ts` asserts a well-covered
+ * Profile reaches it — so it stays off this checklist until whichever unit
+ * owns `fanOutEnrichments` adds the matching `returned.push`.
  */
 export const EXPECTED_ENRICHMENTS = [
   'sayari_negative_news',

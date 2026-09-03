@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  deriveFamilyCoverageAndExposure,
+  deriveFamilyCoverage,
   deriveFreshestAge,
   deriveOwnRiskFactorCount,
   deriveSupplierRank,
@@ -12,14 +12,19 @@ import {
  * rows that used to live inline in `loadSupplierPage`.
  */
 
-describe('deriveFamilyCoverageAndExposure', () => {
+describe('deriveFamilyCoverage', () => {
+  // Renamed from `deriveFamilyCoverageAndExposure` (network spec §5, ticket
+  // 03 unit 03b): the `exposure` half — a standalone Family exposure badge —
+  // is gone. A family member's own risk scores once now, inside
+  // `networkExposure` (`src/domain/scoring/criteria.ts`); this function keeps
+  // exactly the coverage half it always owned.
   it('counts rows held for "explored" — safe now that graph_path is unique on (root, terminal, kind)', () => {
     // `family_member` could hold one member twice (Bosch and Magna each once
     // stored 100 rows for 50 members) and reading a row's own counter was how
     // that regression was avoided; `graph_path`'s unique index rules the
     // duplication out at the database, so two distinct members are exactly
     // two rows and `explored` is their count.
-    const { coverage } = deriveFamilyCoverageAndExposure([
+    const coverage = deriveFamilyCoverage([
       {
         member: { id: 'a', label: 'A', country: 'DEU', risk: null },
         hopDepth: 1,
@@ -43,7 +48,7 @@ describe('deriveFamilyCoverageAndExposure', () => {
     // (200) can both be present; the wider envelope's own `truncated` travels
     // with it, and picking the narrower row first would understate a family
     // the app already paid to explore.
-    const { coverage } = deriveFamilyCoverageAndExposure([
+    const coverage = deriveFamilyCoverage([
       {
         member: { id: 'a', label: 'A', country: 'DEU', risk: null },
         hopDepth: 1,
@@ -62,27 +67,8 @@ describe('deriveFamilyCoverageAndExposure', () => {
     expect(coverage).toEqual({ explored: 2, reachable: 200, partial: false });
   });
 
-  it('is not_covered when the ownership graph returned nobody', () => {
-    const { exposure } = deriveFamilyCoverageAndExposure([]);
-    expect(exposure.state).toBe('not_covered');
-  });
-
-  it('finds exposure from a family member’s own risk block', () => {
-    const { exposure } = deriveFamilyCoverageAndExposure([
-      {
-        member: {
-          id: 'b',
-          label: 'B',
-          country: 'ROU',
-          risk: { exports_bis_high_priority_items_direct: { level: 'high' } },
-        },
-        hopDepth: 1,
-        truncated: false,
-        discoveredByJob: null,
-        reachableCount: 1,
-      },
-    ]);
-    expect(exposure.state).toBe('exposure_found');
+  it('reads zero explored, not an error, when the ownership graph returned nobody', () => {
+    expect(deriveFamilyCoverage([])).toEqual({ explored: 0, reachable: null, partial: false });
   });
 });
 
