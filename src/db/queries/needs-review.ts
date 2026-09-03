@@ -101,9 +101,28 @@ export async function loadParkedRow(
     .where(eq(t.matchAttempt.matchId, match.id))
     .orderBy(desc(t.matchAttempt.attemptN));
 
+  /**
+   * **Narrowed to the columns this page actually renders** (E1). Whole
+   * `match_candidate` rows used to come along for the ride, and now that
+   * `explanation`/`highlight` are populated (2–8 KB each, ticket 01 item A)
+   * every parked row's detail page fetched and dropped them — this view has
+   * nothing to say about Sayari's own resolution evidence, only about the
+   * Discriminator ladder.
+   */
   const rows = attempts.length
     ? await db
-        .select({ candidate: t.matchCandidate, entity: t.entity })
+        .select({
+          candidateId: t.matchCandidate.id,
+          foundByRung: t.matchCandidate.foundByRung,
+          queryProvenance: t.matchCandidate.queryProvenance,
+          entityId: t.entity.id,
+          label: t.entity.label,
+          city: t.entity.city,
+          country: t.entity.country,
+          addressLine: t.entity.addressLine,
+          lei: t.entity.lei,
+          distinctSourceCount: t.entity.distinctSourceCount,
+        })
         .from(t.matchCandidate)
         .innerJoin(t.entity, eq(t.entity.id, t.matchCandidate.entityId))
         .where(
@@ -121,7 +140,7 @@ export async function loadParkedRow(
         .where(
           inArray(
             t.matchCandidateVerdict.matchCandidateId,
-            rows.map((r) => r.candidate.id),
+            rows.map((r) => r.candidateId),
           ),
         )
     : [];
@@ -133,9 +152,9 @@ export async function loadParkedRow(
    * as a dispute rather than as two candidates.
    */
   const byEntity = new Map<string, CandidateForChoice>();
-  for (const { candidate, entity } of rows) {
+  for (const row of rows) {
     const mine = verdicts
-      .filter((v) => v.matchCandidateId === candidate.id)
+      .filter((v) => v.matchCandidateId === row.candidateId)
       .map((v) => ({
         discriminator: v.discriminator,
         verdict: v.verdict,
@@ -143,21 +162,21 @@ export async function loadParkedRow(
         reportedBy: v.reportedBy,
       }));
 
-    const existing = byEntity.get(entity.id);
+    const existing = byEntity.get(row.entityId);
     if (existing) {
       existing.verdicts.push(...mine);
       continue;
     }
-    byEntity.set(entity.id, {
-      entityId: entity.id,
-      label: entity.label,
-      city: entity.city,
-      country: entity.country,
-      addressLine: entity.addressLine,
-      lei: entity.lei,
-      distinctSourceCount: entity.distinctSourceCount,
-      foundByRung: candidate.foundByRung,
-      queryProvenance: candidate.queryProvenance,
+    byEntity.set(row.entityId, {
+      entityId: row.entityId,
+      label: row.label,
+      city: row.city,
+      country: row.country,
+      addressLine: row.addressLine,
+      lei: row.lei,
+      distinctSourceCount: row.distinctSourceCount,
+      foundByRung: row.foundByRung,
+      queryProvenance: row.queryProvenance,
       verdicts: mine,
     });
   }
