@@ -24,6 +24,13 @@ import { coverageNote, fmtScore } from './criterion-format';
  * of row entirely, split by reason.
  */
 
+/** One other accepted Supplier this row's Network is joined to (network spec §7). Optional so an older frozen payload — recorded before this field existed — still parses (finding 103's own reasoning, applied here). */
+const concentrationPartnerSchema = z.object({
+  supplierId: z.string(),
+  displayName: z.string(),
+  terminalEntityId: z.string(),
+  terminalLabel: z.string(),
+});
 const rowSchema = z.object({
   rank: z.number().nullable(),
   supplierId: z.string(),
@@ -33,6 +40,7 @@ const rowSchema = z.object({
   dataConfidence: z.string(),
   disqualifying: z.boolean(),
   disqualifyingFactors: z.array(z.string()).optional(),
+  concentrationWith: z.array(concentrationPartnerSchema).optional(),
   visible: z.boolean().optional(),
 });
 const payloadSchema = z.object({
@@ -98,6 +106,7 @@ function RankedTable({ rows }: { rows: Row[] }) {
           <th className="num">Score</th>
           <th>Data confidence</th>
           <th>Flags</th>
+          <th>Concentration</th>
         </tr>
       </thead>
       <tbody>
@@ -126,10 +135,38 @@ function RankedTable({ rows }: { rows: Row[] }) {
                 </span>
               ) : null}
             </td>
+            <td>
+              <ConcentrationBadge partners={r.concentrationWith ?? []} />
+            </td>
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+/**
+ * Concentration, derived for free from stored Networks (network spec §7):
+ * this row's Network shares a Path terminal with another accepted bidder's —
+ * a shared parent, most often. Named partners and the shared entity ride in
+ * the title, so a reader does not have to click through to learn *what*
+ * joins them, only *that* something does. Mirrors the Category page's own
+ * `ConcentrationBadge` (`sections.tsx`) — same wording, so the widget and the
+ * page never say this two different ways.
+ */
+function ConcentrationBadge({
+  partners,
+}: {
+  partners: { displayName: string; terminalLabel: string }[];
+}) {
+  if (partners.length === 0) return null;
+  return (
+    <span
+      className="badge warn"
+      title={partners.map((p) => `${p.displayName} — via ${p.terminalLabel}`).join('; ')}
+    >
+      joined with {partners.map((p) => p.displayName).join(', ')}
+    </span>
   );
 }
 
