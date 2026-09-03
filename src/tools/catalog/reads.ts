@@ -297,26 +297,45 @@ const NETWORK_PATH_KINDS = [
 /** One kind's slice of a Network: the same envelope+members shape §8.4's family badge always returned, scoped to one `graph_path.kind`. */
 function projectNetworkGroup(paths: NetworkPath[]) {
   const { widgetMembers, modelMembers } = projectFamilyMembers(paths);
+  /**
+   * **The id THIS group's coverage figures cite through** (finding 106) —
+   * null, honestly, for an empty group rather than borrowed from another
+   * kind's read.
+   */
+  const enrichmentId = paths[0]?.enrichmentId ?? null;
+  /**
+   * **Scoped to the Paths that same Enrichment actually owns.**
+   *
+   * Since ticket 02+03, more than one automatic read can write into one
+   * `kind` bucket — `family` holds both `enrichFamily`'s unfiltered page and
+   * `enrichOwnership`'s filtered one (`src/jobs/enrich.ts`) — and
+   * `graph_path.enrichment_id` names the Enrichment that *first* found a
+   * row, never reassigned to a later one that only re-confirms it
+   * (`conflictSet`, `src/jobs/family-members.ts`). Pairing `enrichmentId`
+   * above with `paths.length` — every row in the group, regardless of which
+   * read found it — quotes a citation target that cannot back the number
+   * next to it whenever a group spans more than one Enrichment: exactly the
+   * mismatch `checkNumberFidelity` exists to catch, moved into this tool's
+   * own output instead of a sentence. Measured live, Yazaki's `family` group:
+   * 58 Paths total, only 50 of them the unfiltered read's own.
+   */
+  const ownPaths = paths.filter((p) => p.enrichmentId === enrichmentId);
   const envelope = {
-    /**
-     * **The id THIS group's coverage figures cite through** (finding 106) —
-     * null, honestly, for an empty group rather than borrowed from another
-     * kind's read.
-     */
-    enrichmentId: paths[0]?.enrichmentId ?? null,
+    enrichmentId,
     // Row count, not a stored counter — `graph_path`'s unique (root,
     // terminal, kind) index (network spec §6) is what makes the two agree,
-    // per kind, the same as the pre-rename family envelope.
-    explored: paths.length,
-    // The WIDEST envelope this group holds, not whichever Path sorted first —
-    // a Deep Traversal's own wider walk must not be shadowed by a narrower
-    // automatic read of the same kind.
-    reachable: paths.reduce<number | null>(
+    // per kind, the same as the pre-rename family envelope — now that both
+    // sides are scoped to the one Enrichment `enrichmentId` names.
+    explored: ownPaths.length,
+    // The WIDEST envelope *this Enrichment's own* Paths hold, not whichever
+    // Path sorted first, and not a wider figure borrowed from a different
+    // read sharing the kind.
+    reachable: ownPaths.reduce<number | null>(
       (best, p) =>
         p.reachableCount != null && (best == null || p.reachableCount > best) ? p.reachableCount : best,
       null,
     ),
-    truncated: paths.some((p) => p.truncated),
+    truncated: ownPaths.some((p) => p.truncated),
   };
   return {
     model: { ...envelope, members: modelMembers },

@@ -92,25 +92,40 @@ describe('enrich reads ownership from the matched entity, not from any cached bo
     const ownPayload = JSON.stringify(own!.body);
 
     /**
-     * **The Corporate family traversal is unambiguous in a way `getEntity` is
-     * not.** `traversal.ownership` is keyed by `id` in its own request params
-     * (`params_hash`), so there is no cached-body-choosing ambiguity for it —
-     * unlike `entity.getEntity`, which the resolve Job fetches once per
-     * candidate. Since ticket 02, `enrichFamily` upserts an `entity_relationship`
-     * row for every hop of every Path this read returns (network spec §6), so
-     * `entity_relationship` now legitimately holds edges anchored on
-     * intermediate Path entities, not only on the matched company — those rows
-     * are a different, correct fact this test is not about, and the
-     * traversal's own cached body is what explains them.
+     * **The Corporate family traversal used to be unambiguous in a way
+     * `getEntity` is not — `findFirst` was still safe here.** `traversal.
+     * ownership` is keyed by `id` in its own request params, and through
+     * ticket 02 there was exactly one cached call per matched entity id, so
+     * no cached-body-choosing ambiguity existed for it — unlike
+     * `entity.getEntity`, which the resolve Job fetches once per candidate.
+     *
+     * **Ticket 03 reopened exactly that ambiguity, one call later.**
+     * `enrichOwnership` (`src/jobs/enrich.ts`) is a *second*
+     * `traversal.ownership` call for the same matched entity id — same
+     * endpoint, same `id`, different `riskCategories`/`excludeClosedEntities`
+     * — so filtering only on `params->>'id'` now matches two rows, and
+     * `findFirst` picked whichever Postgres happened to return, silently
+     * reproducing finding 100's own bug shape for a second endpoint.
+     *
+     * **`enrichWatchlist`'s `traversal.watchlist` call writes edges into this
+     * same table too** (network spec §4.1, `storePathEdges` in
+     * `src/jobs/enrich.ts`), a third automatic read alongside the two
+     * `traversal.ownership` ones, so its cached body has to be in the union
+     * as well or its own Path hops read as "misanchored."
+     *
+     * Fixed by reading every cached `traversal.ownership` **and**
+     * `traversal.watchlist` body for this entity id (three calls by design)
+     * and checking edges against their union — an edge only one of the three
+     * pages names is as legitimate as one every page names.
      */
-    const ownership = await db.query.upstreamResponse.findFirst({
+    const ownershipRows = await db.query.upstreamResponse.findMany({
       where: and(
         eq(t.upstreamResponse.source, 'sayari'),
-        eq(t.upstreamResponse.endpoint, 'traversal.ownership'),
+        sql`${t.upstreamResponse.endpoint} in ('traversal.ownership', 'traversal.watchlist')`,
         sql`${t.upstreamResponse.params}->>'id' = ${matchedId}`,
       ),
     });
-    const ownershipPayload = ownership ? JSON.stringify(ownership.body) : '';
+    const ownershipPayload = ownershipRows.map((row) => JSON.stringify(row.body)).join('\n');
 
     const edges = await db.select().from(t.entityRelationship);
     expect(edges.length, "enrich should have written the matched company's edges").toBeGreaterThan(

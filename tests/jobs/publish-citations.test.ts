@@ -119,20 +119,34 @@ describe('the family walk’s coverage is citable', () => {
       .where(and(eq(t.graphPath.rootEntityId, match!.entityId!), eq(t.graphPath.kind, 'family')));
     expect(members.length, 'the Yazaki fixture holds a corporate family').toBeGreaterThan(0);
 
+    /**
+     * **A citation names one Enrichment, and `explored` is that Enrichment's
+     * own count — not the family's.** Since ticket 03, two automatic reads
+     * write into this same `(root, terminal, kind: 'family')` bucket
+     * (`enrichFamily`'s unfiltered page and `enrichOwnership`'s filtered
+     * one), so `members` spans both and `members[0]`'s own `enrichmentId`
+     * names only one of them. `enrichmentId` is provenance now (BUILD-NOTES,
+     * ticket 02+03 recording session — a `graph_path` row keeps the
+     * Enrichment that *first* found it, never reassigned to a later read
+     * that only re-confirms it), so the honest comparison is against the
+     * rows still attributed to that same Enrichment, not every row this root
+     * has.
+     */
     const citation = { enrichmentId: members[0]!.enrichmentId };
+    const ownRows = members.filter((m) => m.enrichmentId === citation.enrichmentId);
     const rows = await resolveCitations(db, [citation as never]);
     const row = rows.get(citationKey(citation as never))!;
     // `explored` is now a row count (`graph_path`'s unique `(root, terminal,
     // kind)` index makes that safe — `derive-supplier-page.ts`'s
     // `widestCoverage`), and `reachable`/`truncated` are the envelope's own
     // figures off `graph_path.explored_count`/`truncated`.
-    expect(row.explored).toBe(members.length);
-    expect(row.truncated).toBe(members.some((m) => m.truncated));
+    expect(row.explored).toBe(ownRows.length);
+    expect(row.truncated).toBe(ownRows.some((m) => m.truncated));
 
     // And the check reads it: the count the tool printed now matches a
     // candidate on the row the sentence points at.
     const failures = checkNumberFidelity(
-      `The downward family reached ${members.length} members.`,
+      `The downward family reached ${ownRows.length} members.`,
       candidatesFrom({}, [row]),
     );
     expect(failures).toEqual([]);

@@ -140,13 +140,27 @@ export async function writeGraphPaths(
  * What a second read of the same (root, terminal, kind) updates, and what it
  * leaves standing.
  *
- * **`firstSeenAt` and `discoveredByJob` are absent on purpose.** They are the
- * row's provenance — *when this Path first appeared, and which read found
- * it* — and a later read is not new provenance for a fact it did not
- * discover. The *new evidence* chip is computed from `firstSeenAt`
- * (SPEC §12.1), so re-stamping it would light the chip on every re-read; and a
- * Deep Traversal that re-reaches a member the automatic family already held
- * must not claim to have found it.
+ * **`firstSeenAt`, `discoveredByJob` and `enrichmentId` are absent on
+ * purpose.** They are the row's provenance — *when this Path first appeared,
+ * and which read found it* — and a later read is not new provenance for a
+ * fact it did not discover. The *new evidence* chip is computed from
+ * `firstSeenAt` (SPEC §12.1), so re-stamping it would light the chip on every
+ * re-read; and a Deep Traversal that re-reaches a member the automatic family
+ * already held must not claim to have found it.
+ *
+ * `enrichmentId` belongs in that same group, not with the coverage columns
+ * below, even though it once lived in this function's `set` clause: it is
+ * what a citation resolves through (`withFamilyCoverage`, `src/jobs/
+ * publish.ts`), and reassigning it to whichever read most recently confirmed
+ * a terminal silently moves that citation's target out from under it.
+ * Measured live in this build's ticket 02+03 recording session — Yazaki's
+ * family carried 58 members, but `enrichFamily`'s own Enrichment could only
+ * be cited through 44 of them, because `enrichOwnership`'s filtered page
+ * (run second, in the same fan-out) had re-touched the other 14 and, under
+ * the old unconditional overwrite, quietly relabelled them as its own. A
+ * `graph_path` row's `enrichment_id` names *the read that first found the
+ * Path* (`src/db/queries/family-paths.ts`'s own doc comment) — past tense,
+ * not "most recently confirmed."
  *
  * **`hopDepth` and `edgeIds` move together, and only downwards.** A row
  * records the *shortest* route known to that terminal: an entity reachable in
@@ -159,16 +173,15 @@ export async function writeGraphPaths(
  * is what makes a Path confirmed by a filtered page stay confirmed, whichever
  * order the two pages of one read arrive in.
  *
- * The coverage columns *are* overwritten unconditionally, because they
- * describe the read rather than the terminal, and the newest read is the one
- * the page should be quoting.
+ * The remaining coverage columns (`truncated`, `exploredCount`,
+ * `partialResults`) *are* overwritten unconditionally, because they describe
+ * the read rather than the terminal, and the newest read is the one the page
+ * should be quoting.
  */
 function conflictSet(args: {
-  enrichmentId: string;
   coverage: { truncated: boolean; exploredCount: number | null; partialResults: boolean };
 }) {
   return {
-    enrichmentId: args.enrichmentId,
     hopDepth: sql`least(${t.graphPath.hopDepth}, excluded.hop_depth)`,
     edgeIds: sql`case when excluded.hop_depth <= ${t.graphPath.hopDepth}
                    then excluded.edge_ids else ${t.graphPath.edgeIds} end`,
