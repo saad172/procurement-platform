@@ -18,7 +18,7 @@ import * as classifierPrompts from '@/model/prompts/classifier';
 import { getRegistry, type ToolContext } from '@/tools';
 import type { ModelContext } from '@/model/types';
 import type { Upstream } from '@/upstream';
-import { attributeTexts, type SayariEntity } from '@/upstream/projections/sayari';
+import { attributeTexts, type SayariEntity, type SayariTradeRow } from '@/upstream/projections/sayari';
 import { upsertEntity } from './resolve';
 import { raiseIfStopped } from './stops';
 
@@ -46,6 +46,12 @@ export type DiscoverResult = {
   classified: number;
   /** Rows already on the roster, dropped by exact entity-id dedupe. */
   alreadyOnRoster: number;
+  /**
+   * The trade search envelope's own `size.count` — how many counterparties
+   * the query matched in total, so the UI can say "n of m" rather than just
+   * "n proposed" (ticket 01 item C). Null when the search returned no count.
+   */
+  tradeTotalCount: number | null;
 };
 
 export async function discoverLeads(
@@ -59,7 +65,12 @@ export async function discoverLeads(
   const search = await searchTradeCandidates(deps, args, loaded.query);
   const { classified } = await classifyAndRecordLeads(deps, args, loaded.query, search);
 
-  return { proposed: search.ranked.length, classified, alreadyOnRoster: search.alreadyOnRoster };
+  return {
+    proposed: search.ranked.length,
+    classified,
+    alreadyOnRoster: search.alreadyOnRoster,
+    tradeTotalCount: search.tradeTotalCount,
+  };
 }
 
 type DiscoverQuery = { hsCodes: string[]; arrivalCountries: string[] };
@@ -73,7 +84,9 @@ async function loadDiscoverQuery(
     .select()
     .from(t.categoryHsLine)
     .where(eq(t.categoryHsLine.categoryId, args.categoryId));
-  if (lines.length === 0) return { result: { proposed: 0, classified: 0, alreadyOnRoster: 0 } };
+  if (lines.length === 0) {
+    return { result: { proposed: 0, classified: 0, alreadyOnRoster: 0, tradeTotalCount: null } };
+  }
 
   const program = await db.query.program.findFirst({ where: eq(t.program.id, args.programId) });
   const plants = await db
@@ -112,11 +125,21 @@ async function loadDiscoverQuery(
 }
 
 type RankedCandidates = {
-  ranked: { entity: SayariEntity; shipments: number | null; latestShipmentDate: string | null }[];
+  ranked: {
+    entity: SayariEntity;
+    shipments: number | null;
+    latestShipmentDate: string | null;
+    /** This ROW's own `metadata.hs_codes`, never the Category's queried
+     * lines — a Lead's HS footprint is the row's, not the query's (ticket 01
+     * item C). Empty when the row states none; never backfilled from `query`. */
+    hsCodes: string[];
+  }[];
   alreadyOnRoster: number;
   /** Family member entity id → the Supplier of THIS Program whose family holds it. */
   familyOwners: Map<string, string>;
   roster: RosterSupplier[];
+  /** The trade search envelope's own `size.count` (ticket 01 item C). */
+  tradeTotalCount: number | null;
 };
 
 /** Runs the trade search, then ranks and dedupes it against the roster. */
@@ -128,11 +151,23 @@ async function searchTradeCandidates(
   const { db } = deps;
   const { hsCodes, arrivalCountries } = query;
 
+  /**
+   * **Page one only.** The envelope's own `next`/`offset` cursor is read below
+   * for `tradeTotalCount`, but the pagination ticket 01 item C asks for —
+   * following that cursor for a second page — cannot be built from this file:
+   * `sayariTradeSearchSuppliers`'s `EndpointDef` (`src/upstream/endpoints.ts`)
+   * declares no `offset` parameter and its `dispatch` never forwards one to
+   * the SDK/raw request, so passing one here would be silently ignored and
+   * every "page" would re-fetch the same first 100 rows. That file is owned by
+   * another unit in this wave; extending the endpoint to accept and forward
+   * `offset` is the follow-up this leaves behind.
+   */
   const trade = await deps.upstream.sayari.tradeSearchSuppliers({
     hsCodes,
     arrivalCountries,
     limit: DISCOVER_TRADE_LIMIT,
   });
+  const tradeTotalCount = trade.data.size?.count ?? null;
 
   // Everything already on this Program's roster, by entity id.
   const onRoster = new Set(
@@ -163,6 +198,7 @@ async function searchTradeCandidates(
     entity: SayariEntity;
     shipments: number | null;
     latestShipmentDate: string | null;
+    hsCodes: string[];
   }[] = [];
 
   /**
@@ -190,6 +226,7 @@ async function searchTradeCandidates(
       // Absent on some rows, so it is a DISPLAYED COLUMN and never a filter —
       // filtering on it would silently drop every row that lacks one.
       latestShipmentDate: row.metadata.latest_shipment_date ?? null,
+      hsCodes: hsCodesOf(row),
     });
   }
 
@@ -201,7 +238,21 @@ async function searchTradeCandidates(
     )
     .slice(0, DISCOVER_CLASSIFY_TOP_N);
 
-  return { ranked, alreadyOnRoster, familyOwners, roster };
+  return { ranked, alreadyOnRoster, familyOwners, roster, tradeTotalCount };
+}
+
+/**
+ * **A Lead's HS footprint is the row's** (ticket 01 item C, CONTEXT.md
+ * *Discover*). `metadata.hs_codes` is an array of `{ key, value, doc_count }`
+ * — `key` is the six-digit line this row actually shipped under, which can
+ * differ from any single line of the Category's own queried lines the search
+ * was run over. Deduped, and empty (never backfilled from the query) when the
+ * row states none — a guess dressed as the row's own fact would be worse than
+ * an honest blank.
+ */
+export function hsCodesOf(row: SayariTradeRow): string[] {
+  const codes = row.metadata?.hs_codes ?? [];
+  return [...new Set(codes.map((c) => c.key).filter((k): k is string => Boolean(k)))];
 }
 
 /** Classifies each ranked candidate and records it as a Lead. */
@@ -212,7 +263,7 @@ async function classifyAndRecordLeads(
   search: RankedCandidates,
 ): Promise<{ classified: number }> {
   const { db } = deps;
-  const { ranked, familyOwners, roster } = search;
+  const { ranked, familyOwners, roster, tradeTotalCount } = search;
   let classified = 0;
 
   for (const candidate of ranked) {
@@ -227,6 +278,7 @@ async function classifyAndRecordLeads(
       categoryId: args.categoryId,
       candidate,
       query,
+      tradeTotalCount,
       classification: outcome,
       relation: decideLeadRelation(
         { entityId: candidate.entity.id, label: candidate.entity.label },
@@ -276,7 +328,9 @@ async function classifyCandidate(
             companyName: candidate.entity.label,
             countries: candidate.entity.countries ?? [],
             shipmentCount: candidate.shipments,
-            topHsCodes: query.hsCodes,
+            // This ROW's own HS lines, not the Category's queried ones — a
+            // Lead's HS footprint is the row's (ticket 01 item C).
+            topHsCodes: candidate.hsCodes,
             businessPurpose: attributeTexts(
               candidate.entity.attributes?.business_purpose?.data,
             ).join('; '),
@@ -307,6 +361,8 @@ export async function recordLead(
     categoryId: string;
     candidate: RankedCandidates['ranked'][number];
     query: DiscoverQuery;
+    /** The trade search envelope's own `size.count` (ticket 01 item C). */
+    tradeTotalCount: number | null;
     classification: LeadClassificationOutcome;
     relation: LeadRelationDecision;
     jobId?: string | undefined;
@@ -330,8 +386,11 @@ export async function recordLead(
       notClassifiedReason: args.classification.notClassifiedReason,
       shipmentCount: args.candidate.shipments,
       latestShipmentDate: args.candidate.latestShipmentDate,
-      topHsCodes: args.query.hsCodes as never,
+      // This ROW's own HS lines, never the Category's queried ones (ticket 01
+      // item C) — a Lead's HS footprint is the row's, not the query's.
+      topHsCodes: args.candidate.hsCodes as never,
       arrivalCountries: args.query.arrivalCountries as never,
+      tradeTotalCount: args.tradeTotalCount,
       // Verified where THIS Program's ownership graph puts it in an accepted
       // Supplier's family; otherwise a LABELLED, never hidden, name-token
       // guess — which now names the Supplier it guessed at.
