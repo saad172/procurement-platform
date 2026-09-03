@@ -6,6 +6,7 @@ import {
   Answer,
   CorporateFamily,
   Enrichments,
+  FamilyChainRows,
   Heading,
   TheWorking,
   WhatWasConcluded,
@@ -45,6 +46,7 @@ export default async function SupplierPage({
       <WhatWasConcluded data={data} programId={programId} />
       <TheWorking data={data} programId={programId} supplierId={supplierId} />
       <CorporateFamily data={data} programId={programId} />
+      <FamilyChainRows data={data} programId={programId} />
       <Enrichments data={data} />
       <ChatDock programId={programId} />
     </main>

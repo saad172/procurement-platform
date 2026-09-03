@@ -135,7 +135,7 @@ async function first<T>(query: Promise<T[]>): Promise<T | undefined> {
 }
 
 /**
- * A Corporate family Enrichment carries its coverage on its `family_member`
+ * A Corporate family Enrichment carries its coverage on its `graph_path`
  * rows, not on its own row — so a citation to it resolves to a row that does
  * not hold the figures the tool showed the model.
  *
@@ -150,6 +150,17 @@ async function first<T>(query: Promise<T[]>): Promise<T | undefined> {
  * Attached here rather than in `candidatesFrom`, because what a citation
  * resolves to is this function's answer: the checks and the insert must agree
  * about what the model pointed at.
+ *
+ * **`explored` is a row count now, `reachable` is `graph_path.explored_count`**
+ * — the two swapped which column answers which question when `family_member`
+ * (with its own, differently-named `explored_count`/`reachable_count` pair)
+ * migrated to `graph_path` (network spec §6). `graph_path` carries no
+ * successor to `family_member.explored_count`'s row-count column, but its
+ * `(root, terminal, kind)` unique index makes `COUNT(*)` a safe replacement —
+ * see `derive-supplier-page.ts`'s `widestCoverage` for the fuller account of
+ * why that reversal is sound. `get_supplier_family` (`src/tools/catalog/
+ * reads.ts`) prints exactly these two figures, off the same table, so a
+ * sentence citing this Enrichment must find them here too.
  */
 async function withFamilyCoverage(
   db: Database,
@@ -159,17 +170,24 @@ async function withFamilyCoverage(
 
   const coverage = await db
     .select({
-      explored: t.familyMember.exploredCount,
-      reachable: t.familyMember.reachableCount,
-      truncated: t.familyMember.truncated,
+      reachable: t.graphPath.exploredCount,
+      truncated: t.graphPath.truncated,
     })
-    .from(t.familyMember)
-    .where(eq(t.familyMember.enrichmentId, enrichment.id as string))
-    .limit(1);
+    .from(t.graphPath)
+    .where(
+      and(eq(t.graphPath.enrichmentId, enrichment.id as string), eq(t.graphPath.kind, 'family')),
+    );
 
   // No rows is *not covered* — the ownership graph returned nobody — and that
   // is a real state with a real figure: nothing explored.
-  return { ...enrichment, ...(coverage[0] ?? { explored: 0, reachable: null, truncated: false }) };
+  if (coverage.length === 0) return { ...enrichment, explored: 0, reachable: null, truncated: false };
+
+  return {
+    ...enrichment,
+    explored: coverage.length,
+    reachable: coverage[0]!.reachable,
+    truncated: coverage.some((row) => row.truncated),
+  };
 }
 
 export type PublishAssessment = {

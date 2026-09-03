@@ -116,15 +116,21 @@ async function readKnownAsRows(db: Database, programId: string, entityId: string
     .where(and(eq(t.match.entityId, entityId), eq(t.supplier.programId, programId)));
 
   const familyMemberships = await db
-    .select({ hopDepth: t.familyMember.hopDepth, supplier: supplierColumns })
-    .from(t.familyMember)
+    .select({ hopDepth: t.graphPath.hopDepth, supplier: supplierColumns })
+    .from(t.graphPath)
     // Rooted at the Supplier's Profile, never at the family member directly
     // — the root is what carries the Match. A Twin is never this join: a
     // Twin carries no Match of its own by definition (CONTEXT.md), so this
     // inner join on `match.entity_id` provably never reaches one.
-    .innerJoin(t.match, eq(t.match.entityId, t.familyMember.rootEntityId))
+    .innerJoin(t.match, eq(t.match.entityId, t.graphPath.rootEntityId))
     .innerJoin(t.supplier, eq(t.supplier.id, t.match.supplierId))
-    .where(and(eq(t.familyMember.memberEntityId, entityId), eq(t.supplier.programId, programId)));
+    .where(
+      and(
+        eq(t.graphPath.terminalEntityId, entityId),
+        eq(t.graphPath.kind, 'family'),
+        eq(t.supplier.programId, programId),
+      ),
+    );
 
   const candidacies = await db
     .select({ status: t.match.status, supplier: supplierColumns })

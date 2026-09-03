@@ -15,7 +15,14 @@ type FamilyRow = {
   member: { id: string; label: string; country: string | null; risk: unknown };
   hopDepth: number;
   truncated: boolean;
-  exploredCount: number | null;
+  /**
+   * The read's own envelope figure (`graph_path.explored_count`, network
+   * spec §6) — how many nodes THAT walk visited, sometimes in the thousands.
+   * Not a row count: `family_member.explored_count`, the app's own
+   * capped-at-50 tally of distinct members held, has no successor column on
+   * `graph_path` — `widestCoverage` below now counts the rows themselves,
+   * which the table's `(root, terminal, kind)` unique index makes safe.
+   */
   reachableCount: number | null;
   /** Null when the automatic family read found it; a Job id for a Deep Traversal. */
   discoveredByJob: string | null;
@@ -61,26 +68,35 @@ export function deriveFamilyCoverageAndExposure(familyRows: readonly FamilyRow[]
  * The coverage of the **widest** read this family holds, not of whichever row
  * came back first.
  *
- * Every member row carries the coverage of the read that wrote it, so once a
- * Deep Traversal has run there are two answers in the table: the automatic
- * read's fifty and the deep walk's two hundred. `familyRows[0]` picked between
- * them by whatever order Postgres returned — which is the same total-order
- * mistake that has read as fixture drift three times in this build (findings
- * 61, 81, 100), except that here it would silently understate a family the app
- * had already paid to explore.
+ * Every member row carries the *reachable* figure of the read that wrote it,
+ * so once a Deep Traversal has run there are two envelopes in the table: the
+ * automatic read's and the deep walk's own, wider one. `familyRows[0]` picked
+ * between them by whatever order Postgres returned — which is the same
+ * total-order mistake that has read as fixture drift three times in this
+ * build (findings 61, 81, 100), except that here it would silently understate
+ * a family the app had already paid to explore. The widest envelope is the
+ * right one: a walk that reported reaching further reported a superset, and
+ * `truncated` travels with it so a bigger number cannot arrive without the
+ * caveat that earned it.
  *
- * The widest read is the right one: a walk that explored more explored a
- * superset, and `truncated` travels with it so a bigger number cannot arrive
- * without the caveat that earned it.
+ * **`explored` is now a row count, and that reverses this function's own
+ * earlier rule** (see this file's own history and `graph_path.explored_count`'s
+ * comment). `family_member` could hold the same member twice — Bosch and
+ * Magna each stored 100 rows for 50 members before a unique index existed —
+ * which is exactly why `explored` used to be read off a column instead of
+ * counted. `graph_path`'s `(root_entity_id, terminal_entity_id, kind)` unique
+ * index rules that out at the database, and `graph_path` carries no row-count
+ * column of its own to read instead — so `familyRows.length` is both the only
+ * option and, because of that index, a safe one.
  */
 function widestCoverage(familyRows: readonly FamilyRow[]): FamilyCoverage {
   const widest = familyRows.reduce<FamilyRow | undefined>(
     (best, row) =>
-      best == null || (row.exploredCount ?? 0) > (best.exploredCount ?? 0) ? row : best,
+      best == null || (row.reachableCount ?? 0) > (best.reachableCount ?? 0) ? row : best,
     undefined,
   );
   return {
-    explored: widest?.exploredCount ?? familyRows.length,
+    explored: familyRows.length,
     reachable: widest?.reachableCount ?? null,
     partial: widest?.truncated ?? false,
   };

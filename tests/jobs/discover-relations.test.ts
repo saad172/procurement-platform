@@ -84,14 +84,17 @@ describe('the Corporate family map Discover verifies against', () => {
       entityId: outsider,
       settledBy: 'rules',
     });
-    const [enrichment] = await db
-      .select({ id: t.familyMember.enrichmentId })
-      .from(t.familyMember)
+    const [existing] = await db
+      .select({ id: t.graphPath.enrichmentId })
+      .from(t.graphPath)
+      .where(eq(t.graphPath.kind, 'family'))
       .limit(1);
-    await db.insert(t.familyMember).values({
-      enrichmentId: enrichment!.id,
+    await db.insert(t.graphPath).values({
+      enrichmentId: existing!.id,
       rootEntityId: outsider,
-      memberEntityId: memberElsewhere,
+      terminalEntityId: memberElsewhere,
+      kind: 'family',
+      direction: 'down',
       hopDepth: 1,
     });
 
