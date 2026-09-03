@@ -100,6 +100,102 @@ const GET_ENTITY_LIMITS = {
   referencedByLimit: 20, // shrunk from 100 — unread
 } as const;
 
+/**
+ * The `relationships*` filter params `getEntity` also accepts, beyond the
+ * eleven limits above (ticket 01 item B, "Typed owner-edge read", SPEC
+ * §16.6). `relationshipsType` and `relationshipsSort` are the two the ticket
+ * names explicitly (`relationshipsSort: "-shares"`); the rest are every
+ * sibling the SDK's own `GetEntity` request type declares
+ * (`node_modules/@sayari/sdk/api/resources/entity/client/requests/
+ * GetEntity.d.ts`), admitted so unit 01b's typed owner-edge read is not stuck
+ * re-deriving them later.
+ *
+ * **`relationshipsType` is singular, not `string[]`.** The SDK's own type is
+ * `relationshipsType?: Sayari.Relationships` — no array form, unlike
+ * `relationshipsCountry`/`relationshipsArrivalCountry`/`relationshipsPartnerRisk`
+ * below, which the SDK types as `T | T[]` and branches on `Array.isArray` at
+ * the wire. That asymmetry is also why ticket 01's own text calls for "one
+ * type per call" — the SDK genuinely cannot ask for more than one at once.
+ *
+ * No defaults for any of these, for the same reason the eleven limits above
+ * are the only entries in `GET_ENTITY_LIMITS`: a new default would sit inside
+ * `params_hash` for every existing `getEntity` call, including the recorded
+ * ones, invalidating them all.
+ */
+type GetEntityRelationshipParams = {
+  relationshipsType?: string;
+  relationshipsSort?: string;
+  relationshipsStartDate?: string;
+  relationshipsEndDate?: string;
+  relationshipsMinShares?: number;
+  relationshipsCountry?: string | string[];
+  relationshipsArrivalCountry?: string | string[];
+  relationshipsArrivalState?: string;
+  relationshipsArrivalCity?: string;
+  relationshipsDepartureCountry?: string | string[];
+  relationshipsDepartureState?: string;
+  relationshipsDepartureCity?: string;
+  relationshipsPartnerName?: string;
+  relationshipsPartnerRisk?: string | string[];
+  relationshipsHsCode?: string;
+};
+
+/**
+ * The `getEntity` raw fallback's query string — every wire key copied from
+ * the SDK's own `entity.getEntity` (`node_modules/@sayari/sdk/api/resources/
+ * entity/client/Client.js`, the `_queryParams[...]` assignments in
+ * `getEntity`). The dotted keys (`attributes.address.limit`,
+ * `relationships.type`, `possibly_same_as.limit`, `referenced_by.limit`) are
+ * the API's own, and their casing is **not consistent** — `attributes.*` and
+ * `possibly_same_as`/`referenced_by` segments are snake_case, `relationships`
+ * sub-keys past `.limit`/`.type`/`.sort` are camelCase
+ * (`relationships.startDate`, `relationships.arrivalCountry`) — copied
+ * exactly rather than normalised, because normalising it would be exactly
+ * the silent-wrong-key failure this item exists to fix (BUILD-NOTES 31):
+ * before this, the raw path sent none of them, so a caller falling back here
+ * got the server's unfiltered default without complaint.
+ */
+export function getEntityQuery(rest: Record<string, unknown>) {
+  return {
+    'attributes.additional_information.limit': rest.attributesAdditionalInformationLimit as
+      | number
+      | undefined,
+    'attributes.address.limit': rest.attributesAddressLimit as number | undefined,
+    'attributes.business_purpose.limit': rest.attributesBusinessPurposeLimit as
+      | number
+      | undefined,
+    'attributes.company_type.limit': rest.attributesCompanyTypeLimit as number | undefined,
+    'attributes.country.limit': rest.attributesCountryLimit as number | undefined,
+    'attributes.identifier.limit': rest.attributesIdentifierLimit as number | undefined,
+    'attributes.name.limit': rest.attributesNameLimit as number | undefined,
+    'attributes.status.limit': rest.attributesStatusLimit as number | undefined,
+    'relationships.limit': rest.relationshipsLimit as number | undefined,
+    'relationships.type': rest.relationshipsType as string | undefined,
+    'relationships.sort': rest.relationshipsSort as string | undefined,
+    'relationships.startDate': rest.relationshipsStartDate as string | undefined,
+    'relationships.endDate': rest.relationshipsEndDate as string | undefined,
+    'relationships.minShares': rest.relationshipsMinShares as number | undefined,
+    'relationships.country': rest.relationshipsCountry as string | string[] | undefined,
+    'relationships.arrivalCountry': rest.relationshipsArrivalCountry as
+      | string
+      | string[]
+      | undefined,
+    'relationships.arrivalState': rest.relationshipsArrivalState as string | undefined,
+    'relationships.arrivalCity': rest.relationshipsArrivalCity as string | undefined,
+    'relationships.departureCountry': rest.relationshipsDepartureCountry as
+      | string
+      | string[]
+      | undefined,
+    'relationships.departureState': rest.relationshipsDepartureState as string | undefined,
+    'relationships.departureCity': rest.relationshipsDepartureCity as string | undefined,
+    'relationships.partnerName': rest.relationshipsPartnerName as string | undefined,
+    'relationships.partnerRisk': rest.relationshipsPartnerRisk as string | string[] | undefined,
+    'relationships.hsCode': rest.relationshipsHsCode as string | undefined,
+    'possibly_same_as.limit': rest.possiblySameAsLimit as number | undefined,
+    'referenced_by.limit': rest.referencedByLimit as number | undefined,
+  };
+}
+
 export const sayariGetEntity = defineEndpoint({
   source: 'sayari',
   endpoint: 'entity.getEntity',
@@ -112,12 +208,18 @@ export const sayariGetEntity = defineEndpoint({
     const client = getSayariClient(deps.credentials);
     return viaSdkWithRawFallback(
       () => client.entity.getEntity(String(id), rest as never, requestOptions(deps)),
-      () => ({ path: `/v1/entity/${encodeURIComponent(String(id))}` }),
+      () => ({
+        path: `/v1/entity/${encodeURIComponent(String(id))}`,
+        query: getEntityQuery(rest),
+      }),
       deps,
     );
   },
   projection: entitySchema,
-} as EndpointDef<{ id: string } & Partial<typeof GET_ENTITY_LIMITS>, z.infer<typeof entitySchema>>);
+} as EndpointDef<
+  { id: string } & Partial<typeof GET_ENTITY_LIMITS> & GetEntityRelationshipParams,
+  z.infer<typeof entitySchema>
+>);
 
 /**
  * `entity.entitySummary` (SPEC §9 renames row 5; ticket 01 item A2) — cheaper
