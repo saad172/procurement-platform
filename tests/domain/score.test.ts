@@ -266,42 +266,205 @@ describe('the disqualifying badge', () => {
   });
 });
 
-describe('Ownership exposure names WHY it is unknown', () => {
-  const noOwners = () => completeInput({ owners: [] });
+/** One `networkPaths` entry, for the Network exposure tests below. */
+type NetworkPathInput = NonNullable<SupplierScoringInput['networkPaths']>[number];
+const networkPath = (
+  entityId: string,
+  opts: {
+    hopDepth?: number;
+    level?: RiskFactor['level'];
+    viaOwnership?: boolean;
+    kind?: 'family' | 'watchlist';
+    sanctioned?: boolean;
+    label?: string;
+  } = {},
+): NetworkPathInput => ({
+  entityId,
+  label: opts.label ?? entityId.toUpperCase(),
+  hopDepth: opts.hopDepth ?? 1,
+  sanctioned: opts.sanctioned ?? false,
+  riskFactors: opts.level ? [factor('forced_labor_something_direct', opts.level)] : [],
+  viaOwnership: opts.viaOwnership ?? true,
+  kind: opts.kind ?? 'family',
+});
 
-  it('distinguishes a real absence', () => {
-    const r = scoreSupplier(noOwners());
+const networkOutcomeOf = (r: ReturnType<typeof scoreSupplier>) =>
+  r.criteria.find((c) => c.key === 'network_exposure')!.outcome;
+
+describe('Network exposure names WHY it is unknown — reversed from the prior Ownership exposure', () => {
+  // Both automatic reads empty: no owners, no family/watchlist Paths.
+  const bothReadsEmpty = () => completeInput({ owners: [], networkPaths: [] });
+
+  it('is unknown when the window missed owner edges relationshipCount says exist', () => {
+    const r = scoreSupplier(bothReadsEmpty());
     // The complete fixture claims one owner edge in relationshipCount, so with
-    // no owners passed this reads as a truncated window, not an absence.
-    const ownership = r.criteria.find((c) => c.key === 'network_exposure')!;
-    expect(ownership.outcome.status).toBe('unknown');
-    if (ownership.outcome.status === 'unknown') {
-      expect(ownership.outcome.reason).toMatch(/did not look far enough/);
-    }
+    // no owners/Paths passed this reads as a truncated window, not a clean answer.
+    const outcome = networkOutcomeOf(r);
+    expect(outcome.status).toBe('unknown');
+    if (outcome.status === 'unknown') expect(outcome.reason).toMatch(/did not look far enough/);
   });
 
-  it('distinguishes a split record from an absent owner', () => {
-    const input = noOwners();
+  it('is unknown when psaCount says the record is split', () => {
+    const input = bothReadsEmpty();
     const r = scoreSupplier({
       ...input,
       profile: { ...input.profile!, relationshipCount: {}, psaCount: 33 },
     });
-    const ownership = r.criteria.find((c) => c.key === 'network_exposure')!;
-    if (ownership.outcome.status === 'unknown') {
-      expect(ownership.outcome.reason).toMatch(/split across 33 records/);
-    }
+    const outcome = networkOutcomeOf(r);
+    expect(outcome.status).toBe('unknown');
+    if (outcome.status === 'unknown') expect(outcome.reason).toMatch(/split across 33 records/);
   });
 
-  it('says plainly when the graph records no owner', () => {
-    const input = noOwners();
+  it('is unknown when data confidence is thin', () => {
+    const input = bothReadsEmpty();
+    const r = scoreSupplier({
+      ...input,
+      profile: { ...input.profile!, relationshipCount: {}, psaCount: 0, distinctSourceCount: 1 },
+      presentEnrichments: [],
+    });
+    const outcome = networkOutcomeOf(r);
+    expect(outcome.status).toBe('unknown');
+    if (outcome.status === 'unknown') expect(outcome.reason).toMatch(/thin/);
+  });
+
+  it('**reverses the prior precondition**: an empty answer with adequate coverage scores 100, not unknown', () => {
+    const input = bothReadsEmpty();
     const r = scoreSupplier({
       ...input,
       profile: { ...input.profile!, relationshipCount: {}, psaCount: 0 },
     });
-    const ownership = r.criteria.find((c) => c.key === 'network_exposure')!;
-    if (ownership.outcome.status === 'unknown') {
-      expect(ownership.outcome.reason).toMatch(/records no owner/);
+    const outcome = networkOutcomeOf(r);
+    expect(outcome.status).toBe('value');
+    if (outcome.status === 'value') {
+      expect(outcome.value).toBe(100);
+      // Coverage rides along even on a clean 100, so an Assessment can caveat it.
+      expect(outcome.rawInputs.familyCoverage).toBeDefined();
+      expect(outcome.rawInputs.watchlistCoverage).toBeDefined();
     }
+  });
+});
+
+describe('Network exposure — hop-discounted deductions', () => {
+  it('deducts a family member at full weight at hop 1', () => {
+    const r = scoreSupplier(
+      completeInput({
+        owners: [],
+        networkPaths: [networkPath('m1', { hopDepth: 1, level: 'high', kind: 'family' })],
+      }),
+    );
+    const outcome = networkOutcomeOf(r);
+    expect(outcome.status).toBe('value');
+    if (outcome.status === 'value') expect(outcome.value).toBe(60); // 100 - 40
+  });
+
+  it('halves the deduction at hop 2, quarters at hop 3, eighths at hop 4', () => {
+    const at = (hopDepth: number) => {
+      const r = scoreSupplier(
+        completeInput({
+          owners: [],
+          networkPaths: [networkPath('m1', { hopDepth, level: 'high', kind: 'family' })],
+        }),
+      );
+      const outcome = networkOutcomeOf(r);
+      return outcome.status === 'value' ? outcome.value : null;
+    };
+    expect(at(1)).toBe(60); // 100 - 40×1
+    expect(at(2)).toBe(80); // 100 - 40×½
+    expect(at(3)).toBe(90); // 100 - 40×¼
+    expect(at(4)).toBe(95); // 100 - 40×⅛
+  });
+
+  it('names Yazaki’s two family members with their levels and hop discounts (ticket 03 acceptance example)', () => {
+    const r = scoreSupplier(
+      completeInput({
+        owners: [],
+        networkPaths: [
+          networkPath('yazaki-romania', {
+            label: 'YAZAKI ROMANIA',
+            hopDepth: 1,
+            level: 'high',
+            kind: 'family',
+          }),
+          networkPath('yazaki-morocco', {
+            label: 'YAZAKI MOROCCO',
+            hopDepth: 2,
+            level: 'elevated',
+            kind: 'family',
+          }),
+        ],
+      }),
+    );
+    const outcome = networkOutcomeOf(r);
+    expect(outcome.status).toBe('value');
+    if (outcome.status !== 'value') return;
+    const members = outcome.rawInputs.members as {
+      label: string;
+      level: string;
+      hopDepth: number;
+      hopDiscount: number;
+      points: number;
+    }[];
+    const romania = members.find((m) => m.label === 'YAZAKI ROMANIA')!;
+    const morocco = members.find((m) => m.label === 'YAZAKI MOROCCO')!;
+    expect(romania).toMatchObject({ level: 'high', hopDepth: 1, hopDiscount: 1, points: 40 });
+    expect(morocco).toMatchObject({ level: 'elevated', hopDepth: 2, hopDiscount: 0.5, points: 10 });
+    expect(outcome.value).toBe(50); // 100 - 40 - 10
+  });
+
+  it('never deducts twice for the same entity: worst level, shortest qualifying hop, once', () => {
+    // Reached at hop 2 via the family read AND hop 1 via the watchlist read —
+    // one entity, two Paths. Deducts once, at the shorter (hop 1) discount.
+    const r = scoreSupplier(
+      completeInput({
+        owners: [],
+        networkPaths: [
+          networkPath('dup', { hopDepth: 2, level: 'elevated', kind: 'family' }),
+          networkPath('dup', { hopDepth: 1, level: 'high', kind: 'watchlist' }),
+        ],
+      }),
+    );
+    const outcome = networkOutcomeOf(r);
+    expect(outcome.status).toBe('value');
+    if (outcome.status !== 'value') return;
+    expect(outcome.rawInputs.members).toHaveLength(1);
+    expect(outcome.value).toBe(60); // one deduction: 100 - 40×1, the worse level at the shorter hop
+  });
+
+  it('deducts state ownership at hop 1, hop-discounted like everything else', () => {
+    const r = scoreSupplier(
+      completeInput({
+        owners: [{ entityId: 'o1', label: 'State Parent', riskFactors: [], isStateOwned: true }],
+        networkPaths: [],
+      }),
+    );
+    const outcome = networkOutcomeOf(r);
+    expect(outcome.status).toBe('value');
+    if (outcome.status === 'value') expect(outcome.value).toBe(75); // 100 - 25
+  });
+});
+
+describe('Network exposure — trade edges are shown, never deducted', () => {
+  it('does not deduct an entity reached only through a non-ownership hop', () => {
+    const r = scoreSupplier(
+      completeInput({
+        owners: [],
+        networkPaths: [
+          networkPath('trade-partner', {
+            hopDepth: 2,
+            level: 'high',
+            kind: 'watchlist',
+            viaOwnership: false,
+          }),
+        ],
+      }),
+    );
+    const outcome = networkOutcomeOf(r);
+    expect(outcome.status).toBe('value');
+    if (outcome.status !== 'value') return;
+    expect(outcome.value).toBe(100);
+    expect(outcome.rawInputs.members).toEqual([]);
+    const shown = outcome.rawInputs.shown as { entityId: string }[];
+    expect(shown.map((s) => s.entityId)).toEqual(['trade-partner']);
   });
 });
 
