@@ -13,6 +13,10 @@
  *
  * An unmatched token is **named**, because "a number does not check out" is not
  * something a model can act on and "824 does not appear in your evidence" is.
+ * So is the **rule** and the **nearest stored value within 5%**: the objection
+ * once read *"write the figure as it is stored"*, which the model obeyed by
+ * copying floats whole (*"scores 24.298827397902198"*) although rounding was
+ * always accepted, and it named no alternative to a figure it refused.
  *
  * **The rounding is a tolerance, not an equality on a rounded float.** It was
  * written as `Math.round(v * 10 ** d) / 10 ** d === written`, and equality on
@@ -201,17 +205,52 @@ export function checkNumberFidelity(
     });
 
     if (!matched) {
+      const near = nearestCandidate(candidates.numbers, value, isPercent);
       failures.push({
         token: match[0].trim(),
         kind: 'number',
         message:
           `${match[0].trim()} matches no value in the frozen inputs or on any row this sentence cites. ` +
-          `Write the figure as it is stored, or cite the row that carries it.`,
+          `A figure must appear in the frozen inputs or on a row this sentence cites, rounded to the ` +
+          `decimals you wrote` +
+          (near === undefined ? '. ' : `; the nearest stored value is ${near}. `) +
+          `Write a figure the evidence carries, or cite the row that carries it.`,
       });
     }
   }
 
   return failures;
+}
+
+/**
+ * The stored value the sentence most nearly wrote, within 5% of it.
+ *
+ * *"88.4 matches no value"* tells the model that something is wrong and not
+ * what: the figure it meant is usually sitting one rounding away, and finding 152
+ * measured the cost of not saying so — three Rounds on one figure and a
+ * terminated Job. 5% is deliberately narrow: a value further off than that is
+ * not the figure the sentence was reaching for, and naming it would invite the
+ * model to write a number it never had evidence for.
+ *
+ * A percentage is measured against both readings, because the check accepts
+ * both: *"2.5%"* matches a stored 2.5 or a stored 0.025.
+ */
+function nearestCandidate(
+  candidates: readonly NumberCandidate[],
+  value: number,
+  isPercent: boolean,
+): number | undefined {
+  const window = Math.abs(value) * 0.05;
+  let best: { value: number; distance: number } | undefined;
+  for (const candidate of candidates) {
+    const distance = Math.min(
+      Math.abs(candidate.value - value),
+      isPercent ? Math.abs(candidate.value * 100 - value) : Number.POSITIVE_INFINITY,
+    );
+    if (distance > window) continue;
+    if (best === undefined || distance < best.distance) best = { value: candidate.value, distance };
+  }
+  return best?.value;
 }
 
 function overlaps(ranges: readonly [number, number][], start: number, end: number): boolean {

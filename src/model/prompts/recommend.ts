@@ -25,7 +25,10 @@ THE CITATION RULE, WHICH IS NOT NEGOTIABLE
 Every sentence carries at least one citation to a stored row. You may not cite a
 sentence, an Assessment, or the analyst's brief — those are prose, and a citation
 points at evidence. Every number must be traceable to a frozen input or a cited
-row, at the precision you wrote it.
+row, at the precision you wrote it. Write a stored figure rounded to one decimal
+unless the stored value has fewer — the check accepts any figure that rounds to
+the decimals you wrote, so a stored 20.190218190717246 is written "20.2" and
+copying all fifteen decimals buys nothing.
 
 A NUMBER YOU COUNTED IS NOT A NUMBER YOU WERE GIVEN
 If you tally rows yourself — how many family members carry a factor, how many

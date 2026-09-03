@@ -3,7 +3,7 @@
     "name": "model/two-turn-tool-loop",
     "recordedAt": "2026-09-01T18:51:32.751Z",
     "loopHashes": {
-      "assess": "34194f60526de9b3462c7cdf14844e36f0aa17a87fff819e81d353c2cb392e32"
+      "assess": "e0e4ecf6b49bb173b7ac090460132e33cf457fef878338930c9cbc63247aae46"
     },
     "toolDigests": {
       "assess": "smoke"
