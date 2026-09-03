@@ -3,6 +3,7 @@ import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import type { EntitySource, FamilyMemberRisk } from '@/domain/family';
 import type { ParsedEdge } from '@/domain/parse-relationships';
+import { isPossiblySameAs } from '@/domain/relationships';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
 import type { SayariEntity, SayariTraversalPath } from '@/upstream/projections/sayari';
 import { upsertEntity } from './resolve';
@@ -305,7 +306,11 @@ export function summarisePath(path: unknown, rootEntityId: string): PathHop[] {
  *
  * **One rule for every kind and every caller** — the automatic reads
  * (`enrich.ts`) and Deep Traversal (`traverse.ts`) both route through this
- * function now, rather than one of them counting raw path length.
+ * function now, rather than one of them counting raw path length. The psa
+ * check itself is `isPossiblySameAs` (`src/domain/relationships.ts`), shared
+ * with `viaOwnership` (`src/db/queries/family-paths.ts`) so the two callers
+ * that both need "is this hop sideways, not down" can never drift apart on
+ * what a psa hop is.
  *
  * Floored at 1, because a member is never zero hops from the root: the root is
  * not its own family member, and a path we cannot read at all is at least one
@@ -313,7 +318,7 @@ export function summarisePath(path: unknown, rootEntityId: string): PathHop[] {
  */
 export function ownershipHopDepth(path: SayariTraversalPath['path']): number {
   if (!Array.isArray(path)) return 1;
-  const owned = path.filter((hop) => hop?.field !== 'possibly_same_as').length;
+  const owned = path.filter((hop) => !isPossiblySameAs(hop?.field ?? '')).length;
   return Math.max(1, owned);
 }
 

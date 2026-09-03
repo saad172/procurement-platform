@@ -130,6 +130,33 @@ export function isOwnership(type: string): boolean {
   return RELATIONSHIP_TYPES[type]?.ownership ?? false;
 }
 
+/**
+ * A `possibly_same_as` step: Sayari's own record-linking between two records
+ * of the same company, not an assertion that one company owns, controls, or
+ * even relates to another. It is absent from `RELATIONSHIP_TYPES` on purpose
+ * — `isOwnership` already answers `false` for it, same as any other
+ * unclassified type — but that is not the whole story a caller walking a
+ * **chain** of edges needs. `isOwnership(type) === false` alone cannot tell
+ * "sideways, skip this hop and keep judging the rest of the chain" apart from
+ * "lateral, this hop breaks the chain" (a `ships_to` hop genuinely means the
+ * Path is no longer ownership all the way; a `possibly_same_as` hop means
+ * nothing at all about ownership, in either direction).
+ *
+ * Two callers need exactly that distinction and now share this one predicate
+ * rather than each hard-coding the string: `ownershipHopDepth`
+ * (`src/jobs/family-members.ts`) skips a psa step when counting how many
+ * ownership hops deep a member is, and `viaOwnership`
+ * (`src/db/queries/family-paths.ts`) skips one when deciding whether a Path
+ * is current ownership/control all the way. Both exist because Sayari splits
+ * a larger company across multiple records, so a genuinely direct ownership
+ * edge routinely arrives with one or two psa hops in between rather than as
+ * a rare exception (`src/upstream/endpoints.ts`'s doc comment on
+ * `sayariTraversalOwnership`).
+ */
+export function isPossiblySameAs(type: string): boolean {
+  return type === 'possibly_same_as';
+}
+
 /** Which way it points, defaulting an unclassified type to `lateral`. */
 export function directionOf(type: string): EdgeDirection {
   return RELATIONSHIP_TYPES[type]?.direction ?? 'lateral';
