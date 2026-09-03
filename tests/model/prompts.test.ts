@@ -39,6 +39,7 @@ function evidence(unknownCriteria: string[]): ResolvedEvidence {
         {
           name: 'Alpha',
           matchAccepted: true,
+          entityId: 'entity-alpha',
           categoryIds: ['cat-1'],
           categoriesWithScore: ['cat-1'],
           disqualifying: false,

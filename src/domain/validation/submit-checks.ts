@@ -43,6 +43,15 @@ export type ResolvedEvidence = {
     {
       name: string;
       matchAccepted: boolean;
+      /**
+       * The accepted Profile's entity id, or `null` with no accepted Match —
+       * the same nullability `SupplierSnapshot.entityId` carries
+       * (`src/db/queries/shortlist.ts`). Added for check 9 (network spec §7):
+       * the recommend Job needs a Pick's entity id to call
+       * `findAndWriteShortestPath` against the award's, and the evidence
+       * already resolved per Supplier is where every other Pick fact lives.
+       */
+      entityId: string | null;
       categoryIds: string[];
       /**
        * The Categories this Supplier has a Score on — **per Category, because a
@@ -71,6 +80,21 @@ export type ResolvedEvidence = {
 };
 
 export type Objection = { check: string; message: string };
+
+/**
+ * One Concentration (network spec §3, §7): the award and one other Pick in
+ * the same Recommendation, joined by a Path `findAndWriteShortestPath`
+ * (`src/jobs/shortest-path.ts`) found between them. Built by the recommend
+ * Job's `validateRecommendDraft` — never by this file reaching into `upstream`
+ * itself, which is why check 9 below takes it as a plain array rather than
+ * computing it.
+ */
+export type ConcentrationPair = {
+  awardSupplierId: string;
+  secondSourceSupplierId: string;
+  /** The shared entity the Path terminates at — cited as `{ entityId }`. */
+  terminalEntityId: string;
+};
 
 /** Sections an Assessment must always have, with `limits` never empty. */
 const ASSESSMENT_REQUIRED = ['identity', 'limits'] as const;
@@ -184,6 +208,8 @@ export function checkRecommendation(args: {
   sentences: SubmittedSentence[];
   categoryId: string;
   evidence: ResolvedEvidence;
+  /** Every Concentration this Round's picks turned up (§7). Defaults to none. */
+  concentrations?: ConcentrationPair[];
 }): Objection[] {
   const objections: Objection[] = [];
 
@@ -205,6 +231,9 @@ export function checkRecommendation(args: {
 
   objections.push(...checkPickLegality(args.picks, args.sentences, args.categoryId, args.evidence));
   objections.push(...checkUpstreamDisclosure(args.sentences, args.evidence));
+  objections.push(
+    ...checkConcentration(args.picks, args.sentences, args.concentrations ?? [], args.evidence),
+  );
 
   // A condition attaches to the pick it conditions.
   const pickIds = new Set(args.picks.map((p) => p.supplierId));
@@ -540,6 +569,73 @@ function namesSupplier(text: string, name: string, everyName: readonly string[])
     .flatMap((other) => occurrencesOf(text, other));
 
   return mine.some(([start, end]) => !inside.some(([from, to]) => from <= start && end <= to));
+}
+
+// ── Check 9: concentration ───────────────────────────────────────────────────
+
+/**
+ * The award and another Pick joined by a Path is a Concentration (network
+ * spec §3, §7) — a shared parent, or one owning the other — that a Pick's own
+ * Score says nothing about. Silence is the failure this closes, and it is
+ * check 8's shape exactly: an unresolved fact must not vanish at the
+ * boundary, resolved either by naming it or by the fact itself no longer
+ * holding, re-evaluated fresh on every Round because this check, like check
+ * 8, reads nothing but the current draft and the pairs `validateRecommendDraft`
+ * (`src/jobs/recommend.ts`) computed for it — never `upstream` itself.
+ *
+ * Resolved when EITHER:
+ *
+ * 1. Conditions or open questions **name the second source** — `namesSupplier`,
+ *    exactly as check 8 requires a Supplier be named rather than merely
+ *    implied. Naming the second source (there is at most one award per
+ *    Recommendation — `checkPickLegality` — so it alone identifies which
+ *    Concentration is meant) is enough; the objection's own message tells the
+ *    writer which entity id to cite so the Path is not just named but backed.
+ * 2. The **second source has been re-roled** away from `second_source` in
+ *    THIS Round's own picks — mirroring how check 8's disclosure is judged
+ *    against the state `evidence` carries for the Round being validated, not
+ *    against any earlier Round's. (In practice this branch rarely fires here:
+ *    `validateRecommendDraft` only asks `findAndWriteShortestPath` about picks
+ *    that are `second_source` *in this Round*, so a re-roled pick usually
+ *    never reaches `concentrations` at all. It stays as an explicit condition
+ *    — not folded into "concentrations already excludes it" — so this check
+ *    does not silently depend on its caller's own filtering to stay correct.)
+ */
+function checkConcentration(
+  picks: readonly SubmittedPick[],
+  sentences: readonly SubmittedSentence[],
+  concentrations: readonly ConcentrationPair[],
+  evidence: ResolvedEvidence,
+): Objection[] {
+  if (concentrations.length === 0) return [];
+
+  const disclosureText = sentences
+    .filter((s) => s.section === 'conditions' || s.section === 'open_questions')
+    .map((s) => s.text.toLowerCase())
+    .join(' ');
+  const everyName = [...evidence.suppliers.values()].map((s) => s.name.toLowerCase());
+
+  const objections: Objection[] = [];
+  for (const pair of concentrations) {
+    const stillSecondSource = picks.some(
+      (p) => p.supplierId === pair.secondSourceSupplierId && p.role === 'second_source',
+    );
+    if (!stillSecondSource) continue; // Resolved — re-roled away.
+
+    const secondSourceName =
+      evidence.suppliers.get(pair.secondSourceSupplierId)?.name ?? pair.secondSourceSupplierId;
+    if (namesSupplier(disclosureText, secondSourceName.toLowerCase(), everyName)) continue; // Resolved — named.
+
+    const awardName = evidence.suppliers.get(pair.awardSupplierId)?.name ?? pair.awardSupplierId;
+    objections.push({
+      check: 'concentration',
+      message:
+        `${awardName} (the award) and ${secondSourceName} (a second source) are joined by a Path — ` +
+        `a Concentration. Name ${secondSourceName} in a conditions or open_questions sentence, citing ` +
+        `entityId: ${pair.terminalEntityId} for the Path, or re-role ${secondSourceName} away from second_source.`,
+    });
+  }
+  return objections;
 }
 
 const isNameCharacter = (character: string | undefined): boolean =>
