@@ -259,7 +259,12 @@ export const usageEvent = pgTable(
     /** `sayari` | `gleif` | … for upstream rows; null for model rows. */
     source: upstreamSource('source'),
     endpoint: text('endpoint').notNull(),
-    /** Sayari's own endpoint-class bucket, for reconciling against `getUsage()`. */
+    /**
+     * The endpoint class this row belongs to, named the way Sayari's own
+     * `info.getUsage()` counters are (R1) — but no code here calls that
+     * endpoint, so this labels our own metering only, never a live
+     * reconciliation against Sayari's account-wide figures.
+     */
     bucket: text('bucket'),
     via: upstreamVia('via'),
 

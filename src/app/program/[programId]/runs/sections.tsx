@@ -107,10 +107,12 @@ function LedgerRow({ row, programId }: { row: Data['runs'][number]; programId: s
 /**
  * ── The working ──
  *
- * Sayari's own usage block sits ONCE at the foot of this page and is
- * identical on every program, because it is account-scoped. The two numbers
- * are not the same kind of thing, so they are shown separately with no delta
- * anywhere: reconciliation stays a human act.
+ * The "Your Sayari account" card at the foot of this page is static copy,
+ * identical on every program — it does not call Sayari (R1: `info.getUsage`
+ * was never wired in, ticket 01 item D) and carries no fetched number. It
+ * exists to tell a reader that Sayari's own account-wide counters are a
+ * different kind of figure from the ledger above, checked directly in
+ * Sayari's own interface, and never netted against this page's own count.
  */
 export function TheWorking({ data }: { data: Data }) {
   const { insights } = data;
@@ -156,10 +158,11 @@ export function TheWorking({ data }: { data: Data }) {
       <h3>Your Sayari account</h3>
       <section className="card">
         <p className="note" style={{ marginTop: 0 }}>
-          Sayari reports seven endpoint-class counters, <strong>account-wide</strong>, over a
-          rolling year — with no program dimension and no dollar figure. It is a different number
-          from the count above, scoped differently and lagging, so the two are never netted against
-          each other.
+          This app does not call Sayari&rsquo;s own usage endpoint — nothing on this page is
+          fetched from Sayari. Checked directly in Sayari&rsquo;s own account, it reports seven
+          endpoint-class counters, <strong>account-wide</strong>, over a rolling year — with no
+          program dimension and no dollar figure. It is a different number from the count above,
+          scoped differently and lagging, so the two are never netted against each other.
         </p>
         <p className="note" style={{ marginBottom: 0 }}>
           <code className="mono">negativeNews</code> has no bucket there at all, so it does not
