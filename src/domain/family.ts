@@ -1,11 +1,4 @@
-import {
-  dedupePsaAgainstBase,
-  effectiveLevel,
-  isCountryDerived,
-  parseRiskObject,
-  type RiskFactor,
-  type RiskLevel,
-} from './scoring/risk-factors';
+import { parseRiskObject, type RiskFactor, type RiskLevel } from './scoring/risk-factors';
 
 /**
  * The Corporate family (SPEC §8).
@@ -67,149 +60,27 @@ export type FamilyCoverage = {
 };
 
 /**
- * The Family exposure badge, in **three** states — and **the state names carry
- * the decision** (SPEC §8.4).
+ * **Family exposure no longer badges separately** (network spec §5, ticket
+ * 03 unit 03b, CONTEXT.md's *Family exposure*). This file used to compute a
+ * three-state badge here (`computeFamilyExposure`/`describeFamilyExposure`,
+ * `not_covered` / `no_exposure_found` / `exposure_found`) from exactly the
+ * `FamilyMemberRisk[]`/`FamilyCoverage` shapes still defined above — that
+ * badge, and its Corporate-family-only scope, is gone. A Corporate family
+ * member's own risk is now folded into `networkExposure`
+ * (`src/domain/scoring/criteria.ts`) alongside the watchlist walk and the
+ * Supplier's own one-hop owners, deducted once per entity at its worst level
+ * with a hop discount — never twice, and never in a separate ink from the
+ * rest of the Network. `FamilyMemberRisk`/`FamilyCoverage` themselves stay:
+ * `family-members.ts`'s `writeGraphPaths` still returns the former, and
+ * `derive-supplier-page.ts`'s `deriveFamilyCoverage` (the Supplier page's own
+ * concern, not this ticket's) still uses the latter for the coverage
+ * sentence beside the diagram.
  *
- * Collapsing *not covered* into *no exposure found* would report an empty
- * ownership graph in the same ink as a genuinely clean family. Six of twelve
- * sampled families returned zero members, including several that certainly have
- * subsidiaries, so the two are not rare edge cases — they are most of the roster.
+ * `rank`, below, is `unionRiskFactors`' own comparator now — it moved with
+ * that function's doc comment rather than the removed badge's, since that is
+ * its one remaining caller.
  */
-type Covered = { explored: number; reachable: number | null; partial: boolean };
-
-/** One member the badge names, with the hop that reached it. */
-export type FamilyExposureMember = {
-  entityId: string;
-  label: string;
-  level: RiskLevel;
-  factors: string[];
-  /** Rendered beside the name, so hop 3 is visibly not hop 1. */
-  hopDepth: number;
-  fromDeepTraversal: boolean;
-};
-
-export type FamilyExposure =
-  | ({ state: 'not_covered' } & Covered)
-  | ({ state: 'no_exposure_found' } & Covered)
-  | ({
-      state: 'exposure_found';
-      worstLevel: RiskLevel;
-      membersWithExposure: number;
-      /** Named so a compliance sentence can cite the member's OWN entity. */
-      members: FamilyExposureMember[];
-    } & Covered);
-
-export function computeFamilyExposure(
-  members: readonly FamilyMemberRisk[],
-  coverage: FamilyCoverage,
-): FamilyExposure {
-  // The coverage precondition, applied unamended (SPEC §8.2): no family badge
-  // unless at least one member came back. An empty ownership graph is not a
-  // clean family — it is an unexplored one.
-  const covered: Covered = {
-    explored: coverage.explored,
-    reachable: coverage.reachable,
-    partial: coverage.partial ?? false,
-  };
-
-  if (members.length === 0) {
-    return { state: 'not_covered', ...covered };
-  }
-
-  const withExposure: FamilyExposureMember[] = [];
-  for (const member of members) {
-    const scored = dedupePsaAgainstBase(member.factors.filter((f) => !isCountryDerived(f)));
-    let worst: RiskLevel | undefined;
-    const names: string[] = [];
-    for (const factor of scored) {
-      const level = effectiveLevel(factor);
-      if (!level) continue;
-      names.push(factor.name);
-      if (!worst || rank(level) > rank(worst)) worst = level;
-    }
-    if (worst)
-      withExposure.push({
-        entityId: member.entityId,
-        label: member.label,
-        level: worst,
-        factors: names,
-        hopDepth: member.hopDepth,
-        fromDeepTraversal: member.fromDeepTraversal,
-      });
-  }
-
-  if (withExposure.length === 0) {
-    return { state: 'no_exposure_found', ...covered };
-  }
-
-  const worstLevel = withExposure.reduce<RiskLevel>(
-    (worst, m) => (rank(m.level) > rank(worst) ? m.level : worst),
-    'relevant',
-  );
-
-  return {
-    state: 'exposure_found',
-    worstLevel,
-    membersWithExposure: withExposure.length,
-    members: withExposure,
-    ...covered,
-  };
-}
-
 const rank = (level: RiskLevel) => (level === 'high' ? 3 : level === 'elevated' ? 2 : 1);
-
-/**
- * The sentence the badge renders as — *"high · 2 of 17 explored"*, and
- * *"17 of 2 275 nodes explored"* where the API said how far it searched.
- *
- * The phrasing is the honest one: an absent family member proves nothing,
- * because the read is capped.
- *
- * ## The coverage clause, stated as a rule
- *
- * Three cases, and the third is what a Deep Traversal added:
- *
- * 1. **The reachable set is known and larger than what we hold** — the API
- *    finished searching (`partial_results: false`) and reported how many nodes
- *    it visited. *"200 of 5 047 nodes explored"*.
- *
- *    **The unit is named, and that is load-bearing.** `explored_count` counts
- *    the nodes the traversal walked, not the companies in the family: the
- *    Yazaki ownership call reports 5,047 against a family of seventeen. Written
- *    as *"17 of 5,047 explored"* the sentence reads as a family of five
- *    thousand companies, which is a coverage claim nobody measured — the same
- *    class of quietly-wrong figure as the *"28 of 100 explored"* a doubled
- *    family once produced. Saying *nodes* is the difference between reporting
- *    how wide the search was and inventing how big the family is.
- * 2. **The walk stopped at a cap and the reachable set is unknown** — the API
- *    itself returned partial results, so the number it reports bounds nothing.
- *    *"200 explored to the cap"*: the count is a floor, and saying only *"200
- *    explored"* would let a walk that ran out of budget read as a family of
- *    exactly 200.
- * 3. **Neither** — the walk ran to the end of the graph. *"17 explored"*, and
- *    for once that is the whole family.
- *
- * Case 2 exists because a Deep Traversal is *defined* by its caps (CONTEXT:
- * *within a hop and node cap*), so hitting one is its ordinary outcome rather
- * than an error — and an ordinary outcome still has to be said out loud.
- */
-export function describeFamilyExposure(exposure: FamilyExposure): string {
-  const coverage =
-    exposure.reachable != null && exposure.reachable > exposure.explored
-      ? `${exposure.explored} of ${exposure.reachable.toLocaleString('en-US')} nodes explored`
-      : exposure.partial
-        ? `${exposure.explored} explored to the cap`
-        : `${exposure.explored} explored`;
-
-  switch (exposure.state) {
-    case 'not_covered':
-      return `Not covered — the ownership graph returned nobody. This is not the same as a clean family.`;
-    case 'no_exposure_found':
-      return `No exposure found across ${coverage}. An absent member proves nothing: the read is capped.`;
-    case 'exposure_found':
-      return `${exposure.worstLevel} · ${exposure.membersWithExposure} of ${coverage}`;
-  }
-}
 
 /**
  * **When two Sayari endpoints disagree about an entity's risk, union them with

@@ -5,7 +5,7 @@ import { DEFAULT_WEIGHTS } from '@/domain/score';
 import { supplierAnswer } from '@/domain/supplier-answer';
 import { describeSupplier } from '@/domain/supplier-description';
 import {
-  deriveFamilyCoverageAndExposure,
+  deriveFamilyCoverage,
   deriveFreshestAge,
   deriveOwnRiskFactorCount,
   deriveSupplierRank,
@@ -77,8 +77,8 @@ async function readSupplierRows(db: Database, programId: string, supplierId: str
   /**
    * `graph_path` of kind `family` (network spec §6), joined out to its
    * `entity_relationship` chain — the same `loadFamilyPaths` `get_supplier_family`
-   * reads (`src/tools/catalog/reads.ts`), so the page's exposure badge and its
-   * chain rows cannot disagree about what the family graph says. `discoveredByJob`
+   * reads (`src/tools/catalog/reads.ts`), so the page's coverage sentence and
+   * its chain rows cannot disagree about what the family graph says. `discoveredByJob`
    * still distinguishes a Deep Traversal find from the automatic read's own
    * (SPEC §8.5) — a Deep Traversal that walked **down** stays `kind = 'family'`
    * (migration 0013's own comment), so this column, not the row's presence
@@ -181,7 +181,7 @@ export async function loadSupplierPage(
     ? await loadShortlist(db, { programId, categoryId: firstCategory.id, weights: view.weights })
     : undefined;
 
-  const { coverage, exposure } = deriveFamilyCoverageAndExposure(
+  const coverage = deriveFamilyCoverage(
     familyPaths.map((p) => ({
       member: { id: p.terminalEntityId, label: p.label, country: p.country, risk: p.risk },
       hopDepth: p.hopDepth,
@@ -236,11 +236,14 @@ export async function loadSupplierPage(
     match,
     scored,
     coverage,
-    exposure,
-    // The citable chain rows sit beneath the exposure badge (network spec
-    // §6, §8) — every Path this family holds, each with its own ordered
-    // `entity_relationship` chain, ready for ticket 05's diagram to sit
-    // above.
+    // The citable chain rows sit beneath Network exposure's raw inputs
+    // (network spec §5, §6, §8) — every Path this family holds, each with
+    // its own ordered `entity_relationship` chain, ready for ticket 05's
+    // diagram to sit above. The Corporate-family-only exposure badge that
+    // used to sit here is gone; a member's own risk is scored once, in
+    // `networkExposure` (`src/domain/scoring/criteria.ts`) — the Network
+    // section 03e builds on this data replaces the old Corporate family
+    // section that read `coverage`/`exposure` together.
     familyChain: familyPaths,
     enrichments,
     version,

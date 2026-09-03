@@ -1,4 +1,4 @@
-import { computeFamilyExposure, type FamilyCoverage, type FamilyExposure } from './family';
+import type { FamilyCoverage } from './family';
 import { parseRiskObject } from './scoring/risk-factors';
 import { rankSentence, type ShortlistEntry } from '@/db/queries/shortlist';
 
@@ -29,9 +29,17 @@ type FamilyRow = {
 };
 
 /**
- * The Corporate family's coverage and exposure, combined — a Supplier page
- * always needs both together, and computing them apart risks the count and
- * the badge disagreeing about the same family.
+ * The Corporate family's coverage — how much of the family this Supplier
+ * page's chain rows and diagram show, out of how much the automatic read
+ * says is there.
+ *
+ * **Renamed from `deriveFamilyCoverageAndExposure`** (network spec §5, ticket
+ * 03 unit 03b): the `exposure` half — a three-state Family exposure badge,
+ * `computeFamilyExposure`/`describeFamilyExposure` — is gone. A family
+ * member's own risk is scored once, in `networkExposure`
+ * (`src/domain/scoring/criteria.ts`), alongside the watchlist walk and the
+ * Supplier's own owners; this function is left with exactly what it still
+ * owns, the coverage sentence beside the diagram (network spec §8).
  *
  * **The coverage figures are read, not counted.** `exploredCount` is what the
  * traversal itself reported; counting rows instead answers a different
@@ -39,29 +47,8 @@ type FamilyRow = {
  * number (BUILD-NOTES: the family stored twice for Bosch and Magna once made
  * the badge read *"28 of 100 explored"* against a truth of 14 of 50).
  */
-export function deriveFamilyCoverageAndExposure(familyRows: readonly FamilyRow[]): {
-  coverage: FamilyCoverage;
-  exposure: FamilyExposure;
-} {
-  const coverage = widestCoverage(familyRows);
-
-  const exposure = computeFamilyExposure(
-    familyRows.map((row) => ({
-      entityId: row.member.id,
-      label: row.member.label,
-      country: row.member.country,
-      // `row.member.risk` already carries every endpoint's per-factor
-      // provenance — `upsertEntity` merges it on every write (SPEC §8.2 D5).
-      factors: parseRiskObject(row.member.risk),
-      hopDepth: row.hopDepth,
-      // Read off the row rather than assumed: a Deep Traversal writes into this
-      // same table and is distinguished by `discovered_by_job` (SPEC §8.5).
-      fromDeepTraversal: row.discoveredByJob != null,
-    })),
-    coverage,
-  );
-
-  return { coverage, exposure };
+export function deriveFamilyCoverage(familyRows: readonly FamilyRow[]): FamilyCoverage {
+  return widestCoverage(familyRows);
 }
 
 /**

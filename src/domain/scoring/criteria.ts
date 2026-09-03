@@ -18,9 +18,9 @@ import {
   effectiveLevel,
   isCountryDerived,
   isDisqualifying,
-  isTwinFactor,
   variantOf,
   type RiskFactor,
+  type RiskLevel,
 } from './risk-factors';
 import type { CriterionOutcome, DataConfidenceBand, SupplierScoringInput } from './types';
 
@@ -191,132 +191,325 @@ export function complianceRisk(
   );
 }
 
-export const OWNERSHIP_ANCHOR_LINE =
-  'starts at 100; each current one-hop owner deducts on its own worst level (high −40, elevated −20, relevant −8), state ownership −25, floored at 0';
+export const NETWORK_ANCHOR_LINE =
+  'starts at 100; each entity on a current ownership/control Path deducts once, at its worst level × a hop discount (high −40, elevated −20, relevant −8; hop1 ×1, hop2 ×½, hop3 ×¼, hop4 ×⅛), state ownership −25 at hop1 × the same discount; trade edges are shown, never deducted; floored at 0';
+
+/** hop1 ×1, hop2 ×½, hop3 ×¼, hop4 ×⅛ (network spec §5) — clamped to this range, since the watchlist read's own `maxDepth: 4` and the family read's psa-routed depth are both this ticket's outer bound. */
+const HOP_DISCOUNT: Record<1 | 2 | 3 | 4, number> = { 1: 1, 2: 0.5, 3: 0.25, 4: 0.125 };
+
+function hopDiscountFor(hopDepth: number): number {
+  const clamped = Math.max(1, Math.min(4, Math.round(hopDepth))) as 1 | 2 | 3 | 4;
+  return HOP_DISCOUNT[clamped];
+}
+
+function worstLevel(factors: readonly RiskFactor[]): RiskLevel | undefined {
+  const levels = factors.map(effectiveLevel).filter((l): l is NonNullable<typeof l> => l != null);
+  if (levels.includes('high')) return 'high';
+  if (levels.includes('elevated')) return 'elevated';
+  if (levels.includes('relevant')) return 'relevant';
+  return undefined;
+}
+
+const levelRank = (level: RiskLevel | undefined): number =>
+  level === 'high' ? 3 : level === 'elevated' ? 2 : level === 'relevant' ? 1 : 0;
+
+/** How many owner-shaped edges `relationshipCount` says exist, whatever the window returned (shared by the unknown gate below). */
+function ownerEdgeCountOf(profile: NonNullable<SupplierScoringInput['profile']>): number {
+  return Object.entries(profile.relationshipCount ?? {})
+    .filter(([type]) => /owner|shareholder|subsidiary|parent/i.test(type))
+    .reduce((sum, [, count]) => sum + count, 0);
+}
+
+/** One sighting of one entity, before entities reached by more than one route are folded together. */
+type NetworkCandidate = {
+  entityId: string;
+  label: string;
+  hopDepth: number;
+  level: RiskLevel | undefined;
+  factorNames: string[];
+  /** Whether THIS sighting's own route is current ownership/control, all the way. */
+  viaOwnership: boolean;
+  source: 'owner' | 'family' | 'watchlist';
+};
 
 /**
- * **Ownership exposure** — current one-hop owner edges, each owner's own risk,
- * state ownership, and the ownership-family `psa_` factors.
+ * **Network exposure** — every entity on a current ownership or control Path
+ * within four hops (network spec §5), one hop-discounted deduction each:
+ * the Supplier's own one-hop upward owners (`input.owners`, unchanged from
+ * the prior Ownership exposure), the downward Corporate family and the
+ * either-direction watchlist walk (`input.networkPaths`,
+ * `loadNetworkExposurePaths`) folded in together. State ownership stays its
+ * own deduction at hop 1, as before. Trade and other non-ownership hops are
+ * never invented a second classifier for — `viaOwnership` on each
+ * `networkPaths` entry already carries `src/domain/relationships.ts`'s
+ * verdict — so they are shown here and never deducted.
  *
- * `unknown`'s **reason is first-class here**, and it is read off
- * `relationshipCount` at zero cost. Three different situations produce no owner
- * edge and they mean different things:
+ * ## Why `owners` and `networkPaths` both stay, rather than one replacing the other
  *
- * - **real absence** — the graph records no owner;
- * - **a split record** — `psaCount > 0`, so the ownership hangs off another
- *   record of the same company (measured: one company's own record held zero
- *   ownership edges against 88 221 `carrier_of` edges);
- * - **a truncated window** — `relationshipCount` says owner edges exist but the
- *   returned window was swamped by trade edges.
+ * `owners` is the Supplier's own one-hop **upward** parents — `getEntity`'s
+ * typed owner-edge read, not a Path — and `networkPaths` is downward
+ * (`family`) or either-direction-but-Listed-only (`watchlist`). The two are
+ * structurally disjoint in the ordinary case and this function dedupes them
+ * by `entityId` regardless, so an entity that happens to appear in both (a
+ * cyclic or otherwise unusual graph) still deducts once, not twice.
  *
- * Shared ownership between two bidders is deliberately **not** an input here:
- * it is a Shortlist finding, because a Criterion that read other Suppliers
- * would change when a *different* Supplier's Match settled, under an
- * append-only `criterion_value`.
+ * ## The unknown gate, reversed from the prior Ownership exposure
+ *
+ * The prior function returned `unknown` **whenever `owners` was empty**,
+ * whatever the coverage. That precondition does not survive widening to a
+ * Network with two more automatic reads behind it: an empty `owners` AND an
+ * empty `networkPaths` together are now read as **a real, adequately-covered
+ * finding of nothing** unless one of three coverage signals says otherwise —
+ * `relationshipCount` shows owner-shaped edges the window missed, `psaCount`
+ * says the record is split, or `dataConfidence` is `thin`. Meeting none of
+ * the three is not silence; it is two automatic reads that came back with an
+ * answer, and the honest score for "nothing here" is 100, not "we don't
+ * know" (network spec §5).
+ *
+ * ## The `rawInputs` shape (documented here because a later unit reads it
+ * without reading this function first)
+ *
+ * - `members`: every entity that deducted — `entityId`, `label`, `level`,
+ *   `hopDepth` (the SHORTEST route that qualified as ownership/control),
+ *   `hopDiscount`, `points`, `factors` (risk-factor names contributing to
+ *   `level`), `sources` (`'owner' | 'family' | 'watchlist'`, every route
+ *   that reached this entity, not only the qualifying one).
+ * - `shown`: every entity `networkPaths`/`owners` named that did **not**
+ *   deduct — reached only through a trade/lateral hop, or through a Path
+ *   with no hydrated edges yet — same shape as `members` minus
+ *   `hopDiscount`/`points`, plus nothing pretending a level it does not have.
+ * - `stateOwnership`: `owners` entries flagged `isStateOwned`, each with its
+ *   own `points` (hop 1 always, since `owners` is one-hop by definition).
+ * - `worstLevel`: the worst `level` among `members`, or `null`.
+ * - `familyCoverage`/`watchlistCoverage`: `{ exploredCount, truncated }` off
+ *   `input.networkCoverage`, present on every outcome (including the empty
+ *   100 and the `unknown`), so an Assessment can caveat a clean answer with
+ *   how far the two reads actually looked.
  */
-export function ownershipExposure(input: SupplierScoringInput): CriterionOutcome {
-  const raw: Record<string, unknown> = {};
+export function networkExposure(
+  input: SupplierScoringInput,
+  band: DataConfidenceBand,
+): CriterionOutcome {
   if (input.match.status !== 'accepted' || !input.profile) {
     return UNKNOWN(
       'the Match is not accepted, so there is no Profile to score',
-      raw,
-      OWNERSHIP_ANCHOR_LINE,
+      {},
+      NETWORK_ANCHOR_LINE,
     );
   }
 
   const profile = input.profile;
-  // The ownership-family Twin factors — `psa_owned_by_soe` among them. This is
-  // the repair for a measured gap: eleven Twins were fetched and NOT ONE
-  // carried an upward owner edge, so widening Ownership exposure to these
-  // factors recovers a signal that the obvious repair (fetch the Twins' owners)
-  // was measured not to have.
-  const ownershipPsaFactors = profile.riskFactors.filter(
-    (f) => isTwinFactor(f.name) && /own|soe|state/i.test(f.name),
+  const networkPaths = input.networkPaths ?? [];
+  const coverage = input.networkCoverage ?? {
+    family: { exploredCount: null, truncated: false },
+    watchlist: { exploredCount: null, truncated: false },
+  };
+  const coverageRaw = { familyCoverage: coverage.family, watchlistCoverage: coverage.watchlist };
+
+  if (input.owners.length === 0 && networkPaths.length === 0) {
+    const unknown = networkUnknownReason(profile, band);
+    if (unknown) {
+      return UNKNOWN(
+        unknown,
+        {
+          ownerEdgeCount: ownerEdgeCountOf(profile),
+          psaCount: profile.psaCount ?? 0,
+          relationshipsTruncated: profile.relationshipsTruncated,
+          relationshipCount: profile.relationshipCount ?? {},
+          ...coverageRaw,
+        },
+        NETWORK_ANCHOR_LINE,
+      );
+    }
+    // Falls through: both automatic reads answered, and nothing they found
+    // (or didn't find) casts doubt on the window — see VALUE(100) below.
+  }
+
+  const byEntity = dedupeNetworkCandidates(buildNetworkCandidates(input));
+  const { value: entityValue, members, shown } = scoreNetworkEntities(byEntity);
+  const { value: stateValue, entries: stateOwnership } = scoreStateOwnership(input.owners);
+
+  const worst = members.reduce<RiskLevel | null>(
+    (best, m) => (best == null || levelRank(m.level) > levelRank(best) ? m.level : best),
+    null,
   );
 
-  if (input.owners.length === 0 && ownershipPsaFactors.length === 0) {
-    const ownerEdgeCount = Object.entries(profile.relationshipCount ?? {})
-      .filter(([type]) => /owner|shareholder|subsidiary|parent/i.test(type))
-      .reduce((sum, [, count]) => sum + count, 0);
-
-    const reason =
-      ownerEdgeCount > 0
-        ? `the graph records ${ownerEdgeCount} owner edge(s) but the returned window did not include them — we did not look far enough, which is not the same as an absent owner`
-        : (profile.psaCount ?? 0) > 0
-          ? `no owner edge on this record, but the company is split across ${profile.psaCount} records and the ownership may hang off another one`
-          : 'the graph records no owner for this company';
-
-    return UNKNOWN(
-      reason,
-      {
-        ownerEdgeCount,
-        psaCount: profile.psaCount ?? 0,
-        relationshipsTruncated: profile.relationshipsTruncated,
-        relationshipCount: profile.relationshipCount ?? {},
-      },
-      OWNERSHIP_ANCHOR_LINE,
-    );
-  }
-
-  let value = 100;
-  const deductions: { owner: string; reason: string; points: number }[] = [];
-
-  for (const owner of input.owners) {
-    const worst = worstLevel(owner.riskFactors);
-    if (worst) {
-      const points = DEDUCTION_BY_LEVEL[worst];
-      value -= points;
-      deductions.push({
-        owner: owner.label,
-        reason: `owner carries a ${worst} risk factor`,
-        points,
-      });
-    }
-    if (owner.isStateOwned) {
-      value -= STATE_OWNERSHIP_DEDUCTION;
-      deductions.push({
-        owner: owner.label,
-        reason: 'state ownership',
-        points: STATE_OWNERSHIP_DEDUCTION,
-      });
-    }
-  }
-
-  for (const factor of ownershipPsaFactors) {
-    const level = effectiveLevel(factor);
-    if (!level) continue;
-    const points = DEDUCTION_BY_LEVEL[level];
-    value -= points;
-    deductions.push({
-      owner: `(twin) ${factor.name}`,
-      reason: `ownership-family factor at ${level}`,
-      points,
-    });
-  }
-
-  const { value: clampedValue, clamped } = clamp100(value);
+  const { value: clampedValue, clamped } = clamp100(100 - entityValue - stateValue);
   return VALUE(
     clampedValue,
     clamped,
-    {
-      owners: input.owners.map((o) => ({
-        label: o.label,
-        entityId: o.entityId,
-        stateOwned: o.isStateOwned,
-      })),
-      ownershipPsaFactors: ownershipPsaFactors.map((f) => f.name),
-      deductions,
-    },
-    OWNERSHIP_ANCHOR_LINE,
+    { members, shown, stateOwnership, worstLevel: worst, ...coverageRaw },
+    NETWORK_ANCHOR_LINE,
   );
 }
 
-function worstLevel(factors: readonly RiskFactor[]) {
-  const levels = factors.map(effectiveLevel).filter((l): l is NonNullable<typeof l> => l != null);
-  if (levels.includes('high')) return 'high' as const;
-  if (levels.includes('elevated')) return 'elevated' as const;
-  if (levels.includes('relevant')) return 'relevant' as const;
+/** The reversed unknown gate (network spec §5) — `undefined` means "score, don't ask". */
+function networkUnknownReason(
+  profile: NonNullable<SupplierScoringInput['profile']>,
+  band: DataConfidenceBand,
+): string | undefined {
+  const ownerEdgeCount = ownerEdgeCountOf(profile);
+  if (ownerEdgeCount > 0) {
+    return `the graph records ${ownerEdgeCount} owner edge(s) but the returned window did not include them — we did not look far enough, which is not the same as an absent owner`;
+  }
+  if ((profile.psaCount ?? 0) > 0) {
+    return `no owner edge on this record, but the company is split across ${profile.psaCount} records and the ownership may hang off another one`;
+  }
+  if (band === 'thin') {
+    return 'data confidence is thin, so two empty automatic reads are not evidence of a clean Network';
+  }
   return undefined;
+}
+
+/** One candidate per (entity, route) sighting — `owners` plus every `networkPaths` entry, un-deduped. */
+function buildNetworkCandidates(input: SupplierScoringInput): NetworkCandidate[] {
+  const fromOwners = input.owners.map(
+    (owner): NetworkCandidate => ({
+      entityId: owner.entityId,
+      label: owner.label,
+      hopDepth: 1,
+      level: worstLevel(owner.riskFactors),
+      factorNames: owner.riskFactors.map((f) => f.name),
+      // `owners` is the typed upward owner-edge read (`upwardOwnershipTypes`,
+      // `src/domain/relationships.ts`) — ownership by construction.
+      viaOwnership: true,
+      source: 'owner',
+    }),
+  );
+  const fromPaths = (input.networkPaths ?? []).map((p): NetworkCandidate => {
+    const scored = dedupePsaAgainstBase(p.riskFactors.filter((f) => !isCountryDerived(f)));
+    return {
+      entityId: p.entityId,
+      label: p.label,
+      hopDepth: p.hopDepth,
+      level: p.sanctioned ? 'high' : worstLevel(scored),
+      factorNames: scored.map((f) => f.name),
+      viaOwnership: p.viaOwnership,
+      source: p.kind,
+    };
+  });
+  return [...fromOwners, ...fromPaths];
+}
+
+/** One entity's dedupe state — the shape every `NetworkCandidate` for that `entityId` is folded into. */
+type NetworkEntityAgg = {
+  label: string;
+  level: RiskLevel | undefined;
+  factorNames: Set<string>;
+  sources: Set<NetworkCandidate['source']>;
+  deductible: boolean;
+  /** The shortest hop depth among qualifying sightings once `deductible`, else the shortest among all sightings — for display either way. */
+  hopDepth: number;
+};
+
+/**
+ * Folds every sighting of the same entity into one: the worst level any
+ * sighting reported, and — once `deductible` (some sighting was ownership/
+ * control all the way) — the shortest hop depth among the QUALIFYING
+ * sightings only, never a non-qualifying one's shorter-but-irrelevant hop.
+ */
+function dedupeNetworkCandidates(
+  candidates: readonly NetworkCandidate[],
+): Map<string, NetworkEntityAgg> {
+  const byEntity = new Map<string, NetworkEntityAgg>();
+  for (const c of candidates) {
+    const existing = byEntity.get(c.entityId);
+    if (!existing) {
+      byEntity.set(c.entityId, {
+        label: c.label,
+        level: c.level,
+        factorNames: new Set(c.factorNames),
+        sources: new Set([c.source]),
+        deductible: c.viaOwnership,
+        hopDepth: c.hopDepth,
+      });
+      continue;
+    }
+    if (levelRank(c.level) > levelRank(existing.level)) existing.level = c.level;
+    for (const name of c.factorNames) existing.factorNames.add(name);
+    existing.sources.add(c.source);
+    if (c.viaOwnership) {
+      if (!existing.deductible || c.hopDepth < existing.hopDepth) existing.hopDepth = c.hopDepth;
+      existing.deductible = true;
+    } else if (!existing.deductible && c.hopDepth < existing.hopDepth) {
+      existing.hopDepth = c.hopDepth;
+    }
+  }
+  return byEntity;
+}
+
+type NetworkMember = {
+  entityId: string;
+  label: string;
+  level: RiskLevel;
+  hopDepth: number;
+  hopDiscount: number;
+  points: number;
+  factors: string[];
+  sources: string[];
+};
+type NetworkShown = {
+  entityId: string;
+  label: string;
+  level: RiskLevel | null;
+  hopDepth: number;
+  factors: string[];
+  sources: string[];
+};
+
+/** One deduction per deductible entity — `points` summed, so the caller only ever subtracts once. */
+function scoreNetworkEntities(
+  byEntity: ReadonlyMap<string, NetworkEntityAgg>,
+): { value: number; members: NetworkMember[]; shown: NetworkShown[] } {
+  let value = 0;
+  const members: NetworkMember[] = [];
+  const shown: NetworkShown[] = [];
+
+  for (const [entityId, agg] of byEntity) {
+    if (agg.deductible && agg.level) {
+      const hopDiscount = hopDiscountFor(agg.hopDepth);
+      const points = Number((DEDUCTION_BY_LEVEL[agg.level] * hopDiscount).toFixed(2));
+      value += points;
+      members.push({
+        entityId,
+        label: agg.label,
+        level: agg.level,
+        hopDepth: agg.hopDepth,
+        hopDiscount,
+        points,
+        factors: [...agg.factorNames],
+        sources: [...agg.sources],
+      });
+    } else {
+      shown.push({
+        entityId,
+        label: agg.label,
+        level: agg.level ?? null,
+        hopDepth: agg.hopDepth,
+        factors: [...agg.factorNames],
+        sources: [...agg.sources],
+      });
+    }
+  }
+  return { value, members, shown };
+}
+
+type StateOwnershipEntry = { entityId: string; label: string; hopDepth: 1; hopDiscount: number; points: number };
+
+/** State ownership stays its own deduction at hop 1, as today — `owners` is one-hop by definition. */
+function scoreStateOwnership(
+  owners: SupplierScoringInput['owners'],
+): { value: number; entries: StateOwnershipEntry[] } {
+  let value = 0;
+  const entries: StateOwnershipEntry[] = [];
+  for (const owner of owners) {
+    if (!owner.isStateOwned) continue;
+    const hopDiscount = hopDiscountFor(1);
+    const points = Number((STATE_OWNERSHIP_DEDUCTION * hopDiscount).toFixed(2));
+    value += points;
+    entries.push({ entityId: owner.entityId, label: owner.label, hopDepth: 1, hopDiscount, points });
+  }
+  return { value, entries };
 }
 
 /**

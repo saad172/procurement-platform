@@ -268,10 +268,16 @@ export const CRITERIA = [
   {
     key: 'network_exposure',
     label: 'Network exposure',
+    // Ownership exposure's old weight, kept rather than re-picked (network
+    // spec §12 leaves the default open): widening the inputs — the downward
+    // Corporate family and the watchlist walk now fold in alongside the
+    // one-hop owners this Criterion always scored — is not by itself an
+    // argument for a different number, and the roster has not been re-run
+    // against the widened formula yet to argue for one.
     weight: 17,
     isWeighted: true,
     blurb:
-      'Current one-hop owner edges with each owner’s own risk, state ownership, and the ownership-family `psa_` factors. Shared ownership between two bidders is a Shortlist finding, not an input here.',
+      'Every entity on an ownership or control Path within four hops — one-hop owners, the downward Corporate family, the watchlist walk to Listed entities — each deducted once at its worst level, discounted by hop (hop1 full, hop4 one eighth). State ownership −25 at hop1. Trade edges on a watchlist Path are shown, never deducted.',
   },
   {
     key: 'country_resilience',
