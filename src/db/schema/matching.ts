@@ -131,6 +131,13 @@ export const matchCandidate = pgTable(
     score: numeric('score', { precision: 12, scale: 6 }),
     matchStrength: text('match_strength'),
     explanation: jsonb('explanation'),
+    /**
+     * Sayari's own per-query `highlight` block — the matched text snippets the
+     * resolution response marked up, keyed by field. Its own column rather than
+     * folded into `explanation`, because `explanation` is Sayari's per-field
+     * match-quality record (ticket 01 item A) and the two are different data.
+     */
+    highlight: jsonb('highlight'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
