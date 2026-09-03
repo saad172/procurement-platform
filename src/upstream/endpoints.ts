@@ -11,6 +11,7 @@ import {
 } from './projections/external';
 import {
   entitySchema,
+  entitySummarySchema,
   negativeNewsSchema,
   recordSchema,
   resolutionSchema,
@@ -117,6 +118,43 @@ export const sayariGetEntity = defineEndpoint({
   },
   projection: entitySchema,
 } as EndpointDef<{ id: string } & Partial<typeof GET_ENTITY_LIMITS>, z.infer<typeof entitySchema>>);
+
+/**
+ * `entity.entitySummary` (SPEC §9 renames row 5; ticket 01 item A2) — cheaper
+ * than `getEntity` for the resolve pre-pass's five Candidates. Verified
+ * against the SDK: `client.entity.entitySummary(id, requestOptions)` at
+ * `/v1/entity_summary/{id}` (`node_modules/@sayari/sdk/api/resources/entity/
+ * client/Client.js`), GET, **no request params at all** — unlike `getEntity`
+ * it takes none, so there is nothing to widen and nothing beyond `id` to hash.
+ *
+ * See `entitySummarySchemaInner`'s own doc comment (`projections/sayari.ts`)
+ * for exactly what it carries and what it does not.
+ *
+ * **No `bucket`.** Sayari's own usage-counter type
+ * (`node_modules/@sayari/sdk/api/resources/info/types/UsageInfo.d.ts`)
+ * declares exactly six buckets — `entity`, `record`, `resolve`, `search`,
+ * `tradeTraversal`, `traversal` — with no seventh `entitySummary` counter.
+ * Reusing `entity` would be a guess this file has no way to check without a
+ * live call, which the ticket forbids; leaving it unbucketed is the same
+ * honest gap `negativeNews` already carries, footnoted the same way. See the
+ * PR's Re-record list: confirm against a live `info.getUsage()` diff.
+ */
+export const sayariEntitySummary = defineEndpoint({
+  source: 'sayari',
+  endpoint: 'entity.entitySummary',
+  timeoutMs: SAYARI_FAST_MS,
+  defaults: {},
+  normalizeParams: (p) => flat(p),
+  dispatch: async (params, deps) => {
+    const client = getSayariClient(deps.credentials);
+    return viaSdkWithRawFallback(
+      () => client.entity.entitySummary(String(params.id), requestOptions(deps)),
+      () => ({ path: `/v1/entity_summary/${encodeURIComponent(String(params.id))}` }),
+      deps,
+    );
+  },
+  projection: entitySummarySchema,
+} as EndpointDef<{ id: string }, z.infer<typeof entitySummarySchema>>);
 
 export const sayariGetRecord = defineEndpoint({
   source: 'sayari',
@@ -248,26 +286,46 @@ export const sayariTraversalOwnership = defineEndpoint({
 
 /**
  * The depth-and-cursor parameters a **Deep Traversal** adds to the same two
- * endpoints the Corporate family already uses (SPEC §8.5).
+ * endpoints the Corporate family already uses (SPEC §8.5), widened for the
+ * filtered reads SPEC §4.1/§4.4 need (ticket 01 item A1): `relationships`,
+ * `riskCategories`, `countries`, `minShares`, `excludeClosedEntities`,
+ * `sanctioned`, `pep`, `psa`.
  *
- * `maxDepth`, `minDepth` and `offset` are all on the SDK's own `Ownership` and
- * `Ubo` request types, so this is one endpoint row with more of its parameters
- * named rather than a second row aimed at the same URL — which would have given
- * the same call two cache keyspaces and two usage-row endpoint names.
+ * `maxDepth`, `minDepth`, `offset` and the eight new fields are all on the
+ * SDK's own `Ownership` and `Ubo` request types (verified against
+ * `node_modules/@sayari/sdk/api/resources/traversal/client/requests/
+ * Ownership.d.ts` and `.../Ubo.d.ts`, whose fields the two share verbatim),
+ * so this is one endpoint row with more of its parameters named rather than a
+ * second row aimed at the same URL — which would have given the same call two
+ * cache keyspaces and two usage-row endpoint names. `riskCategories` is typed
+ * `Sayari.RiskCategory[] | string` on the SDK's request interface (a bare
+ * string names a custom, non-enum category); narrowed here to `string[]`
+ * because nothing in this app sends the bare-string form.
  *
  * **They are optional and there is no default for them, deliberately.** The
  * defaults are applied before hashing (SPEC §16.6), so writing `maxDepth: 3`
  * into `defaults` would change `params_hash` for the automatic family read that
  * does not ask for a depth at all — invalidating its cache and every recorded
- * fixture that holds one. A caller that wants a depth says so; a caller that
- * does not gets the server's own default, which the response echoes back.
+ * fixture that holds one. The same reasoning covers every field added here: a
+ * caller that wants a filter says so; a caller that does not gets the
+ * server's own default, unfiltered, exactly as today. `enqueue_deep_traversal`
+ * is what exposes these to a person as optional inputs (SPEC §4.4); this
+ * ticket only widens the type and the wire mapping (item B) that carries it.
  */
-type TraversalWalkParams = {
+export type TraversalWalkParams = {
   id: string;
   limit?: number;
   offset?: number;
   minDepth?: number;
   maxDepth?: number;
+  relationships?: string[];
+  riskCategories?: string[];
+  countries?: string[];
+  minShares?: number;
+  excludeClosedEntities?: boolean;
+  sanctioned?: boolean;
+  pep?: boolean;
+  psa?: boolean;
 };
 
 /**
@@ -343,7 +401,7 @@ export const sayariTraversal = defineEndpoint({
     );
   },
   projection: traversalSchema,
-} as EndpointDef<{ id: string } & Record<string, unknown>, z.infer<typeof traversalSchema>>);
+} as EndpointDef<TraversalWalkParams, z.infer<typeof traversalSchema>>);
 
 /** Takes a bare name, so the input is always the **resolved legal name**. */
 export const sayariNegativeNews = defineEndpoint({
@@ -639,6 +697,7 @@ export const nominatimGeocode = defineEndpoint({
 /** Every endpoint, so a test can quantify over them (SPEC §16.2). */
 export const ENDPOINTS = {
   sayariGetEntity,
+  sayariEntitySummary,
   sayariGetRecord,
   sayariResolve,
   sayariSearchEntity,

@@ -28,6 +28,8 @@ export function createUpstream(ctx: UpstreamContext) {
 
     sayari: {
       getEntity: run(endpoints.sayariGetEntity),
+      /** Cheaper than `getEntity`, no `relationships` block (SPEC §9 renames row 5). */
+      entitySummary: run(endpoints.sayariEntitySummary),
       getRecord: run(endpoints.sayariGetRecord),
       resolve: run(endpoints.sayariResolve),
       searchEntity: run(endpoints.sayariSearchEntity),
