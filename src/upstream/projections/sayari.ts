@@ -154,6 +154,69 @@ const entitySchemaInner = z
   .loose();
 
 /**
+ * `entity.entitySummary` — **the same `EntityDetails` shape `getEntity`
+ * returns, minus `relationships`** (SPEC §9 renames row 5; ticket 01 item
+ * A2). Named separately from `entitySchemaInner` rather than derived from it
+ * by `.omit()`, so this list is the one place a reader can check "does the
+ * summary carry X" against the SDK's own declared fields —
+ * `node_modules/@sayari/sdk/api/resources/entity/types/
+ * EntitySummaryResponse.d.ts` (`interface EntitySummaryResponse extends
+ * Sayari.EntityDetails {}`) and the two types it inherits from,
+ * `.../sharedTypes/types/EntityDetails.d.ts` and `.../EmbeddedEntity.d.ts`.
+ *
+ * **What it does not carry, in the SDK's own words, stated twice**:
+ * "entity_summary returns the same payload minus relationships" (on
+ * `getEntity`'s own doc comment) and "The Entity Summary endpoint returns a
+ * similar payload, minus relationships" (on `entitySummary`'s own doc
+ * comment) — both in `.../entity/client/Client.d.ts`. Nothing else is named
+ * as missing, and the SDK's own documented example response for
+ * `entitySummary` (in `EntitySummaryResponse.d.ts` itself) shows the full
+ * `attributes` block present — **including `attributes.address` with the
+ * same parsed `properties.city/postcode/country/houseNumber/road/x/y`
+ * `getEntity` returns** — plus `possibly_same_as` and `referenced_by`.
+ * `toCandidateFacts` (`src/jobs/resolve.ts`) reads exactly the fields named
+ * below off `getEntity` today; every one of them survives the swap to
+ * `entitySummary` except `relationships`, which is why owner edges are read
+ * separately (ticket 01 item B: the typed `getEntity` + `relationshipsType`
+ * read, or `traversal.traversal`).
+ */
+const entitySummarySchemaInner = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    type: z.string().nullish(),
+    entity_url: z.string().nullish(),
+    degree: z.number().nullish(),
+    countries: z.array(z.string()).nullish(),
+    addresses: z.array(z.string()).nullish(),
+    identifiers: z.array(z.unknown()).nullish(),
+    sanctioned: z.boolean().nullish(),
+    pep: z.boolean().nullish(),
+    closed: z.boolean().nullish(),
+    company_type: z.string().nullish(),
+    registration_date: z.string().nullish(),
+    latest_status: z.unknown().nullish(),
+    /** An OBJECT keyed by source hash, not a scalar — same shape as `entitySchemaInner`. */
+    source_count: z.record(z.string(), z.unknown()).nullish(),
+    /** An OBJECT keyed by relation type, not a scalar. */
+    relationship_count: z.record(z.string(), z.number()).nullish(),
+    psa_count: z.number().nullish(),
+    psa_id: z.string().nullish(),
+    risk: z.record(z.string(), riskFactorSchema).nullish(),
+    attributes: z.record(z.string(), attributeBlock).nullish(),
+    possibly_same_as: z
+      .object({ data: z.array(z.unknown()).nullish() })
+      .partial()
+      .nullish(),
+    referenced_by: z.unknown().nullish(),
+    trade_count: z.unknown().nullish(),
+    reference_id: z.string().nullish(),
+    logistics_entity: z.boolean().nullish(),
+  })
+  .partial({ type: true })
+  .loose();
+
+/**
  * One resolution candidate.
  *
  * `match_strength` is the field that proves top-hit acceptance is wrong: row 1
@@ -224,6 +287,93 @@ const recordSchemaInner = z
   .loose();
 
 /**
+ * One entry of `attributes.shares` on a traversal-path relationship record —
+ * measured off `tests/fixtures/traverse/yazaki.json` and `tests/fixtures/
+ * enrich/yazaki.json`: an **open bag**, like `attributeProperties` above.
+ * `currency`/`percentage`/`monetary_value`/`num_shares`/`type`/`from_date`/
+ * `to_date`/`date` are the named fields ticket 01 item C's `ownersOf` and the
+ * Entity page read; the rest — `Denominator`, `Numerator`, `"Share Type"`,
+ * `"Share Value"`, `"Summary Text"`, `liSubConAm` among them, all measured on
+ * the same two fixtures — are source-specific and kept only because
+ * `.loose()` keeps them, never read by name.
+ */
+const traversalShareSchema = z
+  .object({
+    currency: z.string().nullish(),
+    percentage: z.number().nullish(),
+    monetary_value: z.number().nullish(),
+    num_shares: z.number().nullish(),
+    type: z.string().nullish(),
+    from_date: z.string().nullish(),
+    to_date: z.string().nullish(),
+    date: z.string().nullish(),
+  })
+  .partial()
+  .loose();
+
+/**
+ * One edge record inside a `path[].relationships[type].values[]` entry — one
+ * per Sayari `entity_relationship` record between the same two path nodes.
+ * **`record` is a single id, always** — measured 2,578/2,578 values across
+ * both fixtures, never an array — unlike `attributeValue.record` above, which
+ * is Sayari's *other*, array-valued sense of the word, for an attribute
+ * entry rather than a relationship edge.
+ */
+const traversalRelationshipValueSchema = z
+  .object({
+    former: z.boolean().nullish(),
+    record: z.string().nullish(),
+    from_date: z.string().nullish(),
+    to_date: z.string().nullish(),
+    acquisition_date: z.string().nullish(),
+    publication_date: z.string().nullish(),
+    relationship_status: z.string().nullish(),
+    attributes: z
+      .object({ shares: z.array(traversalShareSchema).nullish() })
+      .partial()
+      .loose()
+      .nullish(),
+  })
+  .loose();
+
+/**
+ * One `path[].relationships` value: everything Sayari knows about every edge
+ * of **one relationship type** between the same two path nodes — a rollup
+ * (`former`, `start_date`, `end_date`, `relationship_status`, the
+ * `most_recent_*` fields) alongside `values`, one entry per record. The outer
+ * object this hangs off is keyed by relationship type, which is why the type
+ * name is not a field here — see `traversalPathRelationshipsSchema` below.
+ */
+const traversalRelationshipGroupSchema = z
+  .object({
+    former: z.boolean().nullish(),
+    start_date: z.string().nullish(),
+    end_date: z.string().nullish(),
+    last_observed: z.string().nullish(),
+    relationship_status: z.string().nullish(),
+    most_recent_percentage: z.number().nullish(),
+    most_recent_monetary_value: z.number().nullish(),
+    most_recent_num_shares: z.number().nullish(),
+    values: z.array(traversalRelationshipValueSchema).nullish(),
+  })
+  .loose();
+
+/**
+ * `path[].relationships` itself (SPEC §4; ticket 01 item E). **Keyed by
+ * relationship type, not an array** — measured on `tests/fixtures/traverse/
+ * yazaki.json` and `tests/fixtures/enrich/yazaki.json`, where the same
+ * per-type shape appears under `shareholder_of`, `has_shareholder`,
+ * `has_subsidiary`, `has_branch`, `beneficial_owner_of`, `linked_to` and
+ * `possibly_same_as`. Named and lenient rather than `z.unknown()`, so ticket
+ * 02 can read the relationship type (the key), `attributes.shares`,
+ * `start_date`/`end_date`, `former` and every edge's `record` id off a
+ * stored Path without a second trip to the raw body.
+ */
+const traversalPathRelationshipsSchema = z
+  .record(z.string(), traversalRelationshipGroupSchema)
+  .nullish();
+
+/**
  * A traversal path. The **terminal entity carries its full `risk` block
  * inline**, which is the measurement that made the Corporate family cost one
  * call rather than 25 (SPEC §8.1).
@@ -236,7 +386,7 @@ const traversalPathSchemaInner = z
           .object({
             field: z.string().nullish(),
             entity: z.union([z.string(), entitySchemaInner.loose()]).nullish(),
-            relationships: z.unknown().nullish(),
+            relationships: traversalPathRelationshipsSchema,
           })
           .loose(),
       )
@@ -400,6 +550,7 @@ export type SayariTradeRow = z.infer<typeof tradeSearchSchemaInner>['data'] exte
 // Each is wrapped so it accepts either key casing (see `key-case.ts`).
 
 export const entitySchema = eitherCasing(entitySchemaInner);
+export const entitySummarySchema = eitherCasing(entitySummarySchemaInner);
 export const resolutionCandidateSchema = eitherCasing(resolutionCandidateSchemaInner);
 export const resolutionSchema = eitherCasing(resolutionSchemaInner);
 export const searchEntitySchema = eitherCasing(searchEntitySchemaInner);
@@ -411,6 +562,8 @@ export const tradeSearchSchema = eitherCasing(tradeSearchSchemaInner);
 
 /** The projected entity shape, as every caller in the app sees it. */
 export type SayariEntity = z.infer<typeof entitySchemaInner>;
+/** The projected `entitySummary` shape — see `entitySummarySchemaInner`'s doc comment for what it lacks. */
+export type SayariEntitySummary = z.infer<typeof entitySummarySchemaInner>;
 export type SayariResolutionCandidate = z.infer<typeof resolutionCandidateSchemaInner>;
 export type SayariTraversalPath = z.infer<typeof traversalPathSchemaInner>;
 export type SayariTraversal = z.infer<typeof traversalSchemaInner>;
@@ -450,18 +603,6 @@ export function matchStrengthValue(
   }
   return undefined;
 }
-
-/**
- * `info.getUsage()` — **seven integer endpoint-class counters, account-wide,
- * over a rolling year, with no Program dimension and no dollars** (SPEC §18.1).
- *
- * `negativeNews` has no bucket here at all, which the UI footnotes. This is why
- * our own usage figure and Sayari's are shown separately scoped, with no delta
- * anywhere: reconciliation stays a human act.
- */
-export const usageSchema = z
-  .record(z.string(), z.unknown())
-  .and(z.object({ from: z.string().nullish(), to: z.string().nullish() }).partial().loose());
 
 /** The boot call. Deliberately routed raw, and it gates nothing (SPEC §16.7). */
 export const metadataSchema = z.unknown();
