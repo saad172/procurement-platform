@@ -115,7 +115,9 @@ recording a recording; each one resets the test database first
 
 What the committed set holds, as recorded on 2026-09-02 with prompt caching on
 — the dollar figures are computed from the committed price constant, not from a
-bill:
+bill. The assess and recommend rows were recorded twice that day: once in the
+evening, and again late that night after the `limits` instruction and the
+number-fidelity objection moved ([finding 152](docs/BUILD-NOTES.md)):
 
 | Fixture | Turns | Tool calls | What it recorded | Cost |
 |---|---|---|---|---|
@@ -123,8 +125,8 @@ bill:
 | `resolve/agree-r1` | 13 | 21 | both agents naming `CX3012yTGIhgMxcZG6hgnA` at Round 1 | $0.49 |
 | `resolve/not-found` | 41 | 72 | **`needs_review` with 34 Candidates** — the arranged unfindable row is now parked rather than refused | $1.14 |
 | `resolve/sanctioned` | 11 | 15 | `accepted`, `sanctioned: true` from the graph | $0.42 |
-| `assess/published-with-objections` | 18 | 24 | a `number_fidelity` objection **answered**: 2 Rounds, `passed` | $1.87 |
-| `recommend/one-category` | 13 | 16 | `passed`, one `award` at rank 1 | $1.17 |
+| `assess/published-with-objections` | 7 | 8 | the evaluator passing all six items on the first draft: 1 Round, `passed` | $0.80 |
+| `recommend/one-category` | 9 | 12 | `passed`, one `award` at rank 1 | $0.89 |
 | `chat/one-turn` | 4 | 0 | 2 widgets and 1 confirm proposal, no `job` row | $0.06 |
 | `enrich/yazaki`, `traverse/yazaki`, `record/one-source` | 0 | — | upstream bodies only; no model runs in any of them | $0.00 |
 
@@ -150,8 +152,8 @@ pnpm test       # vitest run  (pnpm test:watch to iterate)
 pnpm format     # prettier --write
 ```
 
-> **The suite is green: 885 tests, 87 files, 0 failures**, measured on
-> 2026-09-02 on a database created minutes earlier. It was red at 26 the same
+> **The suite is green: 914 tests, 88 files, 0 failures**, measured on
+> 2026-09-02 on a database created that day. It was red at 26 the same
 > morning, and every one of those was a replay waiting on a recording that the
 > day's **HTTP 401** made impossible. A working key arrived, the six model
 > fixtures were re-recorded in the order below, and the red went away without a
