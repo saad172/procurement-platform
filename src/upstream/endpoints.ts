@@ -19,7 +19,7 @@ import {
   tradeSearchSchema,
   traversalSchema,
 } from './projections/sayari';
-import type { DispatchDeps, EndpointDef } from './types';
+import type { DispatchDeps, EndpointDef, UpstreamVia } from './types';
 
 /**
  * The declared endpoint table (SPEC §16.2) — five sources, one row each per
@@ -422,14 +422,12 @@ export const sayariTraversalOwnership = defineEndpoint({
   dispatch: async (params, deps) => {
     const { id, ...rest } = params;
     const client = getSayariClient(deps.credentials);
-    return viaSdkWithRawFallback(
+    // `ownership` is `/v1/downstream/{id}` in the SDK — which is itself the
+    // clearest statement that the Corporate family read is downward-only.
+    return dispatchTraversalWalk(
+      `/v1/downstream/${encodeURIComponent(String(id))}`,
       () => client.traversal.ownership(String(id), rest as never, requestOptions(deps)),
-      // `ownership` is `/v1/downstream/{id}` in the SDK — which is itself the
-      // clearest statement that the Corporate family read is downward-only.
-      () => ({
-        path: `/v1/downstream/${encodeURIComponent(String(id))}`,
-        query: downstreamQuery(rest),
-      }),
+      rest,
       deps,
     );
   },
@@ -493,28 +491,51 @@ export type TraversalWalkParams = {
 };
 
 /**
- * The raw fallback's query string for all three traversal rows (ticket 01
- * item B), named the way the SDK's own client names it — copied from
- * `node_modules/@sayari/sdk/api/resources/traversal/client/Client.js`, the
- * `_queryParams[...]` assignments shared by `ownership`, `ubo` and
- * `traversal`. `min_depth`/`max_depth`, snake_case, against the camelCase the
- * SDK takes: a fallback that sent `maxDepth` would be answered at the
- * server's default depth without complaint, which is the silent-wrong-key
- * failure mode `trade.searchSuppliers` already cost this build once
- * (BUILD-NOTES 31).
+ * The raw fallback's query string for all four traversal rows (ticket 01
+ * item B, corrected 03f), named the way the SDK's own client names it —
+ * copied from `node_modules/@sayari/sdk/api/resources/traversal/client/
+ * Client.js`, the `_queryParams[...]` assignments shared by `ownership`,
+ * `ubo`, `watchlist` and `traversal`. `min_depth`/`max_depth`, snake_case,
+ * against the camelCase the SDK takes: a fallback that sent `maxDepth` would
+ * be answered at the server's default depth without complaint, which is the
+ * silent-wrong-key failure mode `trade.searchSuppliers` already cost this
+ * build once (BUILD-NOTES 31).
  *
- * Three different encodings for three different new fields, each copied
- * rather than guessed:
+ * Three different encodings for three different new fields:
  * - `relationships`/`countries` go through as **arrays**, sent repeated —
  *   `qs.stringify(params, { arrayFormat: 'repeat' })`
  *   (`core/fetcher/createRequestUrl.js`), which `rawFetch` now knows how to
  *   send (`dispatchers/sayari.ts`).
- * - `risk_categories` mirrors the SDK's own branch (C5): `typeof mapped ===
- *   "string" ? mapped : toJson(mapped)` — an array is one JSON-stringified
- *   param, a bare string (the SDK's escape hatch for a custom, non-enum
- *   category) goes through verbatim. `TraversalWalkParams.riskCategories` is
- *   `string[]` only — nothing in this app sends the bare-string form — so
- *   this is defensive rather than reachable today.
+ * - `risk_categories` **used to** mirror the SDK's own branch (C5) —
+ *   `typeof mapped === "string" ? mapped : toJson(mapped)`, one
+ *   JSON-stringified param for an array — on the stated reasoning that
+ *   copying the SDK's own encoding byte-for-byte was the safe default. That
+ *   reasoning was wrong, not because the copy was inaccurate, but because the
+ *   thing it copied is itself broken: live-verified 2026-09-03 against
+ *   `/v1/downstream/{id}` with a real entity, `risk_categories=` set to a
+ *   JSON-stringified array — one element or three, no difference —
+ *   comes back `422 "Invalid risk category '[\"sanctions\"]'. Expected one
+ *   of forced_labor, export_controls, …"`; the same values sent as *repeated*
+ *   `risk_categories=` keys come back `200`. Sayari's API wants
+ *   `risk_categories` encoded exactly like `relationships`/`countries` — one
+ *   key per value — and every one of the SDK's four traversal-shaped methods
+ *   (`ownership`, `ubo`, `watchlist`, plain `traversal`) instead collapses a
+ *   populated array into that single JSON string before it ever reaches
+ *   `qs.stringify`, defeating the repeat-array encoding `qs` would otherwise
+ *   have produced. That is a genuine SDK defect, not a usage mistake on this
+ *   app's side, and there is no `RequestOptions` escape hatch on the SDK's
+ *   `Traversal` client to override just this one query param (checked
+ *   `Client.d.ts`) — so `dispatchTraversalWalk`, below, now sends a populated
+ *   `riskCategories` through this raw path *unconditionally*, never through
+ *   the SDK at all, rather than trying to talk the SDK into the right wire
+ *   format. Accordingly this branch passes the array straight through
+ *   (`encodeQuery` in `dispatchers/sayari.ts` already repeats an array
+ *   value) instead of JSON-stringifying it. The bare-string branch stays: a
+ *   single custom, non-enum category as a plain string is the one shape the
+ *   SDK's own branch gets right (it never re-encodes a value that was
+ *   already a string), and `TraversalWalkParams.riskCategories` being
+ *   `string[]`-only means nothing in this app sends it today — defensive
+ *   rather than reachable, same as before.
  * - `min_shares`/`exclude_closed_entities`/`sanctioned`/`pep`/`psa` are plain
  *   scalars, `.toString()`'d by the SDK the same way `rawFetch` stringifies
  *   any scalar.
@@ -537,14 +558,68 @@ export function downstreamQuery(rest: Omit<TraversalWalkParams, 'id'>) {
     // `TraversalWalkParams.riskCategories` is `string[]` only, but the runtime
     // check stays: `downstreamQuery` is exported and this is the one place
     // that would notice a caller widening the type later without updating
-    // this branch (C5).
+    // this branch (C5). An array passes through untouched — `encodeQuery`
+    // sends it as repeated `risk_categories=` keys, which is what the live
+    // API actually wants (03f); it is no longer JSON-stringified.
     risk_categories:
       rest.riskCategories === undefined
         ? undefined
         : typeof (rest.riskCategories as unknown) === 'string'
           ? (rest.riskCategories as unknown as string)
-          : JSON.stringify(rest.riskCategories),
+          : rest.riskCategories,
   };
+}
+
+/**
+ * Whether `rest.riskCategories` is a populated array — the one shape the SDK
+ * cannot encode correctly on any of the four traversal-shaped methods
+ * (`downstreamQuery`'s doc comment above has the live-verified detail).
+ *
+ * An **empty** array is not "populated": it asks for nothing filtered, same
+ * as an omitted `riskCategories`, and the SDK's own `toJson([])` — while
+ * still technically the wrong shape — happens to serialize to a value
+ * (`risk_categories=%5B%5D`) Sayari has never been observed to reject,
+ * because nothing upstream of here sends an empty array in the first place
+ * (`flatSorted` drops it before it reaches `params_hash`, and no caller
+ * builds `riskCategories: []` on purpose). Restricting the check to a
+ * populated array keeps every call that does not touch this field on the
+ * SDK's normal path, unchanged.
+ */
+function hasPopulatedRiskCategories(rest: Omit<TraversalWalkParams, 'id'>): boolean {
+  return Array.isArray(rest.riskCategories) && rest.riskCategories.length > 0;
+}
+
+/**
+ * Shared dispatch for the four traversal-shaped reads (`ownership`, `ubo`,
+ * `watchlist`, `traversal`): SDK-first with a raw-fetch fallback on a parse
+ * failure — **except** when `riskCategories` is populated, in which case the
+ * raw request runs unconditionally and the SDK is never called at all.
+ *
+ * Why the existing exception-based fallback (`viaSdkWithRawFallback`) cannot
+ * be trusted to catch this on its own: it only fires on the SDK's own
+ * `ParseError` (`isParseError`, `dispatchers/sayari.ts`) — a response it
+ * could not read. This bug is the opposite shape. The SDK builds a genuinely
+ * malformed *request* and sends it; Sayari reads it fine and answers with a
+ * clean `422` and a `messages` array explaining exactly what was wrong. That
+ * is not a `ParseError` — it is a well-formed API response describing our
+ * mistake — so `viaSdkWithRawFallback` would let it through, and the
+ * malformed request would go out, and fail the same way, on *every* call
+ * that ever populates `riskCategories`, forever. A `dispatch` that "adds a
+ * fallback" without addressing this would look fixed in review and stay
+ * broken live — the fallback has to run *instead of* the SDK for this field,
+ * not *after* it.
+ */
+async function dispatchTraversalWalk(
+  path: string,
+  sdkCall: () => Promise<unknown>,
+  rest: Omit<TraversalWalkParams, 'id'>,
+  deps: DispatchDeps,
+): Promise<{ body: unknown; via: UpstreamVia }> {
+  const query = downstreamQuery(rest);
+  if (hasPopulatedRiskCategories(rest)) {
+    return { body: await rawFetch({ path, query }, deps), via: 'raw' };
+  }
+  return viaSdkWithRawFallback(sdkCall, () => ({ path, query }), deps);
 }
 
 /**
@@ -570,12 +645,10 @@ export const sayariTraversalUbo = defineEndpoint({
   dispatch: async (params, deps) => {
     const { id, ...rest } = params;
     const client = getSayariClient(deps.credentials);
-    return viaSdkWithRawFallback(
+    return dispatchTraversalWalk(
+      `/v1/ubo/${encodeURIComponent(String(id))}`,
       () => client.traversal.ubo(String(id), rest as never, requestOptions(deps)),
-      () => ({
-        path: `/v1/ubo/${encodeURIComponent(String(id))}`,
-        query: downstreamQuery(rest),
-      }),
+      rest,
       deps,
     );
   },
@@ -611,12 +684,10 @@ export const sayariTraversalWatchlist = defineEndpoint({
   dispatch: async (params, deps) => {
     const { id, ...rest } = params;
     const client = getSayariClient(deps.credentials);
-    return viaSdkWithRawFallback(
+    return dispatchTraversalWalk(
+      `/v1/watchlist/${encodeURIComponent(String(id))}`,
       () => client.traversal.watchlist(String(id), rest as never, requestOptions(deps)),
-      () => ({
-        path: `/v1/watchlist/${encodeURIComponent(String(id))}`,
-        query: downstreamQuery(rest),
-      }),
+      rest,
       deps,
     );
   },
@@ -638,12 +709,10 @@ export const sayariTraversal = defineEndpoint({
   dispatch: async (params, deps) => {
     const { id, ...rest } = params;
     const client = getSayariClient(deps.credentials);
-    return viaSdkWithRawFallback(
+    return dispatchTraversalWalk(
+      `/v1/traversal/${encodeURIComponent(String(id))}`,
       () => client.traversal.traversal(String(id), rest as never, requestOptions(deps)),
-      () => ({
-        path: `/v1/traversal/${encodeURIComponent(String(id))}`,
-        query: downstreamQuery(rest),
-      }),
+      rest,
       deps,
     );
   },

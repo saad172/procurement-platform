@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { downstreamQuery } from '@/upstream/endpoints';
 
 /**
- * `downstreamQuery`'s wire mapping, for all three traversal rows —
- * `ownership`, `ubo` and `traversal` (ticket 01 item B). Copied from
- * `node_modules/@sayari/sdk/api/resources/traversal/client/Client.js`.
+ * `downstreamQuery`'s wire mapping, for all four traversal rows —
+ * `ownership`, `ubo`, `watchlist` and `traversal` (ticket 01 item B).
+ * Field names copied from `node_modules/@sayari/sdk/api/resources/traversal/
+ * client/Client.js`; the `risk_categories` encoding itself is not (03f — see
+ * that test's own doc comment below).
  */
 describe('downstreamQuery (SPEC §16.6)', () => {
   it('omits every key when nothing is set', () => {
@@ -42,9 +44,23 @@ describe('downstreamQuery (SPEC §16.6)', () => {
     expect(query.countries).toEqual(['USA', 'CHN']);
   });
 
-  it('JSON-stringifies riskCategories into one risk_categories param', () => {
+  /**
+   * 03f: this used to assert `JSON.stringify(riskCategories)`, mirroring the
+   * SDK's own `ownership`/`ubo`/`watchlist`/`traversal` branches on the
+   * (wrong) assumption that copying the SDK byte-for-byte was automatically
+   * safe. Live-verified against `/v1/downstream/{id}` with a real entity:
+   * that JSON-stringified form comes back `422 "Invalid risk category
+   * '[\"sanctions\",\"export_controls\"]'"` — for one element or many, it
+   * makes no difference — while the same values sent as repeated
+   * `risk_categories=` keys come back `200`. So this now passes the array
+   * straight through, the same as `relationships`/`types`/`countries` above;
+   * `encodeQuery` (`dispatchers/sayari.ts`) is what turns it into repeated
+   * keys on the wire (asserted end-to-end in
+   * `risk-categories-dispatch.test.ts`).
+   */
+  it('carries a populated riskCategories as an array (repeat encoding), not JSON-stringified', () => {
     const query = downstreamQuery({ riskCategories: ['sanctions', 'export_controls'] });
-    expect(query.risk_categories).toBe(JSON.stringify(['sanctions', 'export_controls']));
+    expect(query.risk_categories).toEqual(['sanctions', 'export_controls']);
   });
 
   /** C5: the SDK's own branch — a bare string (a custom, non-enum category)
