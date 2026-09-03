@@ -25,11 +25,20 @@ type SdkCall<T> = () => Promise<T>;
  * The raw request the fallback re-issues. Paths and query-parameter names are
  * taken from the SDK's own client, so the fallback hits the same endpoint the
  * SDK would have — a fallback aimed somewhere else is not a fallback.
+ *
+ * An array value is sent **repeated**, one `key=value` pair per entry —
+ * `qs.stringify(params, { arrayFormat: 'repeat' })` is what the SDK's own
+ * fetcher uses (`node_modules/@sayari/sdk/core/fetcher/createRequestUrl.js`),
+ * not `key[]=value` and not a comma-joined single value. A caller that wants
+ * the SDK's other array encoding — the single JSON-stringified value it uses
+ * for `risk_categories` (`(0, json_1.toJson)(riskCategories)` in
+ * `.../traversal/client/Client.js`) — pre-stringifies it and passes a plain
+ * string here instead.
  */
 export type RawRequest = {
   path: string;
   method?: 'GET' | 'POST';
-  query?: Record<string, string | number | boolean | undefined>;
+  query?: Record<string, string | number | boolean | readonly (string | number)[] | undefined>;
   body?: unknown;
 };
 
@@ -72,7 +81,12 @@ export async function rawFetch(request: RawRequest, deps: DispatchDeps): Promise
   const token = await getBearerToken(deps);
   const url = new URL(request.path, SAYARI_BASE_URL);
   for (const [key, value] of Object.entries(request.query ?? {})) {
-    if (value !== undefined) url.searchParams.set(key, String(value));
+    if (value === undefined) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) url.searchParams.append(key, String(item));
+      continue;
+    }
+    url.searchParams.set(key, String(value));
   }
   const method = request.method ?? 'GET';
   const response = await fetch(url, {

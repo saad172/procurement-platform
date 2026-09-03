@@ -28,6 +28,8 @@ export function createUpstream(ctx: UpstreamContext) {
 
     sayari: {
       getEntity: run(endpoints.sayariGetEntity),
+      /** Cheaper than `getEntity`, no `relationships` block (SPEC §9 renames row 5). */
+      entitySummary: run(endpoints.sayariEntitySummary),
       getRecord: run(endpoints.sayariGetRecord),
       resolve: run(endpoints.sayariResolve),
       searchEntity: run(endpoints.sayariSearchEntity),
@@ -40,7 +42,15 @@ export function createUpstream(ctx: UpstreamContext) {
       negativeNews: run(endpoints.sayariNegativeNews),
       /** Slow (3.6–13.4 s) and barred from chat. Discover's mechanism. */
       tradeSearchSuppliers: run(endpoints.sayariTradeSearchSuppliers),
-      usage: run(endpoints.sayariUsage),
+      // No `usage` wrapper: `info.getUsage` (`sayariUsage`) had no caller
+      // anywhere in the app — not `get_usage` (`src/tools/catalog/reads.ts`),
+      // which returns run counts and a static Sayari-scope note, not a
+      // Runs page, not a test (ticket 01 item D). Wiring it into `get_usage`
+      // would also have forced a confirm gate on a tool that is today a
+      // free, instant read: the registry's boot invariant requires a confirm
+      // gate on any chat-reachable tool whose `spends` is non-empty
+      // (`src/tools/registry.ts`), and `get_usage` is surfaced to chat. Row,
+      // wrapper, `ENDPOINTS` entry and projection removed rather than wired.
     },
 
     gleif: {

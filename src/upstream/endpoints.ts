@@ -11,13 +11,13 @@ import {
 } from './projections/external';
 import {
   entitySchema,
+  entitySummarySchema,
   negativeNewsSchema,
   recordSchema,
   resolutionSchema,
   searchEntitySchema,
   tradeSearchSchema,
   traversalSchema,
-  usageSchema,
 } from './projections/sayari';
 import type { DispatchDeps, EndpointDef } from './types';
 
@@ -99,6 +99,102 @@ const GET_ENTITY_LIMITS = {
   referencedByLimit: 20, // shrunk from 100 — unread
 } as const;
 
+/**
+ * The `relationships*` filter params `getEntity` also accepts, beyond the
+ * eleven limits above (ticket 01 item B, "Typed owner-edge read", SPEC
+ * §16.6). `relationshipsType` and `relationshipsSort` are the two the ticket
+ * names explicitly (`relationshipsSort: "-shares"`); the rest are every
+ * sibling the SDK's own `GetEntity` request type declares
+ * (`node_modules/@sayari/sdk/api/resources/entity/client/requests/
+ * GetEntity.d.ts`), admitted so unit 01b's typed owner-edge read is not stuck
+ * re-deriving them later.
+ *
+ * **`relationshipsType` is singular, not `string[]`.** The SDK's own type is
+ * `relationshipsType?: Sayari.Relationships` — no array form, unlike
+ * `relationshipsCountry`/`relationshipsArrivalCountry`/`relationshipsPartnerRisk`
+ * below, which the SDK types as `T | T[]` and branches on `Array.isArray` at
+ * the wire. That asymmetry is also why ticket 01's own text calls for "one
+ * type per call" — the SDK genuinely cannot ask for more than one at once.
+ *
+ * No defaults for any of these, for the same reason the eleven limits above
+ * are the only entries in `GET_ENTITY_LIMITS`: a new default would sit inside
+ * `params_hash` for every existing `getEntity` call, including the recorded
+ * ones, invalidating them all.
+ */
+type GetEntityRelationshipParams = {
+  relationshipsType?: string;
+  relationshipsSort?: string;
+  relationshipsStartDate?: string;
+  relationshipsEndDate?: string;
+  relationshipsMinShares?: number;
+  relationshipsCountry?: string | string[];
+  relationshipsArrivalCountry?: string | string[];
+  relationshipsArrivalState?: string;
+  relationshipsArrivalCity?: string;
+  relationshipsDepartureCountry?: string | string[];
+  relationshipsDepartureState?: string;
+  relationshipsDepartureCity?: string;
+  relationshipsPartnerName?: string;
+  relationshipsPartnerRisk?: string | string[];
+  relationshipsHsCode?: string;
+};
+
+/**
+ * The `getEntity` raw fallback's query string — every wire key copied from
+ * the SDK's own `entity.getEntity` (`node_modules/@sayari/sdk/api/resources/
+ * entity/client/Client.js`, the `_queryParams[...]` assignments in
+ * `getEntity`). The dotted keys (`attributes.address.limit`,
+ * `relationships.type`, `possibly_same_as.limit`, `referenced_by.limit`) are
+ * the API's own, and their casing is **not consistent** — `attributes.*` and
+ * `possibly_same_as`/`referenced_by` segments are snake_case, `relationships`
+ * sub-keys past `.limit`/`.type`/`.sort` are camelCase
+ * (`relationships.startDate`, `relationships.arrivalCountry`) — copied
+ * exactly rather than normalised, because normalising it would be exactly
+ * the silent-wrong-key failure this item exists to fix (BUILD-NOTES 31):
+ * before this, the raw path sent none of them, so a caller falling back here
+ * got the server's unfiltered default without complaint.
+ */
+export function getEntityQuery(rest: Record<string, unknown>) {
+  return {
+    'attributes.additional_information.limit': rest.attributesAdditionalInformationLimit as
+      | number
+      | undefined,
+    'attributes.address.limit': rest.attributesAddressLimit as number | undefined,
+    'attributes.business_purpose.limit': rest.attributesBusinessPurposeLimit as
+      | number
+      | undefined,
+    'attributes.company_type.limit': rest.attributesCompanyTypeLimit as number | undefined,
+    'attributes.country.limit': rest.attributesCountryLimit as number | undefined,
+    'attributes.identifier.limit': rest.attributesIdentifierLimit as number | undefined,
+    'attributes.name.limit': rest.attributesNameLimit as number | undefined,
+    'attributes.status.limit': rest.attributesStatusLimit as number | undefined,
+    'relationships.limit': rest.relationshipsLimit as number | undefined,
+    'relationships.type': rest.relationshipsType as string | undefined,
+    'relationships.sort': rest.relationshipsSort as string | undefined,
+    'relationships.startDate': rest.relationshipsStartDate as string | undefined,
+    'relationships.endDate': rest.relationshipsEndDate as string | undefined,
+    'relationships.minShares': rest.relationshipsMinShares as number | undefined,
+    'relationships.country': rest.relationshipsCountry as string | string[] | undefined,
+    'relationships.arrivalCountry': rest.relationshipsArrivalCountry as
+      | string
+      | string[]
+      | undefined,
+    'relationships.arrivalState': rest.relationshipsArrivalState as string | undefined,
+    'relationships.arrivalCity': rest.relationshipsArrivalCity as string | undefined,
+    'relationships.departureCountry': rest.relationshipsDepartureCountry as
+      | string
+      | string[]
+      | undefined,
+    'relationships.departureState': rest.relationshipsDepartureState as string | undefined,
+    'relationships.departureCity': rest.relationshipsDepartureCity as string | undefined,
+    'relationships.partnerName': rest.relationshipsPartnerName as string | undefined,
+    'relationships.partnerRisk': rest.relationshipsPartnerRisk as string | string[] | undefined,
+    'relationships.hsCode': rest.relationshipsHsCode as string | undefined,
+    'possibly_same_as.limit': rest.possiblySameAsLimit as number | undefined,
+    'referenced_by.limit': rest.referencedByLimit as number | undefined,
+  };
+}
+
 export const sayariGetEntity = defineEndpoint({
   source: 'sayari',
   endpoint: 'entity.getEntity',
@@ -111,12 +207,55 @@ export const sayariGetEntity = defineEndpoint({
     const client = getSayariClient(deps.credentials);
     return viaSdkWithRawFallback(
       () => client.entity.getEntity(String(id), rest as never, requestOptions(deps)),
-      () => ({ path: `/v1/entity/${encodeURIComponent(String(id))}` }),
+      () => ({
+        path: `/v1/entity/${encodeURIComponent(String(id))}`,
+        query: getEntityQuery(rest),
+      }),
       deps,
     );
   },
   projection: entitySchema,
-} as EndpointDef<{ id: string } & Partial<typeof GET_ENTITY_LIMITS>, z.infer<typeof entitySchema>>);
+} as EndpointDef<
+  { id: string } & Partial<typeof GET_ENTITY_LIMITS> & GetEntityRelationshipParams,
+  z.infer<typeof entitySchema>
+>);
+
+/**
+ * `entity.entitySummary` (SPEC §9 renames row 5; ticket 01 item A2) — cheaper
+ * than `getEntity` for the resolve pre-pass's five Candidates. Verified
+ * against the SDK: `client.entity.entitySummary(id, requestOptions)` at
+ * `/v1/entity_summary/{id}` (`node_modules/@sayari/sdk/api/resources/entity/
+ * client/Client.js`), GET, **no request params at all** — unlike `getEntity`
+ * it takes none, so there is nothing to widen and nothing beyond `id` to hash.
+ *
+ * See `entitySummarySchemaInner`'s own doc comment (`projections/sayari.ts`)
+ * for exactly what it carries and what it does not.
+ *
+ * **No `bucket`.** Sayari's own usage-counter type
+ * (`node_modules/@sayari/sdk/api/resources/info/types/UsageInfo.d.ts`)
+ * declares exactly six buckets — `entity`, `record`, `resolve`, `search`,
+ * `tradeTraversal`, `traversal` — with no seventh `entitySummary` counter.
+ * Reusing `entity` would be a guess this file has no way to check without a
+ * live call, which the ticket forbids; leaving it unbucketed is the same
+ * honest gap `negativeNews` already carries, footnoted the same way. See the
+ * PR's Re-record list: confirm against a live `info.getUsage()` diff.
+ */
+export const sayariEntitySummary = defineEndpoint({
+  source: 'sayari',
+  endpoint: 'entity.entitySummary',
+  timeoutMs: SAYARI_FAST_MS,
+  defaults: {},
+  normalizeParams: (p) => flat(p),
+  dispatch: async (params, deps) => {
+    const client = getSayariClient(deps.credentials);
+    return viaSdkWithRawFallback(
+      () => client.entity.entitySummary(String(params.id), requestOptions(deps)),
+      () => ({ path: `/v1/entity_summary/${encodeURIComponent(String(params.id))}` }),
+      deps,
+    );
+  },
+  projection: entitySummarySchema,
+} as EndpointDef<{ id: string }, z.infer<typeof entitySummarySchema>>);
 
 export const sayariGetRecord = defineEndpoint({
   source: 'sayari',
@@ -248,41 +387,89 @@ export const sayariTraversalOwnership = defineEndpoint({
 
 /**
  * The depth-and-cursor parameters a **Deep Traversal** adds to the same two
- * endpoints the Corporate family already uses (SPEC §8.5).
+ * endpoints the Corporate family already uses (SPEC §8.5), widened for the
+ * filtered reads SPEC §4.1/§4.4 need (ticket 01 item A1): `relationships`,
+ * `riskCategories`, `countries`, `minShares`, `excludeClosedEntities`,
+ * `sanctioned`, `pep`, `psa`.
  *
- * `maxDepth`, `minDepth` and `offset` are all on the SDK's own `Ownership` and
- * `Ubo` request types, so this is one endpoint row with more of its parameters
- * named rather than a second row aimed at the same URL — which would have given
- * the same call two cache keyspaces and two usage-row endpoint names.
+ * `maxDepth`, `minDepth`, `offset` and the eight new fields are all on the
+ * SDK's own `Ownership` and `Ubo` request types (verified against
+ * `node_modules/@sayari/sdk/api/resources/traversal/client/requests/
+ * Ownership.d.ts` and `.../Ubo.d.ts`, whose fields the two share verbatim),
+ * so this is one endpoint row with more of its parameters named rather than a
+ * second row aimed at the same URL — which would have given the same call two
+ * cache keyspaces and two usage-row endpoint names. `riskCategories` is typed
+ * `Sayari.RiskCategory[] | string` on the SDK's request interface (a bare
+ * string names a custom, non-enum category); narrowed here to `string[]`
+ * because nothing in this app sends the bare-string form.
  *
  * **They are optional and there is no default for them, deliberately.** The
  * defaults are applied before hashing (SPEC §16.6), so writing `maxDepth: 3`
  * into `defaults` would change `params_hash` for the automatic family read that
  * does not ask for a depth at all — invalidating its cache and every recorded
- * fixture that holds one. A caller that wants a depth says so; a caller that
- * does not gets the server's own default, which the response echoes back.
+ * fixture that holds one. The same reasoning covers every field added here: a
+ * caller that wants a filter says so; a caller that does not gets the
+ * server's own default, unfiltered, exactly as today. `enqueue_deep_traversal`
+ * is what exposes these to a person as optional inputs (SPEC §4.4); this
+ * ticket only widens the type and the wire mapping (item B) that carries it.
  */
-type TraversalWalkParams = {
+export type TraversalWalkParams = {
   id: string;
   limit?: number;
   offset?: number;
   minDepth?: number;
   maxDepth?: number;
+  relationships?: string[];
+  riskCategories?: string[];
+  countries?: string[];
+  minShares?: number;
+  excludeClosedEntities?: boolean;
+  sanctioned?: boolean;
+  pep?: boolean;
+  psa?: boolean;
 };
 
 /**
- * The raw fallback's query string, named the way the SDK's own client names it
- * — `min_depth` / `max_depth`, snake_case, against the camelCase the SDK takes.
- * A fallback that sent `maxDepth` would be answered at the server's default
- * depth without complaint, which is the silent-wrong-key failure mode
- * `trade.searchSuppliers` already cost this build once (BUILD-NOTES 31).
+ * The raw fallback's query string for all three traversal rows (ticket 01
+ * item B), named the way the SDK's own client names it — copied from
+ * `node_modules/@sayari/sdk/api/resources/traversal/client/Client.js`, the
+ * `_queryParams[...]` assignments shared by `ownership`, `ubo` and
+ * `traversal`. `min_depth`/`max_depth`, snake_case, against the camelCase the
+ * SDK takes: a fallback that sent `maxDepth` would be answered at the
+ * server's default depth without complaint, which is the silent-wrong-key
+ * failure mode `trade.searchSuppliers` already cost this build once
+ * (BUILD-NOTES 31).
+ *
+ * Three different encodings for three different new fields, each copied
+ * rather than guessed:
+ * - `relationships`/`countries` go through as **arrays**, sent repeated —
+ *   `qs.stringify(params, { arrayFormat: 'repeat' })`
+ *   (`core/fetcher/createRequestUrl.js`), which `rawFetch` now knows how to
+ *   send (`dispatchers/sayari.ts`).
+ * - `risk_categories` is sent as **one JSON-stringified array** in a single
+ *   param — `(0, json_1.toJson)(riskCategories)` in the SDK's own code —
+ *   pre-stringified here so it stays a scalar rather than being repeated.
+ * - `min_shares`/`exclude_closed_entities`/`sanctioned`/`pep`/`psa` are plain
+ *   scalars, `.toString()`'d by the SDK the same way `rawFetch` stringifies
+ *   any scalar.
  */
-function downstreamQuery(rest: Record<string, unknown>) {
+export function downstreamQuery(rest: Record<string, unknown>) {
   return {
     limit: rest.limit as number | undefined,
     offset: rest.offset as number | undefined,
     min_depth: rest.minDepth as number | undefined,
     max_depth: rest.maxDepth as number | undefined,
+    relationships: rest.relationships as string[] | undefined,
+    countries: rest.countries as string[] | undefined,
+    min_shares: rest.minShares as number | undefined,
+    exclude_closed_entities: rest.excludeClosedEntities as boolean | undefined,
+    sanctioned: rest.sanctioned as boolean | undefined,
+    pep: rest.pep as boolean | undefined,
+    psa: rest.psa as boolean | undefined,
+    risk_categories:
+      rest.riskCategories !== undefined
+        ? (JSON.stringify(rest.riskCategories) as string)
+        : undefined,
   };
 }
 
@@ -338,12 +525,15 @@ export const sayariTraversal = defineEndpoint({
     const client = getSayariClient(deps.credentials);
     return viaSdkWithRawFallback(
       () => client.traversal.traversal(String(id), rest as never, requestOptions(deps)),
-      () => ({ path: `/v1/traversal/${encodeURIComponent(String(id))}` }),
+      () => ({
+        path: `/v1/traversal/${encodeURIComponent(String(id))}`,
+        query: downstreamQuery(rest),
+      }),
       deps,
     );
   },
   projection: traversalSchema,
-} as EndpointDef<{ id: string } & Record<string, unknown>, z.infer<typeof traversalSchema>>);
+} as EndpointDef<TraversalWalkParams, z.infer<typeof traversalSchema>>);
 
 /** Takes a bare name, so the input is always the **resolved legal name**. */
 export const sayariNegativeNews = defineEndpoint({
@@ -404,24 +594,6 @@ export const sayariTradeSearchSuppliers = defineEndpoint({
   { hsCodes?: string[]; arrivalCountries?: string[]; q?: string; limit?: number },
   z.infer<typeof tradeSearchSchema>
 >);
-
-/** Account-wide, rolling-year, seven counters, no dollars (SPEC §18.1). */
-export const sayariUsage = defineEndpoint({
-  source: 'sayari',
-  endpoint: 'info.getUsage',
-  timeoutMs: SAYARI_FAST_MS,
-  defaults: {},
-  normalizeParams: (p) => flat(p),
-  dispatch: async (params, deps) => {
-    const client = getSayariClient(deps.credentials);
-    return viaSdkWithRawFallback(
-      () => client.info.getUsage(params as never, requestOptions(deps)),
-      () => ({ path: '/v1/usage' }),
-      deps,
-    );
-  },
-  projection: usageSchema,
-} as EndpointDef<Record<string, unknown>, unknown>);
 
 /**
  * The boot call (SPEC §16.7).
@@ -639,14 +811,15 @@ export const nominatimGeocode = defineEndpoint({
 /** Every endpoint, so a test can quantify over them (SPEC §16.2). */
 export const ENDPOINTS = {
   sayariGetEntity,
+  sayariEntitySummary,
   sayariGetRecord,
   sayariResolve,
   sayariSearchEntity,
   sayariTraversalOwnership,
+  sayariTraversalUbo,
   sayariTraversal,
   sayariNegativeNews,
   sayariTradeSearchSuppliers,
-  sayariUsage,
   sayariMetadataRaw,
   gleifJoinLei,
   gleifSearchByName,
