@@ -132,8 +132,25 @@ describe.skipIf(!up)(`upsertEntity across partial sightings (needs: ${START_TEST
       distinct_source_count: 2,
     });
     expect(row?.relationship_count).toEqual({ has_shareholder: 4 });
-    // The newer risk block is genuinely newer evidence, so it does move.
-    expect(row?.risk).toEqual({ cpi_score: { level: 'relevant' } });
+    /**
+     * **`risk` is one of the two columns that do not simply take the newest
+     * sighting** (SPEC §8.2 D5, item A). The old rule — overwrite in full — is
+     * exactly the YAZAKI ROMANIA bug: a company with ten factors in a
+     * traversal payload and six from `getEntity` is not the same company as
+     * one with six, whichever sighting arrives second. So the `full` body's
+     * `basel_aml` survives the `nested` body's `cpi_score`. `risk` itself
+     * stays exactly Sayari's own shape; the provenance lands on the sibling
+     * `risk_sources` column (see `tests/jobs/upsert-entity.test.ts`'s "risk
+     * union by provenance" block below for that half).
+     */
+    expect(row?.risk).toEqual({
+      basel_aml: { level: 'relevant', value: null, metadata: {} },
+      cpi_score: { level: 'relevant', value: null, metadata: {} },
+    });
+    expect(row?.risk_sources).toEqual({
+      basel_aml: ['getEntity'],
+      cpi_score: ['getEntity'],
+    });
   });
 
   /** The 11-entity case: the same bug with the sightings the other way round. */
@@ -217,5 +234,123 @@ describe.skipIf(!up)(`upsertEntity across partial sightings (needs: ${START_TEST
     expect(new Date(after?.fetched_at as string).getTime()).toBeGreaterThan(
       new Date(before?.fetched_at as string).getTime(),
     );
+  });
+});
+
+/**
+ * **The risk union by provenance** (SPEC §8.2 D5, ticket 01 item A).
+ *
+ * Shaped from a real recorded body: `ООО "ЯЗАКИ ВОЛГА"`, a traversal terminal
+ * in `tests/fixtures/enrich/yazaki.json`, carries exactly ten risk factors
+ * including `exports_ilab_forced_labor` at `elevated`. The `getEntity` body
+ * below is hand-built from the same shapes (SPEC §16.6's rule for a call with
+ * no recorded body of its own), standing in for a later `getEntity` fetch of
+ * the same company that only reports six of the ten — the YAZAKI ROMANIA
+ * measurement this ticket cites: ten factors became six, and the forced-labour
+ * factor was among the lost.
+ */
+describe.skipIf(!up)(`risk union by provenance (needs: ${START_TEST_DB_HINT})`, () => {
+  const ID = 'yazaki-volga-fixture';
+
+  /** The traversal terminal's own risk block, verbatim from the fixture. */
+  const traversalRisk = {
+    basel_aml: { level: 'relevant', value: 5.35, metadata: { country: ['RUS'] } },
+    cpi_score: { level: 'relevant', value: 22, metadata: { country: ['RUS'] } },
+    exports_ilab_child_labor: { level: 'elevated', value: true },
+    exports_ilab_forced_labor: { level: 'elevated', value: true },
+    psa_exports_ilab_child_labor: { level: 'elevated', value: true },
+    psa_exports_ilab_forced_labor: { level: 'elevated', value: true },
+    imports_bis_high_priority_items: { level: 'elevated', value: 1 },
+    psa_imports_bis_high_priority_items: { level: 'elevated', value: 1 },
+    exports_bis_high_priority_items_indirect: { level: 'elevated', value: 3 },
+    psa_exports_bis_high_priority_items_indirect: { level: 'elevated', value: 3 },
+  };
+
+  /**
+   * A later `getEntity` fetch of the same company: six of the ten factors,
+   * and `basel_aml` reported one band worse than the traversal terminal said
+   * — so the merge's "keep the worse level" rule has something to prove too.
+   */
+  const getEntityRisk = {
+    basel_aml: { level: 'high', value: 6.1, metadata: { country: ['RUS'] } },
+    cpi_score: { level: 'relevant', value: 22, metadata: { country: ['RUS'] } },
+    imports_bis_high_priority_items: { level: 'elevated', value: 1 },
+    psa_imports_bis_high_priority_items: { level: 'elevated', value: 1 },
+    exports_bis_high_priority_items_indirect: { level: 'elevated', value: 3 },
+    psa_exports_bis_high_priority_items_indirect: { level: 'elevated', value: 3 },
+  };
+
+  const traversalEntity = {
+    id: ID,
+    label: 'ООО "ЯЗАКИ ВОЛГА"',
+    risk: traversalRisk,
+  } as SayariEntity;
+
+  const getEntityEntity = {
+    id: ID,
+    label: 'ООО "ЯЗАКИ ВОЛГА"',
+    risk: getEntityRisk,
+  } as SayariEntity;
+
+  /**
+   * `risk` and `risk_sources` are read separately — `risk` stays exactly
+   * Sayari's own shape (`level`/`value`/`metadata`) because
+   * `src/tools/catalog/reads.ts` hands it to a model turn verbatim; the
+   * per-factor provenance this ticket adds lives on the sibling column
+   * instead, and this pins that the two never merge back into one blob (see
+   * the schema comment on `entity.risk`).
+   */
+  const read = async () => {
+    const [row] = await testSql()`SELECT risk, risk_sources FROM entity WHERE id = ${ID}`;
+    return {
+      risk: (row?.risk ?? {}) as Record<string, { level: string }>,
+      sources: (row?.risk_sources ?? {}) as Record<string, string[]>,
+    };
+  };
+
+  afterAll(async () => {
+    if (!up) return;
+    await testSql()`DELETE FROM entity WHERE id = ${ID}`;
+  });
+
+  it('keeps all ten factors after a getEntity fetch reports six, with sources and the worst level', async () => {
+    const db = await getTestDb();
+    await testSql()`DELETE FROM entity WHERE id = ${ID}`;
+
+    await upsertEntity(db, traversalEntity, undefined, 'traversal');
+    await upsertEntity(db, getEntityEntity, undefined, 'getEntity');
+
+    const { risk, sources } = await read();
+    expect(Object.keys(risk).sort()).toEqual(Object.keys(traversalRisk).sort());
+    expect(Object.keys(risk)).toHaveLength(10);
+    // `risk` itself carries no extra key — Sayari's own shape, untouched.
+    expect(Object.keys(risk.cpi_score as unknown as Record<string, unknown>).sort()).toEqual([
+      'level',
+      'metadata',
+      'value',
+    ]);
+
+    // The four traversal-only factors survive, provenanced to `traversal` alone.
+    expect(risk.exports_ilab_forced_labor).toMatchObject({ level: 'elevated' });
+    expect(sources.exports_ilab_forced_labor).toEqual(['traversal']);
+    expect(sources.psa_exports_ilab_child_labor).toEqual(['traversal']);
+
+    // A factor both endpoints reported carries both sources...
+    expect(sources.cpi_score?.sort()).toEqual(['getEntity', 'traversal']);
+    // ...and where they disagree on level, the worse one is kept.
+    expect(risk.basel_aml).toMatchObject({ level: 'high' });
+    expect(sources.basel_aml).toEqual(['traversal', 'getEntity']);
+  });
+
+  it('gets the same ten back whichever order the two sightings arrive in', async () => {
+    const db = await getTestDb();
+    await testSql()`DELETE FROM entity WHERE id = ${ID}`;
+
+    await upsertEntity(db, getEntityEntity, undefined, 'getEntity');
+    await upsertEntity(db, traversalEntity, undefined, 'traversal');
+
+    const { risk } = await read();
+    expect(Object.keys(risk)).toHaveLength(10);
+    expect(risk.basel_aml).toMatchObject({ level: 'high' });
   });
 });
