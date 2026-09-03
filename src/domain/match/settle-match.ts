@@ -33,6 +33,9 @@ export type CandidateRecord = {
   score?: number | undefined;
   matchStrength?: string | undefined;
   explanation?: unknown;
+  /** Sayari's own resolution `highlight` block — a different record from
+   * `explanation` (SPEC §6.2/§9), so its own column rather than folded in. */
+  highlight?: unknown;
   /** Keyed by who reported them: `rules`, `resolver`, `evaluator`. */
   verdicts: { reportedBy: string; results: DiscriminatorResult[] }[];
 };
@@ -214,6 +217,7 @@ export async function settleMatch(
           score: candidate.score?.toString() ?? null,
           matchStrength: candidate.matchStrength ?? null,
           explanation: (candidate.explanation ?? null) as never,
+          highlight: (candidate.highlight ?? null) as never,
         })
         .onConflictDoNothing({
           target: [t.matchCandidate.matchAttemptId, t.matchCandidate.entityId],

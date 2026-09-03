@@ -273,6 +273,15 @@ export async function resolveSupplier(
     roster: RosterRow;
     /** Entity ids from the batch pre-pass (rung R1). */
     prepassEntityIds: string[];
+    /**
+     * What the batch pre-pass's own resolution row said about each of
+     * `prepassEntityIds` — its `score`, `match_strength`, `explanation` and
+     * `highlight` (ticket 01 item A). Keyed by entity id; a candidate absent
+     * here carries none of the four, which is the honest state for one an
+     * agent found by climbing a query rung rather than one the pre-pass
+     * scored.
+     */
+    prepassInfo?: Map<string, PrepassCandidateInfo> | undefined;
     jobId?: string | undefined;
   },
 ): Promise<ResolveOutcome> {
@@ -290,11 +299,36 @@ export async function resolveSupplier(
 /** Gather the candidates the pre-pass proposed, with their GLEIF witness. */
 async function gatherPrepassCandidates(
   deps: Pick<ResolveDeps, 'db' | 'upstream'>,
-  args: { prepassEntityIds: string[] },
+  args: {
+    prepassEntityIds: string[];
+    prepassInfo?: Map<string, PrepassCandidateInfo> | undefined;
+  },
 ): Promise<CandidateFacts[]> {
   const { db, upstream } = deps;
   const candidates: CandidateFacts[] = [];
   for (const entityId of args.prepassEntityIds) {
+    /**
+     * **Still `getEntity`, not `entitySummary`** (ticket 01 item D). The swap
+     * is verified safe on data-shape grounds — checked field by field against
+     * 01a's `entitySummarySchemaInner` and the SDK's own
+     * `EntitySummaryResponse`/`EntityDetails` types
+     * (`node_modules/@sayari/sdk/dist/api/resources/entity/types/`,
+     * `.../sharedTypes/types/EntityDetails.d.ts`): the parsed address blocks
+     * `toCandidateFacts` reads (`attributes.address.data[].properties.city/
+     * postcode/country/value`), name aliases (`attributes.name`), business
+     * purposes, `company_type`, `closed`, `latest_status`, the LEI (off
+     * `identifiers`) and `relationship_count` all survive. Only
+     * `relationships` itself does not, which is why 01a's own comment on
+     * `entitySummarySchemaInner` does not declare that key.
+     *
+     * It compiles: `SayariEntitySummary` typechecks everywhere `toCandidateFacts`
+     * and `upsertEntity` need a `SayariEntity`. It was tried and reverted
+     * because trying it breaks every recorded `resolve` fixture's replay —
+     * `rules-r0`, `agree-r1`, `sanctioned` and `not-found` all hold
+     * `entity.getEntity` bodies for the pre-pass Candidates, not
+     * `entity.entitySummary` ones, and there is no credential in this
+     * worktree to record the missing calls. See the PR's Re-record list.
+     */
     const fetched = await upstream.sayari.getEntity({ id: entityId });
     const facts = toCandidateFacts(fetched.data);
     if (facts.lei) {
@@ -306,6 +340,19 @@ async function gatherPrepassCandidates(
         // A GLEIF miss leaves `gleif` undefined, which reads as `unavailable`
         // rather than as a failure — absence is not evidence.
       }
+    }
+    // What the batch resolution itself said about this Candidate — the four
+    // values `match_candidate` has always had columns for and always left
+    // null (ticket 01 item A), carried from here into every `CandidateRecord`
+    // this Candidate ever appears in.
+    const info = args.prepassInfo?.get(entityId);
+    if (info) {
+      facts.resolution = {
+        score: info.score,
+        matchStrength: info.matchStrength,
+        explanation: info.explanation,
+        highlight: info.highlight,
+      };
     }
     candidates.push(facts);
     await upsertEntity(db, fetched.data, fetched.upstreamResponseId);
@@ -340,6 +387,10 @@ async function runAutoAcceptGate(
     entityId: a.candidate.entityId,
     foundByRung: 'R1',
     queryProvenance: 'batch resolution pre-pass over the roster row',
+    score: a.candidate.resolution?.score,
+    matchStrength: a.candidate.resolution?.matchStrength,
+    explanation: a.candidate.resolution?.explanation,
+    highlight: a.candidate.resolution?.highlight,
     verdicts: [{ reportedBy: 'rules', results: a.verdicts }],
   }));
 
@@ -350,6 +401,10 @@ async function runAutoAcceptGate(
       status: 'accepted',
       entityId: gate.entityId,
       settledBy: 'rules',
+      // Sayari's own `matchStrength` for the accepted Candidate — the gate
+      // itself never reads it (auto-accept.test.ts asserts as much); this is
+      // only carried onto the settled `match` row once code already decided.
+      matchStrength: settled.resolution?.matchStrength,
       jobId: args.jobId,
       rungsUsed: ['R1'],
       note: gate.reason,
@@ -500,6 +555,10 @@ async function settleAgreement(
     status: 'accepted',
     entityId: picked.entityId,
     settledBy: 'agents',
+    // Absent unless the agents' own pick happened to be one of the pre-pass
+    // Candidates — an agreement reached by climbing a rung has no resolution
+    // `match_strength` of its own, and that absence is the honest state.
+    matchStrength: picked.resolution?.matchStrength,
     jobId: args.jobId,
     rungsUsed: state.rungsUsed,
     note: `Both agents independently named ${picked.label} at round ${roundN}.`,
@@ -729,6 +788,12 @@ function candidateRecords(
         rung === 'R1'
           ? 'batch resolution pre-pass over the roster row'
           : `found by an agent during a Match round, at rung ${rung}`,
+      // The pre-pass's own resolution row for this Candidate, when it has one
+      // — absent for a Candidate an agent found by climbing a rung.
+      score: candidate.resolution?.score,
+      matchStrength: candidate.resolution?.matchStrength,
+      explanation: candidate.resolution?.explanation,
+      highlight: candidate.resolution?.highlight,
       verdicts,
     };
   });
@@ -912,15 +977,52 @@ function relationshipsTruncated(entity: SayariEntity): boolean {
   return total > returned;
 }
 
-/** Reads the batch pre-pass into per-row candidate id lists. */
+/**
+ * What one row of the batch pre-pass's own resolution response said about a
+ * Candidate — everything `match_candidate` has columns for and, before ticket
+ * 01, always left null (SPEC §6.2/§6.3).
+ */
+export type PrepassCandidateInfo = {
+  entityId: string;
+  matchStrength: string | undefined;
+  score: number | undefined;
+  /** Sayari's own per-field match-quality record. */
+  explanation: unknown;
+  /** Sayari's own per-field highlighted-match-text record. */
+  highlight: unknown;
+};
+
+/** Reads the batch pre-pass into per-row candidate info, ids and all four evidence fields. */
 export function prepassCandidateIds(resolution: {
-  data?: { entity_id?: string; match_strength?: unknown }[] | null | undefined;
-}): { entityId: string; matchStrength: string | undefined }[] {
+  data?:
+    | {
+        entity_id?: string;
+        match_strength?: unknown;
+        score?: unknown;
+        explanation?: unknown;
+        highlight?: unknown;
+      }[]
+    | null
+    | undefined;
+}): PrepassCandidateInfo[] {
   return (resolution.data ?? [])
-    .filter((row): row is { entity_id: string; match_strength?: unknown } => Boolean(row.entity_id))
+    .filter(
+      (
+        row,
+      ): row is {
+        entity_id: string;
+        match_strength?: unknown;
+        score?: unknown;
+        explanation?: unknown;
+        highlight?: unknown;
+      } => Boolean(row.entity_id),
+    )
     .map((row) => ({
       entityId: row.entity_id,
       matchStrength: matchStrengthValue(row.match_strength as never),
+      score: typeof row.score === 'number' ? row.score : undefined,
+      explanation: row.explanation,
+      highlight: row.highlight,
     }));
 }
 

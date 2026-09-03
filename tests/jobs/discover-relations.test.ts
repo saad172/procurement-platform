@@ -139,8 +139,12 @@ describe('the Lead row Discover writes', () => {
         entity: { id: member, label: memberEntity!.label } as never,
         shipments: 1_047,
         latestShipmentDate: null,
+        // Deliberately not the query's own '854430' — a Lead's HS footprint
+        // is the ROW's (ticket 01 item C), and this is what pins that down.
+        hsCodes: ['854431'],
       },
       query: { hsCodes: ['854430'], arrivalCountries: ['USA', 'MEX'] },
+      tradeTotalCount: 5_240,
       classification: {
         classification: null,
         reasoning: null,
@@ -176,8 +180,10 @@ describe('the Lead row Discover writes', () => {
         entity: { id: guessId, label: 'YAZAKI MOROCCO SARL' } as never,
         shipments: 12,
         latestShipmentDate: '2026-04-02',
+        hsCodes: ['854430'],
       },
       query: { hsCodes: ['854430'], arrivalCountries: ['USA', 'MEX'] },
+      tradeTotalCount: 5_240,
       classification: {
         classification: 'manufacturer',
         reasoning: 'assembles harnesses',
@@ -209,5 +215,13 @@ describe('the Lead row Discover writes', () => {
      */
     expect(lead?.classification).toBeNull();
     expect(lead?.notClassifiedReason).toBe('the classifier loop stopped: tool-call cap reached');
+
+    /**
+     * **A Lead's HS footprint is the row's, never the query's** (ticket 01
+     * item C). The candidate's own `hsCodes` differs from the query's here on
+     * purpose, and it is the candidate's that lands on the row.
+     */
+    expect(lead?.topHsCodes).toEqual(['854431']);
+    expect(lead?.tradeTotalCount).toBe(5_240);
   });
 });
