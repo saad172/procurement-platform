@@ -14,6 +14,7 @@ import {
   enrichGeocode,
   enrichLei,
   enrichNegativeNews,
+  enrichOwnership,
   enrichTariff,
   enrichWatchlist,
   loadPlants,
@@ -231,6 +232,15 @@ async function fanOutEnrichments(
   // ticket 03's job. This just makes sure the automatic read actually runs.
   const watchlist = await enrichWatchlist(ctx, { entityId: match.entityId });
   written.push(watchlist.enrichmentId);
+
+  // ── 2c. Filtered ownership exposure Paths — same cadence, spec §4.1 ──────
+  // Writes a second page into the SAME `kind: 'family'` graph_path rows
+  // `enrichFamily` above just wrote (`filtered: true`), never a separate set
+  // — see `enrichOwnership`'s own doc comment. Not in EXPECTED_ENRICHMENTS/
+  // checklist yet, same reason as watchlist: Network exposure scoring is
+  // ticket 03's job, this just makes sure the automatic read actually runs.
+  const ownershipExposure = await enrichOwnership(ctx, { entityId: match.entityId });
+  written.push(ownershipExposure.enrichmentId);
 
   // ── 3. Country indicators, shared across every Supplier in the country ───
   // Fetched for the country the Match settled on (SPEC §9.4), so the World Bank
