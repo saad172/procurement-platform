@@ -319,6 +319,7 @@ export function RiskFactors({ data }: { data: Data }) {
                 <th>Reported</th>
                 <th>Scored at</th>
                 <th>Why</th>
+                <th>Source(s)</th>
               </tr>
             </thead>
             <tbody>
@@ -364,13 +365,20 @@ function RiskFactorRow({ factor }: { factor: Data['factors'][number] }) {
                 ? 'a twin’s factor: deducts, but never raises the disqualifying badge'
                 : 'scored at full weight'}
       </td>
+      {/*
+        Which endpoint(s) reported this factor (SPEC §8.2 D5, item A) — joined
+        back in from the `risk_sources` sibling column. A factor upserted
+        before this ticket, or a row `attachRiskSources` had nothing to add
+        to, reads "—" rather than a false claim.
+      */}
+      <td className="note">{factor.sources?.length ? factor.sources.join(', ') : '—'}</td>
     </tr>
   );
 }
 
 /** ── Relationships ── */
 export function Relationships({ data }: { data: Data }) {
-  const { edges, edgeGroups: groups } = data;
+  const { edges, edgeGroups: groups, owners } = data;
   return (
     <>
       {/*
@@ -419,6 +427,38 @@ export function Relationships({ data }: { data: Data }) {
           </table>
         </div>
       )}
+      {owners.length > 0 ? (
+        <div className="card scroll-x" style={{ marginTop: '1rem' }}>
+          <p className="note" style={{ marginTop: 0 }}>
+            Current owners, with the share and dates the edge carries — where the source states
+            them.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Owner</th>
+                <th>Relationship</th>
+                <th className="num">Share</th>
+                <th>From</th>
+                <th>To</th>
+              </tr>
+            </thead>
+            <tbody>
+              {owners.map((owner) => (
+                <tr key={`${owner.relationshipType}-${owner.targetId}`}>
+                  <td>{owner.targetLabel ?? owner.targetId}</td>
+                  <td className="note">{owner.relationshipType.replace(/_/g, ' ')}</td>
+                  <td className="num">
+                    {owner.sharePercentage != null ? `${owner.sharePercentage}%` : '—'}
+                  </td>
+                  <td className="note">{owner.startDate ?? '—'}</td>
+                  <td className="note">{owner.endDate ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </>
   );
 }
