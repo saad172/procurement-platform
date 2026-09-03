@@ -80,7 +80,18 @@ describe(`resolution evidence survives call() (needs: ${START_TEST_DB_HINT})`, (
       (c) => c.label === 'AMERICAN AXLE & MANUFACTURING INC',
     );
     expect(americanAxle).toBeTruthy();
-    expect(americanAxle!.score).toBeCloseTo(216.92903, 3);
+    // Read from the fixture's own recorded body, not a hardcoded value:
+    // `matching.ts`'s own schema comment says `score` "is Sayari's, and is
+    // **not comparable between queries**" — measured directly, re-recording
+    // this fixture twice in one session returned two different scores for
+    // the identical query. The claim under test is that the value survives
+    // `call()` unchanged, not that it equals any particular number.
+    const rawCandidates = (recorded!.body as { data?: Array<Record<string, unknown>> }).data ?? [];
+    const rawAmericanAxle = rawCandidates.find(
+      (c) => c.label === 'AMERICAN AXLE & MANUFACTURING INC',
+    );
+    expect(rawAmericanAxle?.score).toBeTypeOf('number');
+    expect(americanAxle!.score).toBeCloseTo(rawAmericanAxle!.score as number, 5);
     expect((americanAxle!.match_strength as { value?: string }).value).toBe('strong');
     expect(americanAxle!.matched_queries).toEqual(
       expect.arrayContaining(['address', 'country', 'name']),

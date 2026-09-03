@@ -152,8 +152,16 @@ describe('resolve/rules-r0 replays', () => {
      * given them; what was broken is that nothing upstream of it ever was —
      * every one of these four read null on every row in the database before
      * this fix, on every Candidate, not only the accepted one.
+     *
+     * `score` is asserted present and positive, not to an exact value:
+     * `matching.ts`'s own schema comment says it "is Sayari's, and is **not
+     * comparable between queries**" — measured directly, re-recording this
+     * fixture twice in one session returned two different scores for the
+     * identical query (216.92903, then 251.62277). Pinning one would make
+     * this test fail on every future re-record for a reason that has nothing
+     * to do with whether the column survived the trip.
      */
-    expect(Number(accepted!.score)).toBeCloseTo(216.92903, 3);
+    expect(Number(accepted!.score)).toBeGreaterThan(0);
     expect(accepted!.matchStrength).toBe('strong');
     expect(accepted!.explanation).toBeTruthy();
     expect(accepted!.explanation).toHaveProperty('name');
