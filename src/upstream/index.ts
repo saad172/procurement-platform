@@ -37,6 +37,8 @@ export function createUpstream(ctx: UpstreamContext) {
       ownership: run(endpoints.sayariTraversalOwnership),
       /** The upward walk, reached only by a Deep Traversal (SPEC §8.5). */
       ubo: run(endpoints.sayariTraversalUbo),
+      /** Paths to Listed entities, in either direction (network spec §4.1). */
+      watchlist: run(endpoints.sayariTraversalWatchlist),
       traversal: run(endpoints.sayariTraversal),
       /** Slow (7–15 s) and barred from chat. Input is the resolved legal name. */
       negativeNews: run(endpoints.sayariNegativeNews),
