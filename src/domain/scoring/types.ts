@@ -10,7 +10,7 @@ import type { RiskFactor } from './risk-factors';
 
 export type CriterionKey =
   | 'compliance_risk'
-  | 'ownership_exposure'
+  | 'network_exposure'
   | 'country_resilience'
   | 'tariff_exposure'
   | 'proximity'
@@ -134,6 +134,56 @@ export type SupplierScoringInput = {
 
   /** Which expected Enrichments this Supplier actually has. */
   presentEnrichments: string[];
+
+  /**
+   * Every entity reached by a Path of kind `family` or `watchlist` rooted at
+   * the Profile — Network exposure's multi-hop input (network spec §5, §6),
+   * from `loadNetworkExposurePaths` (`src/db/queries/family-paths.ts`).
+   *
+   * **Stays separate from `owners` above, on purpose.** A `family` Path only
+   * ever walks down and a `watchlist` Path terminates at a Listed entity —
+   * neither is the one-hop upward parent `owners` already carries — so
+   * `networkExposure` (`scoring/criteria.ts`) reads both lists and dedupes by
+   * `entityId` itself, rather than either list assuming the other's shape.
+   * Optional (additive to this ticket's scope): a caller that has not wired
+   * the query yet — every pre-existing construction site outside
+   * `enrich-supplier.ts` — reads as `[]`, which `networkExposure` treats
+   * exactly like a real read that found nothing.
+   */
+  networkPaths?:
+    | {
+        entityId: string;
+        label: string;
+        /** Ownership hops from the root, `possibly_same_as` excluded — read off the stored `graph_path` row, never recomputed here. */
+        hopDepth: number;
+        sanctioned: boolean;
+        riskFactors: RiskFactor[];
+        /**
+         * True when every hop of THIS Path is ownership/control
+         * (`isOwnership`, `src/domain/relationships.ts`) — false, shown but
+         * never deducted, when a trade or other lateral hop broke the chain
+         * (a watchlist Path can mix both) or the chain has no hydrated edges
+         * yet.
+         */
+        viaOwnership: boolean;
+        /** Which automatic read found this Path. */
+        kind: 'family' | 'watchlist';
+      }[]
+    | undefined;
+
+  /**
+   * Coverage of the two automatic Path reads, read off their own envelopes
+   * (network spec §6) — never inferred from `networkPaths`' own length, which
+   * is silent on a read that ran and genuinely found nothing. Optional for
+   * the same reason `networkPaths` is; `networkExposure` treats an absent
+   * value as `{ exploredCount: null, truncated: false }` for both kinds.
+   */
+  networkCoverage?:
+    | {
+        family: { exploredCount: number | null; truncated: boolean };
+        watchlist: { exploredCount: number | null; truncated: boolean };
+      }
+    | undefined;
 };
 
 /** The weight vector, keyed rather than positional (SPEC §13.5). */

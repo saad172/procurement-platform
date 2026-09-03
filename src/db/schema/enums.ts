@@ -202,6 +202,37 @@ export const enrichmentSource = pgEnum('enrichment_source', [
    * reading the Enrichments panel should be able to tell apart.
    */
   'sayari_watchlist',
+  /**
+   * The filtered ownership page, the third automatic call per accepted
+   * Profile (network spec §4.1, ticket 03): `traversal.ownership` again,
+   * `riskCategories: [sanctions, export_controls, forced_labor]`,
+   * `excludeClosedEntities: true`, `limit: 50` — the owned entities that
+   * carry exposure wherever they sit in the explored set, not the first
+   * fifty in server order. Its Paths write into the **same** `graph_path`
+   * rows as `sayari_ownership_family` (`kind: 'family'`, `filtered: true`
+   * on the row per network spec §4.1 and §6, never a second `kind`), which
+   * is exactly why it still needs its own source rather than sharing that
+   * one: reasons 1 and 3 above, not reason 2 — both reads are automatic, so
+   * *a person asked for it* does not distinguish them.
+   *
+   * 1. **It is not the same read**, even though it is the same endpoint and
+   *    direction. `riskCategories`/`excludeClosedEntities` change the query
+   *    and therefore the response — a risk-filtered subset, not the family
+   *    at large — so `requestParams` genuinely differs, the way it does for
+   *    `sayari_owner_edges` against a shared endpoint.
+   * 3. **The id is derived from the source, decisively here.**
+   *    `fanOutEnrichments` calls the unfiltered family read and this one
+   *    back to back for the same Profile, so a shared source would make
+   *    every enrich pass write generation *N* for the family read and
+   *    *N + 1* for this one — an undocumented, order-dependent parity, not
+   *    "the next generation of the same question" the way a re-enrich a
+   *    day later would be. Any *latest generation of `sayari_ownership_
+   *    family`* read (the pattern `latestEnrichmentId` in
+   *    `src/db/queries/enrichments.ts` exists for) would then always
+   *    resolve to this filtered read and could never see the plain
+   *    family read's own latest fetch.
+   */
+  'sayari_ownership_exposure',
   'world_bank',
   'gleif',
   'usitc',
@@ -339,7 +370,7 @@ export const sentenceSection = pgEnum('sentence_section', [
   // Assessment
   'identity',
   'compliance',
-  'ownership',
+  'network',
   'country',
   'tariff',
   'media',

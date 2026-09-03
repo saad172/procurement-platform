@@ -268,7 +268,7 @@ export const sayariSearchEntity = defineTool({
 export const sayariGetEntity = defineTool({
   name: 'sayari_get_entity',
   description:
-    'Fetch one company from Sayari by entity id: identity, every address, identifiers, risk factors with their traversal paths, and relationship counts by type. Relationship rows are not included — use get_supplier_family for ownership.',
+    'Fetch one company from Sayari by entity id: identity, every address, identifiers, risk factors with their traversal paths, and relationship counts by type. Relationship rows are not included — use get_supplier_network for its Network.',
   input: z.object({ entityId: z.string() }),
   surfaces: ['chat', 'job', 'mcp'],
   effect: 'read',
@@ -353,8 +353,14 @@ export const sayariGetRecord = defineTool({
   },
 });
 
-export const sayariTraversal = defineTool({
-  name: 'sayari_traversal',
+/**
+ * Named for what it calls (network spec §9 renames row 4) — `sayari_traversal`
+ * called `ctx.upstream.sayari.ownership`, a raw source-prefixed tool naming
+ * the raw-fallback endpoint rather than the SDK method it wraps was the one
+ * mismatch left after ticket 02 added `sayari.watchlist` beside it.
+ */
+export const sayariOwnership = defineTool({
+  name: 'sayari_ownership',
   description: 'Walk the ownership graph downward from one company.',
   input: z.object({ entityId: z.string(), limit: z.number().int().min(1).max(200).optional() }),
   surfaces: ['job', 'mcp'],
@@ -364,6 +370,29 @@ export const sayariTraversal = defineTool({
   handler: async (input, ctx) => {
     const r = await ctx.upstream.sayari.ownership({ id: input.entityId, limit: input.limit ?? 50 });
     return { ok: true, data: sourceResult('Sayari ownership traversal', r.cacheHit, r.data) };
+  },
+});
+
+/**
+ * Paths to Listed entities, in either direction (network spec §4.1, §9).
+ *
+ * Modelled closely on `sayariOwnership` beside it: same shape, same slow-tool
+ * placement (job/mcp only, confirm-gated implicitly by being barred from
+ * chat), same raw `sourceResult` passthrough — `ctx.upstream.sayari.watchlist`
+ * already carries its own envelope and caching through `call()`, so this tool
+ * is a thin wrapper exactly like its neighbour.
+ */
+export const sayariWatchlist = defineTool({
+  name: 'sayari_watchlist',
+  description: 'Walk the watchlist graph from one company, either direction, to Listed entities.',
+  input: z.object({ entityId: z.string(), limit: z.number().int().min(1).max(200).optional() }),
+  surfaces: ['job', 'mcp'],
+  effect: 'read',
+  spends: ['sayari'],
+  latency: 'slow',
+  handler: async (input, ctx) => {
+    const r = await ctx.upstream.sayari.watchlist({ id: input.entityId, limit: input.limit ?? 50 });
+    return { ok: true, data: sourceResult('Sayari watchlist traversal', r.cacheHit, r.data) };
   },
 });
 
@@ -503,7 +532,8 @@ export const RAW_LOOKUPS = [
   sayariSearchEntity,
   sayariGetEntity,
   sayariGetRecord,
-  sayariTraversal,
+  sayariOwnership,
+  sayariWatchlist,
   sayariNegativeNews,
   sayariTradeSearch,
   gleifJoinLei,

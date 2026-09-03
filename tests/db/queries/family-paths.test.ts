@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { getRegistry, type ToolContext } from '@/tools';
-import { loadFamilyPaths, terminalEdgeOf } from '@/db/queries/family-paths';
+import { loadFamilyPaths, loadNetworkExposurePaths, terminalEdgeOf } from '@/db/queries/family-paths';
 import { loadSupplierPage } from '@/db/queries/supplier-page';
 import { loadEntityPage } from '@/db/queries/entity-page';
 import { loadFamilyOwners } from '@/jobs/discover';
@@ -181,7 +181,7 @@ describe('graph_path (kind family), read side', () => {
     expect(terminalEdgeOf(c)).toBeNull();
   });
 
-  it('get_supplier_family cites each member to the record asserting ITS OWN edge, not to the enrichment', async () => {
+  it('get_supplier_network cites each family-group member to the record asserting ITS OWN edge, not to the enrichment', async () => {
     if (!(await testDatabaseIsUp())) return;
     const { db, supplier } = await seedFamily();
 
@@ -192,19 +192,25 @@ describe('graph_path (kind family), read side', () => {
       runId: 'test-run',
       surface: 'job',
     };
-    const result = await getRegistry().byName.get('get_supplier_family')!.handler(
+    const result = await getRegistry().byName.get('get_supplier_network')!.handler(
       { supplierId: supplier.id },
       ctx,
     );
     if (!result.ok) throw new Error(result.objections.join('; '));
     // `{ data, widget }`, same as `citation-targets.test.ts`'s `call()`: the
     // model reads the `data` half.
-    const family = (result.data as { data: unknown }).data as {
-      explored: number;
-      reachable: number | null;
-      truncated: boolean;
-      members: { entityId: string; recordId: string | null; enrichmentId: string }[];
+    const network = (result.data as { data: unknown }).data as {
+      groups: {
+        family: {
+          explored: number;
+          reachable: number | null;
+          truncated: boolean;
+          members: { entityId: string; recordId: string | null; enrichmentId: string }[];
+        };
+        watchlist: { explored: number; members: unknown[] };
+      };
     };
+    const family = network.groups.family;
 
     // The row count, not a stored counter — `graph_path`'s unique
     // (root, terminal, kind) index is what makes that safe now.
@@ -213,6 +219,11 @@ describe('graph_path (kind family), read side', () => {
     // MEMBER_C's row is truncated; the envelope says so even though the
     // other two Paths are not.
     expect(family.truncated).toBe(true);
+
+    // No watchlist Paths were seeded — an empty group is a real, reported
+    // state (network spec §9), not a failure.
+    expect(network.groups.watchlist.explored).toBe(0);
+    expect(network.groups.watchlist.members).toEqual([]);
 
     const byId = new Map(family.members.map((m) => [m.entityId, m]));
     // The ticket 02 "Done when": cited to the record asserting its OWN edge.
@@ -225,7 +236,7 @@ describe('graph_path (kind family), read side', () => {
     expect(byId.get(MEMBER_C)?.recordId).toBeNull();
   });
 
-  it("the Supplier page's coverage, exposure and chain rows agree with the tool", async () => {
+  it("the Supplier page's coverage and chain rows agree with the tool", async () => {
     if (!(await testDatabaseIsUp())) return;
     const { db, program, supplier } = await seedFamily();
 
@@ -236,10 +247,10 @@ describe('graph_path (kind family), read side', () => {
     });
     expect(page).toBeDefined();
     expect(page!.coverage).toEqual({ explored: 3, reachable: 3, partial: true });
-    expect(page!.exposure.state).toBe('exposure_found');
-    if (page!.exposure.state === 'exposure_found') {
-      expect(page!.exposure.members.map((m) => m.entityId)).toContain(MEMBER_A);
-    }
+    // No more standalone Family exposure badge on the page data (network spec
+    // §5, ticket 03 unit 03b): MEMBER_A's own `sanctioned: true`/`risk` now
+    // scores inside `networkExposure`, covered in `tests/domain/score.test.ts`
+    // rather than here — this file stays the read-side proof for `graph_path`.
 
     const chainForB = page!.familyChain.find((p) => p.terminalEntityId === MEMBER_B)!;
     expect(chainForB.edges.map((e) => e.sourceRecordId)).toEqual([RECORD_A, RECORD_AB]);
@@ -265,5 +276,198 @@ describe('graph_path (kind family), read side', () => {
     const owners = await loadFamilyOwners(db, program.id);
     expect(owners.get(MEMBER_A)).toBe(supplier.id);
     expect(owners.get(MEMBER_B)).toBe(supplier.id);
+  });
+});
+
+/**
+ * `loadNetworkExposurePaths` — Network exposure's multi-hop input (network
+ * spec §5, ticket 03 unit 03b): `family` and `watchlist` kinds together, each
+ * hop classified ownership/control against trade.
+ */
+describe('loadNetworkExposurePaths — family + watchlist, hop classification', () => {
+  const ROOT = 'test-root-network-exposure-paths';
+  const FAMILY_MEMBER = 'test-network-family-member';
+  const LISTED_VIA_OWNERSHIP = 'test-network-listed-ownership';
+  const LISTED_VIA_TRADE = 'test-network-listed-trade';
+
+  async function seedNetwork() {
+    const db = await getTestDb();
+    await resetDerived(db);
+
+    await db.insert(t.entity).values([
+      { id: ROOT, label: 'Root Co', country: 'JPN' },
+      {
+        id: FAMILY_MEMBER,
+        label: 'Family Member',
+        country: 'DEU',
+        risk: { forced_labor_something_direct: { level: 'elevated' } },
+      },
+      {
+        id: LISTED_VIA_OWNERSHIP,
+        label: 'Listed Via Ownership',
+        country: 'RUS',
+        sanctioned: true,
+        risk: { sanctioned: { level: 'high' } },
+      },
+      {
+        id: LISTED_VIA_TRADE,
+        label: 'Listed Via Trade',
+        country: 'CHN',
+        sanctioned: true,
+        risk: { sanctioned: { level: 'high' } },
+      },
+    ]);
+
+    const [upstreamResponse] = await db
+      .insert(t.upstreamResponse)
+      .values({
+        source: 'sayari',
+        endpoint: 'traversal.watchlist',
+        paramsHash: 'test-hash-network-paths',
+        params: { entityId: ROOT },
+        body: {},
+        bodyHash: 'test-body-hash-network-paths',
+        via: 'sdk',
+      })
+      .returning({ id: t.upstreamResponse.id });
+
+    const [enrichmentFamily] = await db
+      .insert(t.enrichment)
+      .values({
+        source: 'sayari_ownership_family',
+        subjectKind: 'entity',
+        subjectKey: ROOT,
+        requestParams: { entityId: ROOT },
+        upstreamResponseId: upstreamResponse!.id,
+      })
+      .returning({ id: t.enrichment.id });
+    const [enrichmentWatchlist] = await db
+      .insert(t.enrichment)
+      .values({
+        source: 'sayari_watchlist',
+        subjectKind: 'entity',
+        subjectKey: ROOT,
+        requestParams: { entityId: ROOT },
+        upstreamResponseId: upstreamResponse!.id,
+      })
+      .returning({ id: t.enrichment.id });
+
+    await db.insert(t.record).values([
+      { id: 'source/rec-network-fam/1700000000000' },
+      { id: 'source/rec-network-own/1700000000000' },
+      { id: 'source/rec-network-trade/1700000000000' },
+    ]);
+
+    // Root → Family Member, `has_shareholder` — ownership, upward-classified
+    // in `src/domain/relationships.ts`, but `isOwnership` does not care about
+    // direction, only whether the type is an ownership/control one.
+    const [edgeOwnershipHop] = await db
+      .insert(t.entityRelationship)
+      .values({
+        fromEntityId: ROOT,
+        toEntityId: FAMILY_MEMBER,
+        relationshipType: 'has_shareholder',
+        sourceRecordId: 'source/rec-network-fam/1700000000000',
+      })
+      .returning({ id: t.entityRelationship.id });
+    // Root → Listed Via Ownership, one hop, pure ownership.
+    const [edgeListedOwnership] = await db
+      .insert(t.entityRelationship)
+      .values({
+        fromEntityId: ROOT,
+        toEntityId: LISTED_VIA_OWNERSHIP,
+        relationshipType: 'has_shareholder',
+        sourceRecordId: 'source/rec-network-own/1700000000000',
+      })
+      .returning({ id: t.entityRelationship.id });
+    // Family Member → Listed Via Trade, `ships_to` — a trade hop, so the
+    // Path to Listed Via Trade is NOT ownership/control all the way even
+    // though its first hop (reused from the family Path above) was.
+    const [edgeTradeHop] = await db
+      .insert(t.entityRelationship)
+      .values({
+        fromEntityId: FAMILY_MEMBER,
+        toEntityId: LISTED_VIA_TRADE,
+        relationshipType: 'ships_to',
+        sourceRecordId: 'source/rec-network-trade/1700000000000',
+      })
+      .returning({ id: t.entityRelationship.id });
+
+    await db.insert(t.graphPath).values([
+      {
+        rootEntityId: ROOT,
+        terminalEntityId: FAMILY_MEMBER,
+        kind: 'family',
+        direction: 'down',
+        hopDepth: 1,
+        edgeIds: [edgeOwnershipHop!.id],
+        exploredCount: 5,
+        truncated: false,
+        enrichmentId: enrichmentFamily!.id,
+      },
+      {
+        rootEntityId: ROOT,
+        terminalEntityId: LISTED_VIA_OWNERSHIP,
+        kind: 'watchlist',
+        direction: 'either',
+        hopDepth: 1,
+        edgeIds: [edgeListedOwnership!.id],
+        exploredCount: 40,
+        truncated: true,
+        enrichmentId: enrichmentWatchlist!.id,
+      },
+      {
+        rootEntityId: ROOT,
+        terminalEntityId: LISTED_VIA_TRADE,
+        kind: 'watchlist',
+        direction: 'either',
+        hopDepth: 2,
+        edgeIds: [edgeOwnershipHop!.id, edgeTradeHop!.id],
+        exploredCount: 40,
+        truncated: true,
+        enrichmentId: enrichmentWatchlist!.id,
+      },
+    ]);
+
+    return { db };
+  }
+
+  it('classifies each Path viaOwnership by its OWN edges, not by kind alone', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const { db } = await seedNetwork();
+
+    const { paths, coverage } = await loadNetworkExposurePaths(db, ROOT);
+    expect(paths.map((p) => p.terminalEntityId).sort()).toEqual(
+      [FAMILY_MEMBER, LISTED_VIA_OWNERSHIP, LISTED_VIA_TRADE].sort(),
+    );
+
+    const family = paths.find((p) => p.terminalEntityId === FAMILY_MEMBER)!;
+    expect(family.kind).toBe('family');
+    expect(family.viaOwnership).toBe(true);
+
+    // Pure ownership, one hop: deducts in `networkExposure`.
+    const listedOwnership = paths.find((p) => p.terminalEntityId === LISTED_VIA_OWNERSHIP)!;
+    expect(listedOwnership.kind).toBe('watchlist');
+    expect(listedOwnership.viaOwnership).toBe(true);
+    expect(listedOwnership.sanctioned).toBe(true);
+
+    // A trade hop breaks the chain even though the FIRST hop was ownership —
+    // shown, never deducted (network spec §5).
+    const listedTrade = paths.find((p) => p.terminalEntityId === LISTED_VIA_TRADE)!;
+    expect(listedTrade.kind).toBe('watchlist');
+    expect(listedTrade.viaOwnership).toBe(false);
+    expect(listedTrade.hopDepth).toBe(2);
+
+    // Coverage is per kind, read off that kind's own rows — never conflated.
+    expect(coverage.family).toEqual({ exploredCount: 5, truncated: false });
+    expect(coverage.watchlist).toEqual({ exploredCount: 40, truncated: true });
+  });
+
+  it("loadFamilyPaths, unchanged, still sees only this root's kind='family' rows", async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const { db } = await seedNetwork();
+
+    const familyOnly = await loadFamilyPaths(db, ROOT);
+    expect(familyOnly.map((p) => p.terminalEntityId)).toEqual([FAMILY_MEMBER]);
   });
 });

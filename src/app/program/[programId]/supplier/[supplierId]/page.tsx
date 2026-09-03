@@ -4,10 +4,10 @@ import { ChatDock } from '@/components/chat-dock';
 import { loadSupplierPage } from '@/db/queries/supplier-page';
 import {
   Answer,
-  CorporateFamily,
   Enrichments,
   FamilyChainRows,
   Heading,
+  Network,
   TheWorking,
   WhatWasConcluded,
   WhereItStands,
@@ -45,7 +45,7 @@ export default async function SupplierPage({
       <WhoItIs data={data} programId={programId} />
       <WhatWasConcluded data={data} programId={programId} />
       <TheWorking data={data} programId={programId} supplierId={supplierId} />
-      <CorporateFamily data={data} programId={programId} />
+      <Network data={data} programId={programId} />
       <FamilyChainRows data={data} programId={programId} />
       <Enrichments data={data} />
       <ChatDock programId={programId} />

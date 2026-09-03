@@ -4,7 +4,7 @@ import { Breadcrumb } from '@/components/breadcrumb';
 import { CriterionCell } from '@/components/criterion-cell';
 import { WeightRail } from '@/components/weight-rail';
 import type { loadSupplierPage } from '@/db/queries/supplier-page';
-import { describeFamilyExposure } from '@/domain/family';
+import type { ScoredCriterion } from '@/domain/score';
 import { settledByLine } from '@/domain/supplier-answer';
 import { SupplierActions } from './supplier-actions';
 
@@ -146,8 +146,9 @@ export function Answer({ data }: { data: Data }) {
   );
 }
 export function WhereItStands({ data }: { data: Data }) {
-  const { supplier, scored, coverage, exposure, firstCategory, rank, ownRiskFactors, freshest } =
-    data;
+  const { supplier, scored, firstCategory, rank, ownRiskFactors, freshest } = data;
+  const network = scored?.criteria.find((c) => c.key === 'network_exposure');
+  const networkRaw = network ? networkRawInputs(network.outcome.rawInputs) : null;
   return (
     <>
       {/* ── Where it stands ── */}
@@ -169,15 +170,11 @@ export function WhereItStands({ data }: { data: Data }) {
           <b>{ownRiskFactors}</b>
           <span>risk flags on the company itself</span>
         </div>
-        <div className={exposure.state === 'exposure_found' ? 'warn' : ''}>
-          <b>
-            {exposure.state === 'exposure_found'
-              ? `${exposure.membersWithExposure} of ${exposure.explored}`
-              : `0 of ${coverage.explored}`}
-          </b>
+        <div className={networkRaw && networkRaw.members.length > 0 ? 'warn' : ''}>
+          <b>{networkStatLabel(network, networkRaw)}</b>
           <span>
             <span className="term">
-              group companies carrying risk<i>Corporate family</i>
+              named entities in the network carrying risk<i>Network exposure</i>
             </span>
           </span>
         </div>
@@ -480,81 +477,269 @@ export function TheWorking({
     </>
   );
 }
-export function CorporateFamily({ data, programId }: { data: Data; programId: string }) {
-  const { exposure } = data;
+/**
+ * `network_exposure`'s `rawInputs`, narrowed from `Record<string, unknown>`
+ * — the shape is `src/domain/scoring/criteria.ts`'s own doc comment on
+ * `networkExposure` (network spec §5, read in full before writing this
+ * section), transcribed here as types rather than re-read on every access.
+ *
+ * A `value` outcome carries every field below; an `unknown` outcome carries
+ * at most `familyCoverage`/`watchlistCoverage` (absent on the single earliest
+ * exit, an unsettled Match) — never `members`/`shown`/`stateOwnership`, which
+ * only exist once the two automatic reads have actually been scored. Every
+ * field below defaults rather than assumes presence for exactly that reason.
+ */
+type NetworkLevel = 'relevant' | 'elevated' | 'high';
+type NetworkMemberRaw = {
+  entityId: string;
+  label: string;
+  level: NetworkLevel;
+  hopDepth: number;
+  hopDiscount: number;
+  points: number;
+  factors: string[];
+  sources: string[];
+};
+type NetworkShownRaw = {
+  entityId: string;
+  label: string;
+  level: NetworkLevel | null;
+  hopDepth: number;
+  factors: string[];
+  sources: string[];
+};
+type NetworkStateOwnershipRaw = {
+  entityId: string;
+  label: string;
+  hopDepth: number;
+  hopDiscount: number;
+  points: number;
+};
+type NetworkPathCoverageRaw = { exploredCount: number | null; truncated: boolean };
+type NetworkRawInputs = {
+  members: NetworkMemberRaw[];
+  shown: NetworkShownRaw[];
+  stateOwnership: NetworkStateOwnershipRaw[];
+  worstLevel: NetworkLevel | null;
+  familyCoverage: NetworkPathCoverageRaw;
+  watchlistCoverage: NetworkPathCoverageRaw;
+};
+const EMPTY_NETWORK_COVERAGE: NetworkPathCoverageRaw = { exploredCount: null, truncated: false };
+
+function networkRawInputs(raw: Record<string, unknown>): NetworkRawInputs {
+  const r = raw as Partial<NetworkRawInputs>;
+  return {
+    members: r.members ?? [],
+    shown: r.shown ?? [],
+    stateOwnership: r.stateOwnership ?? [],
+    worstLevel: r.worstLevel ?? null,
+    familyCoverage: r.familyCoverage ?? EMPTY_NETWORK_COVERAGE,
+    watchlistCoverage: r.watchlistCoverage ?? EMPTY_NETWORK_COVERAGE,
+  };
+}
+
+/** The "N of M" stat tile above (SPEC §13.1 "Where it stands") — never invented from `raw` alone, because an absent Criterion and a genuinely clean one both read as zero. */
+function networkStatLabel(
+  criterion: ScoredCriterion | undefined,
+  raw: NetworkRawInputs | null,
+): string {
+  if (!criterion) return '—';
+  if (criterion.outcome.status === 'unknown') return 'unknown';
+  const named = (raw?.members.length ?? 0) + (raw?.shown.length ?? 0);
+  return `${raw?.members.length ?? 0} of ${named}`;
+}
+
+/** How far the two automatic reads looked, in the reader's own words — never invented from how many entities `members`/`shown` happen to name (this file's own `describeRawInputs` doc, `criterion-cell.tsx`). */
+function describeNetworkCoverage(raw: NetworkRawInputs): string {
+  return `${oneCoverageSentence('The downward family walk', raw.familyCoverage)} ${oneCoverageSentence('The either-direction watchlist walk', raw.watchlistCoverage)}`;
+}
+
+function oneCoverageSentence(label: string, coverage: NetworkPathCoverageRaw): string {
+  if (coverage.exploredCount == null) return `${label} has no recorded explored count yet.`;
+  const nodes = coverage.exploredCount.toLocaleString('en-GB');
+  const cap = coverage.truncated ? ', capped before the end of the graph' : '';
+  return `${label} explored ${nodes} node${coverage.exploredCount === 1 ? '' : 's'}${cap}.`;
+}
+
+/**
+ * The Network section (network spec §8, §9 — replaces the former Corporate
+ * family section): `network_exposure`'s own value and band through
+ * `CriterionCell` (consistent with the generic criteria table further down,
+ * which already renders this Criterion with zero changes needed), then its
+ * raw inputs broken out by what each entity did — deducted, state-owned, or
+ * named without deducting — because `CriterionCell`'s generic
+ * `describeRawInputs` has no branch for this Criterion's own shape and was
+ * never meant to (SPEC §9.1's "beside its raw inputs" is earned here, not
+ * there).
+ */
+export function Network({ data, programId }: { data: Data; programId: string }) {
+  const { scored } = data;
+  const criterion = scored?.criteria.find((c) => c.key === 'network_exposure');
+  const raw = criterion ? networkRawInputs(criterion.outcome.rawInputs) : null;
+
   return (
     <>
-      {/* ── Corporate family ── */}
+      {/* ── Network ── */}
       <h3>
         <span className="term">
-          Other companies in the group<i>Corporate family</i>
+          Who else could carry this supplier’s risk<i>Network</i>
         </span>
       </h3>
       <div className="card">
-        <p style={{ marginTop: 0 }}>
-          <span
-            className={`badge ${exposure.state === 'exposure_found' ? 'bad' : exposure.state === 'no_exposure_found' ? 'good' : 'mute'}`}
-          >
-            {describeFamilyExposure(exposure)}
-          </span>
-        </p>
-        {exposure.state === 'exposure_found' ? (
-          <>
-            <p className="note">
-              {/*
-                The rule stated where it bites: a family member's risk BADGES and
-                never deducts, so this changes no rank. A supplier whose
-                subsidiary carries high forced-labour exposure can still be
-                awarded — it shows a cut score and a lit badge, and is not
-                blocked.
-              */}
-              A family member’s risk badges and never deducts, so nothing here moved this supplier’s
-              rank. Each finding is cited to the member’s own entity, not to the parent’s.
-            </p>
-            <table>
-              <tbody>
-                {exposure.members.map((member) => (
-                  <tr key={member.entityId}>
-                    <td>
-                      <Link href={`/program/${programId}/entity/${member.entityId}` as never}>
-                        {member.label}
-                      </Link>
-                    </td>
-                    {/*
-                      The hop, on every member and not only on the deep ones. A
-                      Deep Traversal that reaches a subsidiary records it as a
-                      Family member LIKE ANY OTHER (CONTEXT), so it gets no
-                      badge of its own — what distinguishes it is that it sits
-                      two or three hops out, and that is a fact about the
-                      company rather than about which read found it.
-                    */}
-                    <td className="note">hop {member.hopDepth}</td>
-                    <td>
-                      <span className="badge warn">{member.level}</span>
-                    </td>
-                    <td className="note">{member.factors.slice(0, 3).join(', ')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        ) : (
-          <p className="note" style={{ margin: 0 }}>
-            {exposure.state === 'not_covered'
-              ? 'The ownership graph returned nobody. That is not the same as a clean family — six of twelve sampled families returned zero members, including several that certainly have subsidiaries.'
-              : exposure.partial
-                ? 'Members came back carrying nothing, and the walk stopped at its cap rather than at the end of the graph. An absent member proves nothing.'
-                : 'Members came back carrying nothing, and the walk reached the end of the graph.'}
+        {!criterion || !raw ? (
+          <p className="empty">
+            Not scored — this supplier’s match is not settled, so there is no Profile to walk a
+            network from.
           </p>
+        ) : (
+          <>
+            <CriterionCell criterion={criterion} />
+            <p className="note" style={{ margin: '0.8rem 0' }}>
+              {describeNetworkCoverage(raw)}
+            </p>
+            {criterion.outcome.status === 'value' ? (
+              <>
+                <NetworkMembersTable members={raw.members} programId={programId} />
+                <NetworkStateOwnershipTable entries={raw.stateOwnership} programId={programId} />
+                <NetworkShownDetails shown={raw.shown} programId={programId} />
+                {raw.members.length === 0 && raw.stateOwnership.length === 0 ? (
+                  <p className="note" style={{ margin: '0.6rem 0 0' }}>
+                    Nobody in the network carried a deduction — both automatic reads answered, and
+                    finding nothing is itself the result, not a gap.
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+          </>
         )}
       </div>
     </>
   );
 }
+
 /**
- * The citable chain beneath the Corporate family badge (network spec §6, §8):
- * every Path this family holds, each edge with its type, shares, date and a
- * link to the record asserting it.
+ * Every entity that deducted (network spec §5): its own worst level,
+ * hop-discounted once at the shortest qualifying hop, cited to itself rather
+ * than to the Supplier — the rule the former Corporate-family table stated,
+ * now true of the whole Network rather than only its downward half.
+ */
+function NetworkMembersTable({
+  members,
+  programId,
+}: {
+  members: NetworkMemberRaw[];
+  programId: string;
+}) {
+  if (members.length === 0) return null;
+  return (
+    <table style={{ marginTop: '0.6rem' }}>
+      <thead>
+        <tr>
+          <th>Entity</th>
+          <th className="num">Hop</th>
+          <th>Level</th>
+          <th className="num">Hop discount</th>
+          <th className="num">Points</th>
+          <th>Reached via</th>
+          <th>Factors</th>
+        </tr>
+      </thead>
+      <tbody>
+        {members.map((member) => (
+          <tr key={member.entityId}>
+            <td>
+              <Link href={`/program/${programId}/entity/${member.entityId}` as never}>
+                {member.label}
+              </Link>
+            </td>
+            <td className="num">{member.hopDepth}</td>
+            <td>
+              <span className={`badge ${member.level === 'high' ? 'bad' : 'warn'}`}>
+                {member.level}
+              </span>
+            </td>
+            <td className="num">{member.hopDiscount.toFixed(2)}</td>
+            <td className="num">-{member.points.toFixed(1)}</td>
+            <td className="note">{member.sources.join(', ')}</td>
+            <td className="note">{member.factors.slice(0, 3).join(', ')}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** State ownership stays its own deduction at hop 1 (`networkExposure`'s own doc comment) — shown apart from the table above so the two deductions are never read as one. */
+function NetworkStateOwnershipTable({
+  entries,
+  programId,
+}: {
+  entries: NetworkStateOwnershipRaw[];
+  programId: string;
+}) {
+  if (entries.length === 0) return null;
+  return (
+    <>
+      <p className="note" style={{ margin: '0.8rem 0 0.3rem' }}>
+        State-owned at hop 1, deducted separately from the table above:
+      </p>
+      <table>
+        <tbody>
+          {entries.map((owner) => (
+            <tr key={owner.entityId}>
+              <td>
+                <Link href={`/program/${programId}/entity/${owner.entityId}` as never}>
+                  {owner.label}
+                </Link>
+              </td>
+              <td className="note">hop {owner.hopDepth}</td>
+              <td className="num">-{owner.points.toFixed(1)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+/** Named but never deducted — reached only by a trade/lateral hop, or a Path with no hydrated edges yet (`networkExposure`'s own doc comment). Collapsed: this is the "shown, not scored" half nobody needs open by default. */
+function NetworkShownDetails({
+  shown,
+  programId,
+}: {
+  shown: NetworkShownRaw[];
+  programId: string;
+}) {
+  if (shown.length === 0) return null;
+  return (
+    <details style={{ marginTop: '0.8rem' }}>
+      <summary>
+        {shown.length} more named but not deducted — reached only by a trade or lateral hop, or a
+        chain not yet hydrated
+      </summary>
+      <table style={{ marginTop: '0.4rem' }}>
+        <tbody>
+          {shown.map((entity) => (
+            <tr key={entity.entityId}>
+              <td>
+                <Link href={`/program/${programId}/entity/${entity.entityId}` as never}>
+                  {entity.label}
+                </Link>
+              </td>
+              <td className="note">hop {entity.hopDepth}</td>
+              <td>{entity.level ? <span className="badge mute">{entity.level}</span> : null}</td>
+              <td className="note">{entity.sources.join(', ')}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </details>
+  );
+}
+/**
+ * The citable chain beneath the Network section above (network spec §6, §8):
+ * every Path of kind `family` this Supplier holds, each edge with its type,
+ * shares, date and a link to the record asserting it.
  *
  * **This is the fallback without scripts** — the diagram (ticket 05) is a
  * client-rendered `cytoscape` component fed the same stored Paths as JSON;
@@ -563,6 +748,19 @@ export function CorporateFamily({ data, programId }: { data: Data; programId: st
  * what a citation resolves through: a Family member is cited to the record
  * asserting its own edge (ticket 02 "Done when"), and this table is that
  * record made legible rather than only machine-resolvable.
+ *
+ * **Still `family`-only, not widened to `watchlist` too (unit 03e's own
+ * decision).** `data` (`loadSupplierPage`) only ever loaded `kind='family'`
+ * Paths — `loadFamilyPaths`, never `loadNetworkExposurePaths` — and widening
+ * that read is a change to `src/db/queries/supplier-page.ts`, a file this
+ * unit does not own (two other units were building `src/db/*` at the same
+ * time). The Network section above already names every watchlist-reached
+ * entity at the level `networkExposure`'s `rawInputs` carries (`members`/
+ * `shown`, tagged by `sources`); what is missing here is only the edge-level
+ * chain for those Paths, which whichever unit next touches this query should
+ * add — either by widening this table's own `familyChain` prop to accept
+ * both kinds, or a second `<details>` block beside it. Either reads fine; the
+ * absent piece is the query, not a rendering choice.
  */
 export function FamilyChainRows({ data, programId }: { data: Data; programId: string }) {
   const { familyChain } = data;
@@ -570,7 +768,7 @@ export function FamilyChainRows({ data, programId }: { data: Data; programId: st
 
   return (
     <details className="card scroll-x" style={{ marginTop: '0.6rem' }}>
-      <summary>Chain rows — every cited edge behind the family above</summary>
+      <summary>Chain rows — every cited edge the downward family walk holds</summary>
       <table>
         <thead>
           <tr>

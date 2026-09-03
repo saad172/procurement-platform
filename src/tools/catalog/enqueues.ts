@@ -283,7 +283,7 @@ const enqueueDeepTraversal = defineTool({
         `${DEEP_TRAVERSAL_MAX_NODES}-node cap the two directions share. Every node arrives as a full ` +
         'entity with its risk block, so no node costs a second call.',
       caveats: [
-        'A deep traversal changes no score: ownership exposure is computed from current one-hop edges. What it can do is light the "new evidence" mark on a version that cites something it touches.',
+        'A deep traversal changes no score: network exposure is computed from current one-hop edges. What it can do is light the "new evidence" mark on a version that cites something it touches.',
         'It is capped, so it is never a complete family: what comes back is "n of m explored", and a company it does not reach is not a company it ruled out.',
         ...(filters.length > 0
           ? ['A filter changes which nodes the walk explores, not what a Path means once it finds one.']

@@ -2,6 +2,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { sharePercentageOf } from '@/domain/parse-relationships';
+import { isOwnership } from '@/domain/relationships';
 
 /**
  * One hop of a Path, hydrated from `entity_relationship` (network spec §6).
@@ -56,26 +57,35 @@ export type FamilyPath = {
   edges: FamilyPathEdge[];
 };
 
+/** A `graph_path.kind` value, narrowed to the two this file reads. */
+type PathKind = 'family' | 'watchlist';
+
 /**
- * Every Path of kind `family` rooted at one Profile, each hydrated with the
- * `entity_relationship` rows its `edge_ids` cite (network spec §6, ticket 02
- * "Done when": *"a Family member … is cited to the record asserting its
- * edge, not to the read that found it"*).
+ * The join every Path reader needs — one Path row plus the `entity_relationship`
+ * chain its `edge_ids` cite — filtered to whichever `kind`(s) the caller asks
+ * for. `loadFamilyPaths` and `loadNetworkExposurePaths` below are both thin
+ * callers of this, **the one join built once** (this function's own former
+ * doc comment, kept on `loadFamilyPaths`): building it twice would be two
+ * chances for the edge-resolution logic to drift apart.
  *
- * **The one join two presentations both need, built once.** `get_supplier_family`
- * (`src/tools/catalog/reads.ts`) reads this for its per-member citation and its
- * envelope; the Supplier page's chain rows (network spec §6, §8) read it for
- * the full ordered chain. Building the join twice would be two chances for the
- * edge-resolution logic to drift apart.
+ * A third sibling, `loadNetworkPaths` further down (`get_supplier_network`'s
+ * per-kind grouping, network spec §9), deliberately does NOT call this — see
+ * that function's own comment for why duplicating the query there was the
+ * right call rather than widening this one.
  *
  * Ordered by hop depth then terminal id — the order a person reads a family
  * in, and the total order a prompt can rely on (mirrors `family_member`'s
  * former ordering, per its own now-removed comment in `reads.ts`/`supplier-page.ts`).
  */
-export async function loadFamilyPaths(db: Database, rootEntityId: string): Promise<FamilyPath[]> {
+async function loadPathRows(
+  db: Database,
+  rootEntityId: string,
+  kinds: readonly PathKind[],
+): Promise<(FamilyPath & { kind: PathKind })[]> {
   const paths = await db
     .select({
       terminalEntityId: t.graphPath.terminalEntityId,
+      kind: t.graphPath.kind,
       hopDepth: t.graphPath.hopDepth,
       truncated: t.graphPath.truncated,
       reachableCount: t.graphPath.exploredCount,
@@ -89,7 +99,9 @@ export async function loadFamilyPaths(db: Database, rootEntityId: string): Promi
     })
     .from(t.graphPath)
     .innerJoin(t.entity, eq(t.entity.id, t.graphPath.terminalEntityId))
-    .where(and(eq(t.graphPath.rootEntityId, rootEntityId), eq(t.graphPath.kind, 'family')))
+    .where(
+      and(eq(t.graphPath.rootEntityId, rootEntityId), inArray(t.graphPath.kind, [...kinds])),
+    )
     .orderBy(asc(t.graphPath.hopDepth), asc(t.graphPath.terminalEntityId));
 
   // One batched fetch for every edge every Path cites, rather than one query
@@ -104,6 +116,7 @@ export async function loadFamilyPaths(db: Database, rootEntityId: string): Promi
 
   return paths.map((p) => ({
     terminalEntityId: p.terminalEntityId,
+    kind: p.kind as PathKind,
     label: p.label,
     country: p.country,
     sanctioned: p.sanctioned,
@@ -131,6 +144,105 @@ export async function loadFamilyPaths(db: Database, rootEntityId: string): Promi
 }
 
 /**
+ * Every Path of kind `family` rooted at one Profile, each hydrated with the
+ * `entity_relationship` rows its `edge_ids` cite (network spec §6, ticket 02
+ * "Done when": *"a Family member … is cited to the record asserting its
+ * edge, not to the read that found it"*).
+ *
+ * **Unchanged signature, on purpose** (network spec §5 unit 03b): this is
+ * read by `get_supplier_family` (`src/tools/catalog/reads.ts`) for its
+ * per-member citation and envelope, and by the Supplier page's chain rows
+ * (network spec §6, §8) for the full ordered chain — two callers this ticket
+ * does not own, and a signature change is a risk to both for no gain either
+ * needs. `loadNetworkExposurePaths` below is a **sibling**, not a widened
+ * version of this: it shares the join (`loadPathRows`) rather than this
+ * function's own call surface.
+ */
+export async function loadFamilyPaths(db: Database, rootEntityId: string): Promise<FamilyPath[]> {
+  return loadPathRows(db, rootEntityId, ['family']);
+}
+
+/** One Path feeding Network exposure — `FamilyPath`'s shape, plus which read found it and whether it qualifies as ownership/control (network spec §5). */
+export type NetworkExposurePath = FamilyPath & {
+  /**
+   * `'family'` — downward, ownership-only by construction: `traversal.ownership`
+   * narrows to five ownership relationship types, so `viaOwnership` is always
+   * `true` for one of these once its edges are hydrated. Includes the
+   * filtered, risk-focused second page of the same kind once it exists
+   * (`graph_path.filtered`, network spec §4.1) — not written yet (a later
+   * unit's job), so today every `family` row here is unfiltered, and a root
+   * with none at all is simply an empty array, never an error.
+   *
+   * `'watchlist'` — either direction, terminates at a Listed entity. The
+   * endpoint's own default 31 relationship types span ownership, control and
+   * trade, so `viaOwnership` genuinely varies per Path here.
+   */
+  kind: PathKind;
+  /**
+   * True when every hop of this Path's own edge chain is a **current**
+   * ownership/control edge — `isOwnership(e.relationshipType) && !e.former`
+   * for every hop — by `isOwnership` (`src/domain/relationships.ts`), **the
+   * same classification the rest of this codebase already uses, not a second
+   * one**. A `former` hop breaks the chain exactly like a trade hop does: the
+   * entity is no longer CURRENTLY reached by ownership through that route
+   * (`entity_relationship.former`'s own schema comment — "only current edges
+   * are scored"). `false` for a Path with zero hydrated edges too (the
+   * migration-0013 gap): an unresolved chain proves nothing about what kind
+   * of chain it was, so it gets the same safe treatment as a trade hop —
+   * shown, never deducted.
+   */
+  viaOwnership: boolean;
+};
+
+/** One kind's coverage — the read's own envelope, read off the WIDEST row it wrote (mirrors `derive-supplier-page.ts`'s `widestCoverage`, for the same reason: a kind can hold rows from more than one read, e.g. the automatic family read and a downward Deep Traversal). */
+export type NetworkPathCoverage = { exploredCount: number | null; truncated: boolean };
+
+/**
+ * Every Path of kind `family` **or** `watchlist` rooted at one Profile —
+ * Network exposure's multi-hop input (network spec §5): the downward
+ * Corporate family plus the either-direction walk to Listed entities, each
+ * hop hydrated with its `relationshipType` so a caller can classify
+ * ownership/control against trade itself, rather than this function guessing
+ * on the caller's behalf what "ownership or control" means for its purpose.
+ *
+ * A **sibling** to `loadFamilyPaths`, not a widened version of it (see that
+ * function's own comment) — built over the same `loadPathRows` join so the
+ * two can never resolve an edge differently.
+ *
+ * Coverage is returned **per kind**, because the family read and the
+ * watchlist read are two different calls with two different envelopes
+ * (network spec §4.1) — collapsing them into one figure would report, say, a
+ * watchlist walk that hit its own cap as if the family read had too.
+ */
+export async function loadNetworkExposurePaths(
+  db: Database,
+  rootEntityId: string,
+): Promise<{
+  paths: NetworkExposurePath[];
+  coverage: { family: NetworkPathCoverage; watchlist: NetworkPathCoverage };
+}> {
+  const rows = await loadPathRows(db, rootEntityId, ['family', 'watchlist']);
+
+  const paths: NetworkExposurePath[] = rows.map((row) => ({
+    ...row,
+    viaOwnership:
+      row.edges.length > 0 && row.edges.every((e) => isOwnership(e.relationshipType) && !e.former),
+  }));
+
+  const coverageFor = (kind: PathKind): NetworkPathCoverage => {
+    const ofKind = rows.filter((r) => r.kind === kind);
+    const widest = ofKind.reduce<(typeof ofKind)[number] | undefined>(
+      (best, r) =>
+        best == null || (r.reachableCount ?? 0) > (best.reachableCount ?? 0) ? r : best,
+      undefined,
+    );
+    return { exploredCount: widest?.reachableCount ?? null, truncated: widest?.truncated ?? false };
+  };
+
+  return { paths, coverage: { family: coverageFor('family'), watchlist: coverageFor('watchlist') } };
+}
+
+/**
  * The record asserting one Path's own inclusion of its terminal entity —
  * the **last** hop in `edge_ids` order, the edge most proximate to the
  * member itself (ticket 02 "Done when").
@@ -142,4 +254,92 @@ export async function loadFamilyPaths(db: Database, rootEntityId: string): Promi
  */
 export function terminalEdgeOf(path: Pick<FamilyPath, 'edges'>): FamilyPathEdge | null {
   return path.edges.length ? path.edges[path.edges.length - 1]! : null;
+}
+
+/** `graph_path.kind` (network spec §6, §9): what found this Path. */
+export type NetworkPathKind =
+  | 'family'
+  | 'watchlist'
+  | 'shortest_path'
+  | 'deep_traversal'
+  | 'supply_chain';
+
+/** A `FamilyPath` widened with the `kind` that grouped it (network spec §9). */
+export type NetworkPath = FamilyPath & { kind: NetworkPathKind };
+
+/**
+ * Every Path rooted at one Profile, of ANY kind, each hydrated with the
+ * `entity_relationship` rows its `edge_ids` cite — the same join
+ * `loadFamilyPaths` builds, widened past `kind = 'family'` for
+ * `get_supplier_network`'s per-kind grouping (network spec §9: *"Paths grouped
+ * by kind"*).
+ *
+ * A **separate function rather than a `kind` parameter on `loadFamilyPaths`**,
+ * so a caller of one shape is never rippled by a change to the other's —
+ * `loadFamilyPaths` stays exactly what `supplier-page.ts` and the family-only
+ * tests already depend on. Some duplication of the query/hydration shape
+ * against `loadFamilyPaths` is deliberate for the same reason: two small
+ * functions that can drift independently, rather than one shared internal
+ * that a future edit to either caller has to reason about for both.
+ *
+ * Ordered by `kind` first, then hop depth, then terminal id — a caller groups
+ * by the leading key with nothing to re-sort.
+ */
+export async function loadNetworkPaths(db: Database, rootEntityId: string): Promise<NetworkPath[]> {
+  const paths = await db
+    .select({
+      kind: t.graphPath.kind,
+      terminalEntityId: t.graphPath.terminalEntityId,
+      hopDepth: t.graphPath.hopDepth,
+      truncated: t.graphPath.truncated,
+      reachableCount: t.graphPath.exploredCount,
+      enrichmentId: t.graphPath.enrichmentId,
+      discoveredByJob: t.graphPath.discoveredByJob,
+      edgeIds: t.graphPath.edgeIds,
+      label: t.entity.label,
+      country: t.entity.country,
+      sanctioned: t.entity.sanctioned,
+      risk: t.entity.risk,
+    })
+    .from(t.graphPath)
+    .innerJoin(t.entity, eq(t.entity.id, t.graphPath.terminalEntityId))
+    .where(eq(t.graphPath.rootEntityId, rootEntityId))
+    .orderBy(asc(t.graphPath.kind), asc(t.graphPath.hopDepth), asc(t.graphPath.terminalEntityId));
+
+  // One batched fetch for every edge every Path cites, across every kind —
+  // the same de-duplication `loadFamilyPaths` does, for the same reason: a
+  // shared intermediate hop should be fetched once, not once per kind.
+  const allEdgeIds = [...new Set(paths.flatMap((p) => p.edgeIds))];
+  const edgeRows = allEdgeIds.length
+    ? await db.select().from(t.entityRelationship).where(inArray(t.entityRelationship.id, allEdgeIds))
+    : [];
+  const edgeById = new Map(edgeRows.map((e) => [e.id, e] as const));
+
+  return paths.map((p) => ({
+    kind: p.kind as NetworkPathKind,
+    terminalEntityId: p.terminalEntityId,
+    label: p.label,
+    country: p.country,
+    sanctioned: p.sanctioned,
+    risk: p.risk,
+    hopDepth: p.hopDepth,
+    truncated: p.truncated,
+    reachableCount: p.reachableCount,
+    enrichmentId: p.enrichmentId,
+    discoveredByJob: p.discoveredByJob,
+    edges: p.edgeIds
+      .map((id) => edgeById.get(id))
+      .filter((e): e is NonNullable<typeof e> => e != null)
+      .map((e) => ({
+        id: e.id,
+        relationshipType: e.relationshipType,
+        fromEntityId: e.fromEntityId,
+        toEntityId: e.toEntityId,
+        former: e.former,
+        sharePercentage: sharePercentageOf(e.attributes),
+        startDate: e.startDate,
+        endDate: e.endDate,
+        sourceRecordId: e.sourceRecordId,
+      })),
+  }));
 }

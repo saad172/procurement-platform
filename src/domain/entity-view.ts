@@ -33,9 +33,9 @@ import type { SayariEntity } from '@/upstream/projections/sayari';
  * ## What is dropped, and how to get it back
  *
  * The relationship **rows**, the `possibly_same_as` block, and the raw source
- * list. Each has its own tool: the family is `get_supplier_family`, a specific
- * record is `sayari_get_record`. A tool that returned everything would make
- * those tools pointless and the ceiling unreachable.
+ * list. Each has its own tool: the Network is `get_supplier_network`, a
+ * specific record is `sayari_get_record`. A tool that returned everything
+ * would make those tools pointless and the ceiling unreachable.
  */
 
 /** Addresses beyond this are truncated, and the count says so. */
@@ -121,7 +121,7 @@ function omissions(entity: SayariEntity, addressCount: number, riskCount: number
   const relationshipRows = entity.relationships?.data?.length ?? 0;
   if (relationshipRows > 0) {
     omitted.push(
-      'relationship rows — use get_supplier_family for ownership, or the counts above for volume',
+      'relationship rows — use get_supplier_network for its Network, or the counts above for volume',
     );
   }
   if ((entity.possibly_same_as?.data?.length ?? 0) > 0) {
