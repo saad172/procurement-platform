@@ -3,6 +3,7 @@ import { z } from 'zod/v4';
 import * as t from '@/db/schema';
 import { isDatabaseId, notAnIdObjection } from '../ids';
 import { defineTool, type ReadWithWidget, type ToolContext, type WidgetType } from '../define';
+import { loadFamilyPaths, terminalEdgeOf } from '@/db/queries/family-paths';
 import { loadShortlist } from '@/db/queries/shortlist';
 import { DEFAULT_WEIGHTS, normaliseWeights } from '@/domain/score';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
@@ -269,7 +270,7 @@ function projectSupplierCard(loaded: NonNullable<Awaited<ReturnType<typeof loadS
 const getSupplierFamily = defineTool({
   name: 'get_supplier_family',
   description:
-    "A supplier's corporate family: the companies reachable downward through ownership, what risk they carry, and how much of the family was explored. Cite the enrichmentId for the explored and truncated figures, and a member's own entityId for what that member carries.",
+    "A supplier's corporate family: the companies reachable downward through ownership, what risk they carry, and how much of the family was explored. Cite a member's own recordId for the edge that places it in the family, its entityId for what it carries as a company, and the enrichmentId only for the envelope's explored and truncated figures.",
   input: z.object({ supplierId: z.string() }),
   surfaces: ['chat', 'job', 'mcp'],
   effect: 'read',
@@ -288,30 +289,42 @@ const getSupplierFamily = defineTool({
       };
     }
 
-    const members = await loadFamilyMembers(ctx, match.entityId);
-    const { widgetMembers, modelMembers } = projectFamilyMembers(members);
+    const paths = await loadFamilyPaths(ctx.db, match.entityId);
+    const { widgetMembers, modelMembers } = projectFamilyMembers(paths);
     const envelope = {
       entityId: match.entityId,
       /**
        * **The id the coverage figures can be cited through** (finding 106).
        *
        * The family walk is an Enrichment — a dated call — and `explored` and
-       * `truncated` are facts about *it*, carried on its `family_member` rows.
+       * `truncated` are facts about *it*, carried on its `graph_path` rows.
        * The tool told the model *"explored: 45"* and handed it no id that fact
        * could resolve to, so the one citation on offer was the member's
        * `entityId`, and an `entity` row carries no explored count to answer to
        * it. The number check refused the sentence, correctly, for a figure the
        * model had read off this very payload.
        */
-      enrichmentId: members[0]?.enrichmentId ?? null,
-      // What the traversal reported it covered, not how many rows we hold.
-      // Counting rows answers a different question, and it was the wrong
-      // answer whenever a Profile had been enriched twice: Bosch's family
-      // was stored 100 times for 50 members, so this reported 100 to the
-      // model.
-      explored: members[0]?.exploredCount ?? members.length,
-      reachable: members[0]?.reachableCount ?? null,
-      truncated: members.some((m) => m.truncated),
+      enrichmentId: paths[0]?.enrichmentId ?? null,
+      // What the traversal reported it covered, not how many rows we hold —
+      // except that counting rows is now exactly that figure. `graph_path`'s
+      // unique `(root, terminal, kind)` index (network spec §6) is what makes
+      // the two agree: the old failure mode (Bosch's family stored 100 times
+      // for 50 members, reporting 100 to the model) is what the index rules
+      // out at the database. See `derive-supplier-page.ts`'s `widestCoverage`
+      // for the fuller account.
+      explored: paths.length,
+      // The WIDEST envelope this family holds, not whichever Path happened to
+      // sort first — a Deep Traversal's own wider walk must not be shadowed
+      // by the automatic read's narrower one (same reasoning as
+      // `widestCoverage`).
+      reachable: paths.reduce<number | null>(
+        (best, p) =>
+          p.reachableCount != null && (best == null || p.reachableCount > best)
+            ? p.reachableCount
+            : best,
+        null,
+      ),
+      truncated: paths.some((p) => p.truncated),
     };
 
     return {
@@ -325,45 +338,6 @@ const getSupplierFamily = defineTool({
   },
 });
 
-/** The stored family, in the one order a prompt can rely on. */
-async function loadFamilyMembers(ctx: ToolContext, rootEntityId: string) {
-  return (
-    ctx.db
-      .select({
-        memberEntityId: t.familyMember.memberEntityId,
-        // Per member as well as on the envelope: a re-enrichment updates the
-        // rows it re-read, so two members can belong to two different walks.
-        enrichmentId: t.familyMember.enrichmentId,
-        hopDepth: t.familyMember.hopDepth,
-        truncated: t.familyMember.truncated,
-        exploredCount: t.familyMember.exploredCount,
-        reachableCount: t.familyMember.reachableCount,
-        discoveredByJob: t.familyMember.discoveredByJob,
-        label: t.entity.label,
-        country: t.entity.country,
-        sanctioned: t.entity.sanctioned,
-        risk: t.entity.risk,
-      })
-      .from(t.familyMember)
-      .innerJoin(t.entity, eq(t.entity.id, t.familyMember.memberEntityId))
-      .where(eq(t.familyMember.rootEntityId, rootEntityId))
-      /**
-       * **A query that feeds a prompt needs a total order.**
-       *
-       * Without this the fifty family members came back in whatever order
-       * Postgres found them — stable within one database, different in another,
-       * and the family list is truncated at fifty so a different order is a
-       * different *set*. It surfaced as an assess replay missing on turn 3, and
-       * the diff showed two entirely different Chinese subsidiaries at the top.
-       *
-       * By hop depth first, because that is the order a person reads a family
-       * in: the immediate subsidiaries, then what sits behind them. `entityId`
-       * breaks the tie, since it is the only field guaranteed unique.
-       */
-      .orderBy(asc(t.familyMember.hopDepth), asc(t.familyMember.memberEntityId))
-  );
-}
-
 /**
  * A **projection**, not the stored rows.
  *
@@ -373,7 +347,7 @@ async function loadFamilyMembers(ctx: ToolContext, rootEntityId: string) {
  * put ~870,000 tokens into one model turn and fired the assess Job's
  * token ceiling. The cap did its job; the read was the bug.
  */
-function projectFamilyMembers(members: Awaited<ReturnType<typeof loadFamilyMembers>>) {
+function projectFamilyMembers(paths: Awaited<ReturnType<typeof loadFamilyPaths>>) {
   /**
    * Factor names, levels **and the `country` marker**, which is what the
    * widget needs to exclude a country-derived factor the way the page does.
@@ -386,16 +360,28 @@ function projectFamilyMembers(members: Awaited<ReturnType<typeof loadFamilyMembe
    * the identification `scoring/risk-factors.ts` already rejected in
    * favour of this marker.
    */
-  const widgetMembers = members.map((m) => ({
-    entityId: m.memberEntityId,
-    // The member's own walk, so a sentence about one member cites the
-    // Enrichment that reached it rather than the envelope's.
-    enrichmentId: m.enrichmentId,
-    label: m.label,
-    country: m.country,
-    hopDepth: m.hopDepth,
-    sanctioned: m.sanctioned,
-    riskFactors: parseRiskObject(m.risk).map((f) => ({
+  const widgetMembers = paths.map((p) => ({
+    entityId: p.terminalEntityId,
+    // The read that found/last touched this member's Path — for staleness,
+    // never for "this member belongs in the family": that claim cites
+    // `recordId` below (ticket 02 "Done when" — a Family member is cited to
+    // the record asserting its edge, not to the read that found it).
+    enrichmentId: p.enrichmentId,
+    /**
+     * The record asserting THIS member's own edge — `graph_path.edge_ids`'
+     * last hop (the one nearest this terminal), joined to
+     * `entity_relationship.source_record_id` (network spec §6,
+     * `loadFamilyPaths`/`terminalEdgeOf`). Null for a Path with no hydrated
+     * edges yet — a row migrated from `family_member` (migration 0013's
+     * documented gap) or one whose edge upsert has not landed — which cites
+     * nothing rather than falling back to the read that found it.
+     */
+    recordId: terminalEdgeOf(p)?.sourceRecordId ?? null,
+    label: p.label,
+    country: p.country,
+    hopDepth: p.hopDepth,
+    sanctioned: p.sanctioned,
+    riskFactors: parseRiskObject(p.risk).map((f) => ({
       name: f.name,
       level: f.level ?? null,
       country: f.country,

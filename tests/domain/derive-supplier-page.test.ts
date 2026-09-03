@@ -13,28 +13,53 @@ import {
  */
 
 describe('deriveFamilyCoverageAndExposure', () => {
-  it('reads the coverage figures the traversal itself reported, not a row count', () => {
-    // The regression this guards: the family stored twice for one entity once
-    // made the badge read "28 of 100 explored" against a truth of 14 of 50.
+  it('counts rows held for "explored" — safe now that graph_path is unique on (root, terminal, kind)', () => {
+    // `family_member` could hold one member twice (Bosch and Magna each once
+    // stored 100 rows for 50 members) and reading a row's own counter was how
+    // that regression was avoided; `graph_path`'s unique index rules the
+    // duplication out at the database, so two distinct members are exactly
+    // two rows and `explored` is their count.
     const { coverage } = deriveFamilyCoverageAndExposure([
       {
         member: { id: 'a', label: 'A', country: 'DEU', risk: null },
         hopDepth: 1,
         truncated: true,
         discoveredByJob: null,
-        exploredCount: 14,
         reachableCount: 50,
       },
+      {
+        member: { id: 'b', label: 'B', country: 'DEU', risk: null },
+        hopDepth: 1,
+        truncated: false,
+        discoveredByJob: null,
+        reachableCount: 50,
+      },
+    ]);
+    expect(coverage).toEqual({ explored: 2, reachable: 50, partial: true });
+  });
+
+  it('takes the WIDEST envelope, not the first row, when a Deep Traversal has walked further', () => {
+    // The automatic read's own envelope (50) and a Deep Traversal's wider one
+    // (200) can both be present; the wider envelope's own `truncated` travels
+    // with it, and picking the narrower row first would understate a family
+    // the app already paid to explore.
+    const { coverage } = deriveFamilyCoverageAndExposure([
       {
         member: { id: 'a', label: 'A', country: 'DEU', risk: null },
         hopDepth: 1,
         truncated: true,
         discoveredByJob: null,
-        exploredCount: 14,
         reachableCount: 50,
       },
+      {
+        member: { id: 'b', label: 'B', country: 'DEU', risk: null },
+        hopDepth: 2,
+        truncated: false,
+        discoveredByJob: 'deep-traversal-job',
+        reachableCount: 200,
+      },
     ]);
-    expect(coverage).toEqual({ explored: 14, reachable: 50, partial: true });
+    expect(coverage).toEqual({ explored: 2, reachable: 200, partial: false });
   });
 
   it('is not_covered when the ownership graph returned nobody', () => {
@@ -54,7 +79,6 @@ describe('deriveFamilyCoverageAndExposure', () => {
         hopDepth: 1,
         truncated: false,
         discoveredByJob: null,
-        exploredCount: 1,
         reachableCount: 1,
       },
     ]);
