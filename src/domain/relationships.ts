@@ -159,3 +159,20 @@ export function unclassifiedTypes(types: readonly string[]): string[] {
 export function classifiedTypes(): string[] {
   return Object.keys(RELATIONSHIP_TYPES);
 }
+
+/**
+ * The upward ownership types — the ones `targetOwnsSubject` answers `true`
+ * for: `has_shareholder`, `has_beneficial_owner`, `subsidiary_of`.
+ *
+ * Derived from the table rather than listed a second time, so the two can
+ * never drift apart. This is what the typed owner-edge read asks a traversal
+ * for by name (SPEC §16.6): a traversal from a company names each edge from
+ * that company's own side, exactly the convention this table already resolves
+ * — so the types worth asking for are the ones that lead to owners, not the
+ * ones the company owns.
+ */
+export function upwardOwnershipTypes(): string[] {
+  return Object.entries(RELATIONSHIP_TYPES)
+    .filter(([, meaning]) => meaning.ownership && meaning.direction === 'upward')
+    .map(([type]) => type);
+}
