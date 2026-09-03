@@ -491,6 +491,12 @@ function finalizeEnrichResult(
  * this counted only the array. A record's own *keys* are the flag names, the
  * same fact an array entry states directly; the values carry whatever detail
  * Sayari attaches and were never read for the array shape either.
+ *
+ * **The record branch is unverified** — no recorded `negativeNews` body in
+ * this repo carries `risk_flags` as an object rather than an array (PR #19
+ * review item P4). Left lenient rather than narrowed, on the strength of the
+ * projection admitting both; confirm against a live recording before trusting
+ * a count that took this branch.
  */
 export function scoreArticle(riskFlags: unknown): { seriousFlags: number; moderateFlags: number } {
   const flags = Array.isArray(riskFlags)
