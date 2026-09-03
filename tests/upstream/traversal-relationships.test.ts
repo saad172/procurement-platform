@@ -4,6 +4,32 @@ import { traversalSchema } from '@/upstream/projections/sayari';
 import type { FixtureUpstreamRow } from '@/fixtures/types';
 
 /**
+ * Narrows `path[].relationships`'s lenient union (N1: record, array, or null)
+ * to the record shape, for the tests below that build a record on purpose.
+ * `parsed.data[0].path[0].relationships` types as the whole union, so a
+ * direct `.shareholder_of` access does not compile without this.
+ */
+type AnyGroupRecord = Record<
+  string,
+  {
+    former?: unknown;
+    start_date?: unknown;
+    end_date?: unknown;
+    relationship_status?: unknown;
+    most_recent_percentage?: unknown;
+    values?: readonly {
+      record?: unknown;
+      from_date?: unknown;
+      to_date?: unknown;
+      former?: unknown;
+      attributes?: { shares?: readonly Record<string, unknown>[] } | null;
+    }[];
+  } | null
+>;
+const asGroupRecord = (relationships: unknown): AnyGroupRecord =>
+  (relationships ?? {}) as AnyGroupRecord;
+
+/**
  * `path[].relationships` (ticket 01 item E): previously `z.unknown()`, now a
  * named, lenient shape — keyed by relationship type, each carrying `former`,
  * `start_date`/`end_date`, `attributes.shares` and every edge's `record` id.
@@ -54,9 +80,9 @@ describe('path[].relationships — hand-built', () => {
 
   it('keeps the relationship type as the key, and every named field beneath it', () => {
     const parsed = traversalSchema.parse(body);
-    const rels = parsed.data?.[0]?.path?.[0]?.relationships;
+    const rels = asGroupRecord(parsed.data?.[0]?.path?.[0]?.relationships);
     expect(rels).toBeTruthy();
-    const group = rels?.shareholder_of;
+    const group = rels.shareholder_of;
     expect(group?.former).toBe(true);
     expect(group?.start_date).toBe('2018-08-01');
     expect(group?.end_date).toBe('2020-04-07');
@@ -67,7 +93,8 @@ describe('path[].relationships — hand-built', () => {
 
   it('keeps the edge record id and attributes.shares on each value', () => {
     const parsed = traversalSchema.parse(body);
-    const value = parsed.data?.[0]?.path?.[0]?.relationships?.shareholder_of?.values?.[0];
+    const rels = asGroupRecord(parsed.data?.[0]?.path?.[0]?.relationships);
+    const value = rels.shareholder_of?.values?.[0];
     expect(value?.record).toBe('b6382672c6741fe1bca28d2668c1732b/1319687/1560351943539');
     expect(value?.from_date).toBe('2018-08-01');
     expect(value?.to_date).toBe('2020-04-07');
@@ -100,14 +127,43 @@ describe('path[].relationships — hand-built', () => {
       ],
     };
     const parsed = traversalSchema.parse(withOddKeys);
-    const share = parsed.data?.[0]?.path?.[0]?.relationships?.shareholder_of?.values?.[0]
-      ?.attributes?.shares?.[0] as Record<string, unknown> | undefined;
+    const rels = asGroupRecord(parsed.data?.[0]?.path?.[0]?.relationships);
+    const share = rels.shareholder_of?.values?.[0]?.attributes?.shares?.[0];
     expect(share?.percentage).toBe(10);
     // `snakeKeys` lowercases every key but only inserts `_` between a
     // lowercase/digit and an immediately-following uppercase letter — a
     // space in a source-specific key like `"Share Type"` survives, just
     // lowercased, to `"share type"` (`key-case.ts`).
     expect(share?.['share type']).toBe('Common');
+  });
+});
+
+/**
+ * **The lenient shapes** (N1, MUST FIX): `relationships: []`, `null`, or
+ * `{ shareholder_of: null }` all failed this projection with `invalid_type`
+ * before the fix — the SDK's own `TraversalPath` serializer types the group
+ * value as optional, and only one company's two fixtures had ever proven the
+ * record shape at all. A projection failure fires on a cache hit too and
+ * `projection` is not retryable.
+ */
+describe('path[].relationships — lenient shapes', () => {
+  it('accepts an empty array', () => {
+    const parsed = traversalSchema.parse({ data: [{ path: [{ relationships: [] }] }] });
+    expect(parsed.data?.[0]?.path?.[0]?.relationships).toEqual([]);
+  });
+
+  it('accepts null', () => {
+    const parsed = traversalSchema.parse({ data: [{ path: [{ relationships: null }] }] });
+    expect(parsed.data?.[0]?.path?.[0]?.relationships).toBeNull();
+  });
+
+  it('accepts a relationship type whose own group is null', () => {
+    const parsed = traversalSchema.parse({
+      data: [{ path: [{ relationships: { shareholder_of: null } }] }],
+    });
+    expect(asGroupRecord(parsed.data?.[0]?.path?.[0]?.relationships)).toEqual({
+      shareholder_of: null,
+    });
   });
 });
 
@@ -132,9 +188,12 @@ describe('path[].relationships — recorded fixtures', () => {
       const parsed = traversalSchema.parse(row.body);
       for (const path of parsed.data ?? []) {
         for (const step of path.path ?? []) {
-          if (!step.relationships) continue;
+          // N1: the union also admits an array or a group-less record, so
+          // every real body is narrowed to the record shape before reading.
+          if (!step.relationships || Array.isArray(step.relationships)) continue;
           relationshipGroupsSeen += Object.keys(step.relationships).length;
           for (const group of Object.values(step.relationships)) {
+            if (!group) continue;
             for (const value of group.values ?? []) {
               // A record id, when present, is always a single string — never
               // an array, unlike an attribute entry's `record`.

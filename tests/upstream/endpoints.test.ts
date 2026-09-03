@@ -41,9 +41,8 @@ describe('ENDPOINTS (SPEC §16.2)', () => {
   it('registers sayariEntitySummary (ticket 01 item A2)', () => {
     expect(ENDPOINTS.sayariEntitySummary).toBe(sayariEntitySummary);
     expect(sayariEntitySummary.endpoint).toBe('entity.entitySummary');
-    // No bucket: Sayari's own six-bucket UsageInfo type has no seventh
-    // `entitySummary` counter — see the row's own doc comment.
-    expect(sayariEntitySummary.bucket).toBeUndefined();
+    // Its own recorded bucket (N6) — see the row's own doc comment.
+    expect(sayariEntitySummary.bucket).toBe('entity_summary');
     expect(sayariEntitySummary.defaults).toEqual({});
   });
 
@@ -110,10 +109,9 @@ describe('entitySummarySchema', () => {
       address: {
         offset: 0,
         limit: 50,
-        // `attributeBlock.next` is typed as a string in this app's own
-        // projection, unrelated to this ticket's items — the SDK's doc
-        // example shows a boolean here too, which is worth a separate look
-        // but out of scope for ticket 01.
+        // A bare `false`, exactly as the SDK's own documented example shows
+        // (C2) — `attributeBlock.next` accepts both a cursor string and this.
+        next: false,
         size: { count: 1, qualifier: 'eq' },
         data: [
           {
@@ -135,8 +133,6 @@ describe('entitySummarySchema', () => {
     },
     possiblySameAs: { data: [] },
     referencedBy: { limit: 1, size: { count: 216, qualifier: 'eq' }, data: [] },
-    // entitySummary never carries this — present here only to prove the
-    // schema does not choke on it if a body somehow did.
   };
 
   it('projects every field toCandidateFacts reads off getEntity', () => {
@@ -162,6 +158,12 @@ describe('entitySummarySchema', () => {
     expect(addressEntry?.properties?.postcode).toBe('W6 7DN');
     expect(addressEntry?.properties?.country).toBe('GBR');
     expect(addressEntry?.properties?.value).toContain('HAMMERSMITH ROAD');
+  });
+
+  /** C2: a summary attribute block's `next` is a bare boolean, not a cursor string. */
+  it('accepts a boolean `next` on a summary attribute block', () => {
+    const parsed = entitySummarySchema.parse(sdkBody);
+    expect(parsed.attributes?.address?.next).toBe(false);
   });
 
   it('accepts a body with no relationships block at all', () => {

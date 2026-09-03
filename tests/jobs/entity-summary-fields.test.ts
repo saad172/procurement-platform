@@ -76,7 +76,7 @@ const entitySummaryBody = {
 describe('entitySummary carries everything toCandidateFacts reads, except relationships', () => {
   it('parses through entitySummarySchema and projects the same address/alias/purpose facts getEntity would', () => {
     const parsed = entitySummarySchema.parse(entitySummaryBody);
-    const facts = toCandidateFacts(parsed as never);
+    const facts = toCandidateFacts(parsed);
 
     expect(facts.label).toBe('AMERICAN AXLE & MANUFACTURING INC');
     expect(facts.country).toBe('USA');
@@ -91,7 +91,7 @@ describe('entitySummary carries everything toCandidateFacts reads, except relati
 
   it('reads owners as EMPTY — the caveat a switch would carry, unless a typed read is added', () => {
     const parsed = entitySummarySchema.parse(entitySummaryBody);
-    const facts = toCandidateFacts(parsed as never);
+    const facts = toCandidateFacts(parsed);
 
     // No `relationships` block to read an owner edge off of. `name_cover`
     // reads `owners` to tell a family member from the company the roster
@@ -107,7 +107,7 @@ describe('entitySummary carries everything toCandidateFacts reads, except relati
 
   it('reads relationshipsTruncated as false when the record genuinely has no relationships either', () => {
     const parsed = entitySummarySchema.parse({ ...entitySummaryBody, relationshipCount: {} });
-    const facts = toCandidateFacts(parsed as never);
+    const facts = toCandidateFacts(parsed);
     expect(facts.owners).toEqual([]);
     expect(facts.relationshipsTruncated).toBe(false);
   });

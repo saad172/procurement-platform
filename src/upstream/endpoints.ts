@@ -77,6 +77,28 @@ function defineEndpoint<TParams extends Record<string, unknown>, TProjected>(
 const flat = (params: Record<string, unknown>): Record<string, unknown> =>
   Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined));
 
+/**
+ * `flat`, plus what an array-valued param needs for `params_hash` to be a
+ * fact about the WIRE REQUEST rather than about how a caller happened to
+ * build it (N5). Two calls that ask for the identical set of relationship
+ * types — `['a','b']` and `['b','a']` — are the identical request, and an
+ * omitted param and an explicit empty array both ask for nothing filtered;
+ * neither distinction should split one cache entry into two. Applied only
+ * to `getEntity` and the three traversal rows, the endpoints whose params
+ * can carry an array at all — every OTHER endpoint's `flat(p)` is untouched,
+ * and so is every `params_hash` already recorded, since none of today's
+ * calls sends an array to begin with.
+ */
+const flatSorted = (params: Record<string, unknown>): Record<string, unknown> => {
+  const withoutEmptyArrays = Object.entries(params).filter(
+    ([, v]) => !(Array.isArray(v) && v.length === 0),
+  );
+  const sorted = withoutEmptyArrays.map(
+    ([k, v]) => [k, Array.isArray(v) ? [...v].sort() : v] as const,
+  );
+  return flat(Object.fromEntries(sorted));
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Sayari
 // ─────────────────────────────────────────────────────────────────────────────
@@ -120,6 +142,15 @@ const GET_ENTITY_LIMITS = {
  * are the only entries in `GET_ENTITY_LIMITS`: a new default would sit inside
  * `params_hash` for every existing `getEntity` call, including the recorded
  * ones, invalidating them all.
+ *
+ * **Not every sibling of `GetEntity`'s own request type is named here** (N7):
+ * the SDK also declares a `*Next`/`*Prev` cursor pair per attribute
+ * (`attributesAddressNext`, `attributesNamePrev`, …), plus
+ * `relationshipsNext`/`Prev`, `possiblySameAsNext`/`Prev` and
+ * `referencedByNext`/`Prev` — pagination through a single attribute or
+ * relationship block past its own limit, which nothing in this app asks for
+ * yet. Left out rather than guessed at; add them here, the same way, the day
+ * something does.
  */
 type GetEntityRelationshipParams = {
   relationshipsType?: string;
@@ -154,44 +185,36 @@ type GetEntityRelationshipParams = {
  * before this, the raw path sent none of them, so a caller falling back here
  * got the server's unfiltered default without complaint.
  */
-export function getEntityQuery(rest: Record<string, unknown>) {
+export function getEntityQuery(
+  rest: Omit<{ id: string } & Partial<typeof GET_ENTITY_LIMITS> & GetEntityRelationshipParams, 'id'>,
+) {
   return {
-    'attributes.additional_information.limit': rest.attributesAdditionalInformationLimit as
-      | number
-      | undefined,
-    'attributes.address.limit': rest.attributesAddressLimit as number | undefined,
-    'attributes.business_purpose.limit': rest.attributesBusinessPurposeLimit as
-      | number
-      | undefined,
-    'attributes.company_type.limit': rest.attributesCompanyTypeLimit as number | undefined,
-    'attributes.country.limit': rest.attributesCountryLimit as number | undefined,
-    'attributes.identifier.limit': rest.attributesIdentifierLimit as number | undefined,
-    'attributes.name.limit': rest.attributesNameLimit as number | undefined,
-    'attributes.status.limit': rest.attributesStatusLimit as number | undefined,
-    'relationships.limit': rest.relationshipsLimit as number | undefined,
-    'relationships.type': rest.relationshipsType as string | undefined,
-    'relationships.sort': rest.relationshipsSort as string | undefined,
-    'relationships.startDate': rest.relationshipsStartDate as string | undefined,
-    'relationships.endDate': rest.relationshipsEndDate as string | undefined,
-    'relationships.minShares': rest.relationshipsMinShares as number | undefined,
-    'relationships.country': rest.relationshipsCountry as string | string[] | undefined,
-    'relationships.arrivalCountry': rest.relationshipsArrivalCountry as
-      | string
-      | string[]
-      | undefined,
-    'relationships.arrivalState': rest.relationshipsArrivalState as string | undefined,
-    'relationships.arrivalCity': rest.relationshipsArrivalCity as string | undefined,
-    'relationships.departureCountry': rest.relationshipsDepartureCountry as
-      | string
-      | string[]
-      | undefined,
-    'relationships.departureState': rest.relationshipsDepartureState as string | undefined,
-    'relationships.departureCity': rest.relationshipsDepartureCity as string | undefined,
-    'relationships.partnerName': rest.relationshipsPartnerName as string | undefined,
-    'relationships.partnerRisk': rest.relationshipsPartnerRisk as string | string[] | undefined,
-    'relationships.hsCode': rest.relationshipsHsCode as string | undefined,
-    'possibly_same_as.limit': rest.possiblySameAsLimit as number | undefined,
-    'referenced_by.limit': rest.referencedByLimit as number | undefined,
+    'attributes.additional_information.limit': rest.attributesAdditionalInformationLimit,
+    'attributes.address.limit': rest.attributesAddressLimit,
+    'attributes.business_purpose.limit': rest.attributesBusinessPurposeLimit,
+    'attributes.company_type.limit': rest.attributesCompanyTypeLimit,
+    'attributes.country.limit': rest.attributesCountryLimit,
+    'attributes.identifier.limit': rest.attributesIdentifierLimit,
+    'attributes.name.limit': rest.attributesNameLimit,
+    'attributes.status.limit': rest.attributesStatusLimit,
+    'relationships.limit': rest.relationshipsLimit,
+    'relationships.type': rest.relationshipsType,
+    'relationships.sort': rest.relationshipsSort,
+    'relationships.startDate': rest.relationshipsStartDate,
+    'relationships.endDate': rest.relationshipsEndDate,
+    'relationships.minShares': rest.relationshipsMinShares,
+    'relationships.country': rest.relationshipsCountry,
+    'relationships.arrivalCountry': rest.relationshipsArrivalCountry,
+    'relationships.arrivalState': rest.relationshipsArrivalState,
+    'relationships.arrivalCity': rest.relationshipsArrivalCity,
+    'relationships.departureCountry': rest.relationshipsDepartureCountry,
+    'relationships.departureState': rest.relationshipsDepartureState,
+    'relationships.departureCity': rest.relationshipsDepartureCity,
+    'relationships.partnerName': rest.relationshipsPartnerName,
+    'relationships.partnerRisk': rest.relationshipsPartnerRisk,
+    'relationships.hsCode': rest.relationshipsHsCode,
+    'possibly_same_as.limit': rest.possiblySameAsLimit,
+    'referenced_by.limit': rest.referencedByLimit,
   };
 }
 
@@ -201,7 +224,7 @@ export const sayariGetEntity = defineEndpoint({
   bucket: 'entity',
   timeoutMs: SAYARI_FAST_MS,
   defaults: GET_ENTITY_LIMITS,
-  normalizeParams: (p) => flat(p),
+  normalizeParams: (p) => flatSorted(p),
   dispatch: async (params, deps: DispatchDeps) => {
     const { id, ...rest } = params;
     const client = getSayariClient(deps.credentials);
@@ -231,18 +254,17 @@ export const sayariGetEntity = defineEndpoint({
  * See `entitySummarySchemaInner`'s own doc comment (`projections/sayari.ts`)
  * for exactly what it carries and what it does not.
  *
- * **No `bucket`.** Sayari's own usage-counter type
- * (`node_modules/@sayari/sdk/api/resources/info/types/UsageInfo.d.ts`)
- * declares exactly six buckets — `entity`, `record`, `resolve`, `search`,
- * `tradeTraversal`, `traversal` — with no seventh `entitySummary` counter.
- * Reusing `entity` would be a guess this file has no way to check without a
- * live call, which the ticket forbids; leaving it unbucketed is the same
- * honest gap `negativeNews` already carries, footnoted the same way. See the
- * PR's Re-record list: confirm against a live `info.getUsage()` diff.
+ * **`bucket: 'entity_summary'`** (N6). The SDK's own `UsageInfo` TS type
+ * names only six buckets, but the repo's recorded LIVE `info.getUsage()`
+ * response (`docs/research/sayari-node-sdk.md` §6, `docs/research/news.md`)
+ * shows a real seventh counter — `"entity_summary":3`, moving independently
+ * of `entity` — and its own doc comment there says so too: *"a cheaper
+ * variant, metered separately (`entity_summary`)"*.
  */
 export const sayariEntitySummary = defineEndpoint({
   source: 'sayari',
   endpoint: 'entity.entitySummary',
+  bucket: 'entity_summary',
   timeoutMs: SAYARI_FAST_MS,
   defaults: {},
   normalizeParams: (p) => flat(p),
@@ -396,7 +418,7 @@ export const sayariTraversalOwnership = defineEndpoint({
   bucket: 'traversal',
   timeoutMs: SAYARI_SLOW_MS,
   defaults: { limit: 50 },
-  normalizeParams: (p) => flat(p),
+  normalizeParams: (p) => flatSorted(p),
   dispatch: async (params, deps) => {
     const { id, ...rest } = params;
     const client = getSayariClient(deps.credentials);
@@ -441,6 +463,14 @@ export const sayariTraversalOwnership = defineEndpoint({
  * server's own default, unfiltered, exactly as today. `enqueue_deep_traversal`
  * is what exposes these to a person as optional inputs (SPEC §4.4); this
  * ticket only widens the type and the wire mapping (item B) that carries it.
+ *
+ * **`types`/`excludeFormerRelationships` added (N7); `includeUnknownShares`
+ * and the dozen `reputationalRisk*`/single-flag risk fields
+ * (`euHighRiskThird`, `stateOwned`, `formerlySanctioned`,
+ * `regulatoryAction`, `lawEnforcementAction`, `xinjiangGeospatial`, …) are
+ * left out** — nothing in this app filters on them yet, and `riskCategories`
+ * already covers the general case. Add one here, the same way, the day
+ * something needs it.
  */
 export type TraversalWalkParams = {
   id: string;
@@ -449,10 +479,14 @@ export type TraversalWalkParams = {
   minDepth?: number;
   maxDepth?: number;
   relationships?: string[];
+  /** Filters paths to those ending at an entity of one of these types. */
+  types?: string[];
   riskCategories?: string[];
   countries?: string[];
   minShares?: number;
   excludeClosedEntities?: boolean;
+  /** Excludes relationships valid in the past but not at present. */
+  excludeFormerRelationships?: boolean;
   sanctioned?: boolean;
   pep?: boolean;
   psa?: boolean;
@@ -475,30 +509,41 @@ export type TraversalWalkParams = {
  *   `qs.stringify(params, { arrayFormat: 'repeat' })`
  *   (`core/fetcher/createRequestUrl.js`), which `rawFetch` now knows how to
  *   send (`dispatchers/sayari.ts`).
- * - `risk_categories` is sent as **one JSON-stringified array** in a single
- *   param — `(0, json_1.toJson)(riskCategories)` in the SDK's own code —
- *   pre-stringified here so it stays a scalar rather than being repeated.
+ * - `risk_categories` mirrors the SDK's own branch (C5): `typeof mapped ===
+ *   "string" ? mapped : toJson(mapped)` — an array is one JSON-stringified
+ *   param, a bare string (the SDK's escape hatch for a custom, non-enum
+ *   category) goes through verbatim. `TraversalWalkParams.riskCategories` is
+ *   `string[]` only — nothing in this app sends the bare-string form — so
+ *   this is defensive rather than reachable today.
  * - `min_shares`/`exclude_closed_entities`/`sanctioned`/`pep`/`psa` are plain
  *   scalars, `.toString()`'d by the SDK the same way `rawFetch` stringifies
  *   any scalar.
  */
-export function downstreamQuery(rest: Record<string, unknown>) {
+export function downstreamQuery(rest: Omit<TraversalWalkParams, 'id'>) {
   return {
-    limit: rest.limit as number | undefined,
-    offset: rest.offset as number | undefined,
-    min_depth: rest.minDepth as number | undefined,
-    max_depth: rest.maxDepth as number | undefined,
-    relationships: rest.relationships as string[] | undefined,
-    countries: rest.countries as string[] | undefined,
-    min_shares: rest.minShares as number | undefined,
-    exclude_closed_entities: rest.excludeClosedEntities as boolean | undefined,
-    sanctioned: rest.sanctioned as boolean | undefined,
-    pep: rest.pep as boolean | undefined,
-    psa: rest.psa as boolean | undefined,
+    limit: rest.limit,
+    offset: rest.offset,
+    min_depth: rest.minDepth,
+    max_depth: rest.maxDepth,
+    relationships: rest.relationships,
+    types: rest.types,
+    countries: rest.countries,
+    min_shares: rest.minShares,
+    exclude_closed_entities: rest.excludeClosedEntities,
+    exclude_former_relationships: rest.excludeFormerRelationships,
+    sanctioned: rest.sanctioned,
+    pep: rest.pep,
+    psa: rest.psa,
+    // `TraversalWalkParams.riskCategories` is `string[]` only, but the runtime
+    // check stays: `downstreamQuery` is exported and this is the one place
+    // that would notice a caller widening the type later without updating
+    // this branch (C5).
     risk_categories:
-      rest.riskCategories !== undefined
-        ? (JSON.stringify(rest.riskCategories) as string)
-        : undefined,
+      rest.riskCategories === undefined
+        ? undefined
+        : typeof (rest.riskCategories as unknown) === 'string'
+          ? (rest.riskCategories as unknown as string)
+          : JSON.stringify(rest.riskCategories),
   };
 }
 
@@ -521,7 +566,7 @@ export const sayariTraversalUbo = defineEndpoint({
   bucket: 'traversal',
   timeoutMs: SAYARI_SLOW_MS,
   defaults: { limit: 50 },
-  normalizeParams: (p) => flat(p),
+  normalizeParams: (p) => flatSorted(p),
   dispatch: async (params, deps) => {
     const { id, ...rest } = params;
     const client = getSayariClient(deps.credentials);
@@ -548,7 +593,7 @@ export const sayariTraversal = defineEndpoint({
   bucket: 'traversal',
   timeoutMs: SAYARI_SLOW_MS,
   defaults: {},
-  normalizeParams: (p) => flat(p),
+  normalizeParams: (p) => flatSorted(p),
   dispatch: async (params, deps) => {
     const { id, ...rest } = params;
     const client = getSayariClient(deps.credentials);

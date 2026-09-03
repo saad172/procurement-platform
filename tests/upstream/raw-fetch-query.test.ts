@@ -63,4 +63,23 @@ describe('rawFetch query encoding', () => {
     expect(requestedUrl?.searchParams.get('max_depth')).toBe('3');
     expect(requestedUrl?.searchParams.has('min_depth')).toBe(false);
   });
+
+  /** N3: every SDK client tests `!= null`, so a `null` value never reaches
+   * the wire — `URLSearchParams` has no such test and would have sent the
+   * literal string `"null"`. */
+  it('skips a null query value, the same as undefined', async () => {
+    await rawFetch({ path: '/v1/downstream/x', query: { max_depth: 3, min_depth: null } }, deps);
+    expect(requestedUrl?.searchParams.get('max_depth')).toBe('3');
+    expect(requestedUrl?.searchParams.has('min_depth')).toBe(false);
+  });
+
+  /** N4: `URLSearchParams` follows `application/x-www-form-urlencoded` and
+   * emits `+` for a space; the SDK's own fetcher uses `qs.stringify`, which
+   * emits `%20`. Asserted on the raw string — `.searchParams.get()` would
+   * decode either encoding back to the same space and hide the difference. */
+  it('encodes a space as %20, not +', async () => {
+    await rawFetch({ path: '/v1/search/entity', query: { q: 'american axle' } }, deps);
+    expect(requestedUrl?.search).toContain('q=american%20axle');
+    expect(requestedUrl?.search).not.toContain('+');
+  });
 });

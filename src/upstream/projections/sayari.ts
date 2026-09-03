@@ -88,8 +88,15 @@ const attributeValue = z
   })
   .partial();
 
+/**
+ * `next` is a cursor string on most attribute blocks and a bare `false` on
+ * the SDK's own documented `entitySummary` example (C2) — the same
+ * boolean-cursor shape `traversalSchemaInner.next` already accepts. Without
+ * the union, a live `entitySummary` body fails the whole projection in
+ * `call()`, and `projection` is not retryable.
+ */
 const attributeBlock = z
-  .object({ data: z.array(attributeValue).nullish(), next: z.string().nullish() })
+  .object({ data: z.array(attributeValue).nullish(), next: z.union([z.string(), z.boolean()]).nullish() })
   .partial();
 
 /**
@@ -149,6 +156,13 @@ const entitySchemaInner = z
       .nullish(),
     trade_count: z.unknown().nullish(),
     degree: z.number().nullish(),
+    // Added once here rather than restated on `entitySummarySchemaInner`
+    // (Reuse 4): `referenced_by`/`reference_id` are on `entitySummary`'s own
+    // documented example body, and `logistics_entity` was declared a third
+    // time on `tradeSearchSchemaInner`'s own `.extend()` before this.
+    referenced_by: z.unknown().nullish(),
+    reference_id: z.string().nullish(),
+    logistics_entity: z.boolean().nullish(),
   })
   .partial({ type: true })
   .loose();
@@ -156,65 +170,29 @@ const entitySchemaInner = z
 /**
  * `entity.entitySummary` — **the same `EntityDetails` shape `getEntity`
  * returns, minus `relationships`** (SPEC §9 renames row 5; ticket 01 item
- * A2). Named separately from `entitySchemaInner` rather than derived from it
- * by `.omit()`, so this list is the one place a reader can check "does the
- * summary carry X" against the SDK's own declared fields —
- * `node_modules/@sayari/sdk/api/resources/entity/types/
- * EntitySummaryResponse.d.ts` (`interface EntitySummaryResponse extends
- * Sayari.EntityDetails {}`) and the two types it inherits from,
- * `.../sharedTypes/types/EntityDetails.d.ts` and `.../EmbeddedEntity.d.ts`.
+ * A2; Reuse 4). Derived from `entitySchemaInner` by `.omit()` — the same
+ * precedent `tradeSearchSchemaInner = entitySchemaInner.extend(...)` already
+ * sets — rather than a second hand-copy of every field.
  *
  * **What it does not carry, in the SDK's own words, stated twice**:
  * "entity_summary returns the same payload minus relationships" (on
  * `getEntity`'s own doc comment) and "The Entity Summary endpoint returns a
  * similar payload, minus relationships" (on `entitySummary`'s own doc
- * comment) — both in `.../entity/client/Client.d.ts`. Nothing else is named
- * as missing, and the SDK's own documented example response for
- * `entitySummary` (in `EntitySummaryResponse.d.ts` itself) shows the full
+ * comment) — both in `.../entity/client/Client.d.ts`
+ * (`node_modules/@sayari/sdk/api/resources/entity/types/
+ * EntitySummaryResponse.d.ts`: `interface EntitySummaryResponse extends
+ * Sayari.EntityDetails {}`). Nothing else is named as missing, and the SDK's
+ * own documented example response for `entitySummary` shows the full
  * `attributes` block present — **including `attributes.address` with the
  * same parsed `properties.city/postcode/country/houseNumber/road/x/y`
  * `getEntity` returns** — plus `possibly_same_as` and `referenced_by`.
- * `toCandidateFacts` (`src/jobs/resolve.ts`) reads exactly the fields named
- * below off `getEntity` today; every one of them survives the swap to
- * `entitySummary` except `relationships`, which is why owner edges are read
- * separately (ticket 01 item B: the typed `getEntity` + `relationshipsType`
- * read, or `traversal.traversal`).
+ * `toCandidateFacts` (`src/jobs/resolve.ts`) reads exactly the fields
+ * `entitySchemaInner` names off `getEntity` today; every one of them
+ * survives the swap to `entitySummary` except `relationships`, which is why
+ * owner edges are read separately (ticket 01 item B: the typed `getEntity` +
+ * `relationshipsType` read, or `traversal.traversal`).
  */
-const entitySummarySchemaInner = z
-  .object({
-    id: z.string(),
-    label: z.string(),
-    type: z.string().nullish(),
-    entity_url: z.string().nullish(),
-    degree: z.number().nullish(),
-    countries: z.array(z.string()).nullish(),
-    addresses: z.array(z.string()).nullish(),
-    identifiers: z.array(z.unknown()).nullish(),
-    sanctioned: z.boolean().nullish(),
-    pep: z.boolean().nullish(),
-    closed: z.boolean().nullish(),
-    company_type: z.string().nullish(),
-    registration_date: z.string().nullish(),
-    latest_status: z.unknown().nullish(),
-    /** An OBJECT keyed by source hash, not a scalar — same shape as `entitySchemaInner`. */
-    source_count: z.record(z.string(), z.unknown()).nullish(),
-    /** An OBJECT keyed by relation type, not a scalar. */
-    relationship_count: z.record(z.string(), z.number()).nullish(),
-    psa_count: z.number().nullish(),
-    psa_id: z.string().nullish(),
-    risk: z.record(z.string(), riskFactorSchema).nullish(),
-    attributes: z.record(z.string(), attributeBlock).nullish(),
-    possibly_same_as: z
-      .object({ data: z.array(z.unknown()).nullish() })
-      .partial()
-      .nullish(),
-    referenced_by: z.unknown().nullish(),
-    trade_count: z.unknown().nullish(),
-    reference_id: z.string().nullish(),
-    logistics_entity: z.boolean().nullish(),
-  })
-  .partial({ type: true })
-  .loose();
+const entitySummarySchemaInner = entitySchemaInner.omit({ relationships: true });
 
 /**
  * One resolution candidate.
@@ -368,9 +346,19 @@ const traversalRelationshipGroupSchema = z
  * 02 can read the relationship type (the key), `attributes.shares`,
  * `start_date`/`end_date`, `former` and every edge's `record` id off a
  * stored Path without a second trip to the raw body.
+ *
+ * **Lenient beyond the record shape itself** (N1). The SDK's own
+ * `TraversalPath` serializer types this as `record(Relationships,
+ * TraversalRelationshipData.optional())` — the group value is optional, and
+ * only one company's two fixtures had ever proven the record shape at all —
+ * so `relationships: []`, `null`, or `{ shareholder_of: null }` all failed
+ * this projection with `invalid_type` before this fix. A projection failure
+ * fires on a cache HIT too (`call.ts`) and `projection` is not retryable, so
+ * this is the one shape in the whole traversal schema most worth being
+ * generous about.
  */
 const traversalPathRelationshipsSchema = z
-  .record(z.string(), traversalRelationshipGroupSchema)
+  .union([z.record(z.string(), traversalRelationshipGroupSchema.nullish()), z.array(z.unknown())])
   .nullish();
 
 /**
@@ -515,16 +503,11 @@ const tradeSearchSchemaInner = z
   .object({
     data: z
       .array(
-        entitySchemaInner.extend({
-          metadata: tradeMetadataSchema,
-          /**
-           * Sayari's own forwarder flag. SPEC §11.1 measured 9 freight
-           * forwarders in the top 25 by shipments; this is the field that
-           * names them, and it is why the job can classify without guessing
-           * from the label.
-           */
-          logistics_entity: z.boolean().nullish(),
-        }),
+        // `logistics_entity` — Sayari's own forwarder flag (SPEC §11.1
+        // measured 9 in the top 25 by shipments; it is why the job can
+        // classify without guessing from the label) — is on
+        // `entitySchemaInner` itself now (Reuse 4), not restated here.
+        entitySchemaInner.extend({ metadata: tradeMetadataSchema }),
       )
       .nullish(),
     size: z
