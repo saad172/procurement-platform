@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { mergeMembers } from '@/jobs/traverse';
+import { mergeMembers, type MergedPathMember } from '@/jobs/traverse';
 import { ownershipHopDepth, summarisePath, terminalEntityOf } from '@/jobs/family-members';
 import type { SayariTraversalPath } from '@/upstream/projections/sayari';
-import type { FamilyMemberWrite } from '@/jobs/family-members';
 
 /**
- * The Deep Traversal's arithmetic, over synthetic envelopes (SPEC §8.5).
+ * The Deep Traversal's arithmetic, over synthetic envelopes (SPEC §8.5,
+ * network spec §6).
  *
  * Everything a walk decides that is not *"ask for another page"* happens in
- * `mergeMembers`: which path terminal is a Family member, how many hops away it
- * is, whether we already hold it, and when the node cap says stop. None of it
- * needs a database or a credential, and none of it is visible in a recorded
+ * `mergeMembers`: which path terminal is a Path's terminal, how many hops away
+ * it is, whether we already hold it, and when the node cap says stop. None of
+ * it needs a database or a credential, and none of it is visible in a recorded
  * fixture — a recording freezes one answer and cannot show that a *different*
  * envelope would have been merged correctly.
  *
@@ -37,7 +37,7 @@ function path(id: string, fields: string[]): SayariTraversalPath {
   } as SayariTraversalPath;
 }
 
-const held = () => new Map<string, FamilyMemberWrite>();
+const held = () => new Map<string, MergedPathMember>();
 const bounds = { maxNodes: 200, maxHops: 3 };
 
 describe('what one page of a walk contributes', () => {
@@ -85,8 +85,8 @@ describe('what one page of a walk contributes', () => {
       ...bounds,
     });
 
-    // The upward walk reaches the same company two hops away. It is one Family
-    // member at hop 1, not two rows and not a demotion to hop 2.
+    // The upward walk reaches the same company two hops away. It is one
+    // terminal at hop 1, not two rows and not a demotion to hop 2.
     const added = mergeMembers({
       rootEntityId: ROOT,
       held: map,
@@ -164,16 +164,25 @@ describe('what one page of a walk contributes', () => {
     });
     // 886 KB across 17 rows is what storing the hop entities cost, and one path
     // alone was 605 KB — a traversal payload carries a complete entity at every
-    // hop (BUILD-NOTES finding 23).
-    expect(member!.path).toEqual([
+    // hop (BUILD-NOTES finding 23). `hops` carries the route (field, entity id,
+    // cumulative hop depth) and the edge each hop names — never the entity.
+    expect(member!.hops.map((h) => ({ field: h.field, entityId: h.entityId }))).toEqual([
       { field: 'possibly_same_as', entityId: 'a-hop0' },
       { field: 'has_subsidiary', entityId: 'a-hop1' },
+    ]);
+    // Every hop resolved to a citable edge here, chained root → hop0 → hop1.
+    expect(member!.hops.map((h) => [h.edge?.subjectId, h.edge?.targetId])).toEqual([
+      [ROOT, 'a-hop0'],
+      ['a-hop0', 'a-hop1'],
     ]);
   });
 
   it('falls back to the last hop when a path carries no target entity', () => {
     const bare = { source: ROOT, path: [{ field: 'has_branch', entity: { id: 'tail' } }] };
     expect(terminalEntityOf(bare as SayariTraversalPath, ROOT)?.id).toBe('tail');
-    expect(summarisePath(bare.path)).toEqual([{ field: 'has_branch', entityId: 'tail' }]);
+    const hops = summarisePath(bare.path, ROOT);
+    expect(hops.map((h) => ({ field: h.field, entityId: h.entityId }))).toEqual([
+      { field: 'has_branch', entityId: 'tail' },
+    ]);
   });
 });

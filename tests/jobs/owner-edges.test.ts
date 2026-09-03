@@ -91,26 +91,58 @@ describe('enrich reads ownership from the matched entity, not from any cached bo
     expect(own, `no cached body for the matched entity ${matchedId}`).toBeTruthy();
     const ownPayload = JSON.stringify(own!.body);
 
+    /**
+     * **The Corporate family traversal is unambiguous in a way `getEntity` is
+     * not.** `traversal.ownership` is keyed by `id` in its own request params
+     * (`params_hash`), so there is no cached-body-choosing ambiguity for it —
+     * unlike `entity.getEntity`, which the resolve Job fetches once per
+     * candidate. Since ticket 02, `enrichFamily` upserts an `entity_relationship`
+     * row for every hop of every Path this read returns (network spec §6), so
+     * `entity_relationship` now legitimately holds edges anchored on
+     * intermediate Path entities, not only on the matched company — those rows
+     * are a different, correct fact this test is not about, and the
+     * traversal's own cached body is what explains them.
+     */
+    const ownership = await db.query.upstreamResponse.findFirst({
+      where: and(
+        eq(t.upstreamResponse.source, 'sayari'),
+        eq(t.upstreamResponse.endpoint, 'traversal.ownership'),
+        sql`${t.upstreamResponse.params}->>'id' = ${matchedId}`,
+      ),
+    });
+    const ownershipPayload = ownership ? JSON.stringify(ownership.body) : '';
+
     const edges = await db.select().from(t.entityRelationship);
     expect(edges.length, "enrich should have written the matched company's edges").toBeGreaterThan(
       0,
     );
 
-    // Every edge is anchored on the matched company.
-    expect([...new Set(edges.map((edge) => edge.fromEntityId))]).toEqual([matchedId]);
+    // Every edge is anchored either on the matched company itself (the
+    // `getEntity` window, `readOwnerEdges`) or on an entity the matched
+    // company's own, unambiguously-keyed family traversal names as a Path hop
+    // — never on some other cached candidate's payload.
+    const misanchored = edges
+      .map((edge) => edge.fromEntityId)
+      .filter((id) => id !== matchedId && !ownershipPayload.includes(id));
+    expect(
+      [...new Set(misanchored)],
+      "these edges are anchored on an entity neither the matched company nor its own family traversal names",
+    ).toEqual([]);
 
     /**
-     * And every target is a company the matched company's own payload names.
-     * A substring test over the raw body is deliberately crude: it is the
-     * weakest claim that still fails on the bug, and it cannot be satisfied by
-     * the projection agreeing with itself.
+     * And every target is a company one of the matched company's own,
+     * unambiguously-attributed payloads names. A substring test over the raw
+     * body is deliberately crude: it is the weakest claim that still fails on
+     * the original bug (a wrong candidate's `getEntity` body misattributed as
+     * this one's), and it cannot be satisfied by the projection agreeing with
+     * itself.
      */
     const foreign = edges
       .map((edge) => edge.toEntityId)
-      .filter((targetId) => !ownPayload.includes(targetId));
+      .filter((targetId) => !ownPayload.includes(targetId) && !ownershipPayload.includes(targetId));
     expect(
       [...new Set(foreign)],
-      "these targets appear in no part of the matched company's own payload",
+      "these targets appear in no part of the matched company's own payloads",
     ).toEqual([]);
   });
 });

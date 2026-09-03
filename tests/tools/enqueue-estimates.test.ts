@@ -70,7 +70,10 @@ describe('enqueue_enrichment’s estimate', () => {
     // B's body is not in the table, and a table full of other entities' bodies
     // is not an answer about B.
     expect(onB.cached).toBe(false);
-    expect(onB.spends.sayariCalls).toEqual({ min: 2, max: 4 });
+    // Three calls now, not two: the watchlist read (network spec §4.1,
+    // ticket 02) joined negative news and the ownership family as a second
+    // automatic call the enrich Job always makes.
+    expect(onB.spends.sayariCalls).toEqual({ min: 3, max: 4 });
 
     // A's is, and the gate may still say so — the fix narrows the claim, it
     // does not withdraw it.
