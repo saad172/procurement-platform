@@ -431,18 +431,46 @@ export type TraversalWalkParams = {
 };
 
 /**
- * The raw fallback's query string, named the way the SDK's own client names it
- * — `min_depth` / `max_depth`, snake_case, against the camelCase the SDK takes.
- * A fallback that sent `maxDepth` would be answered at the server's default
- * depth without complaint, which is the silent-wrong-key failure mode
- * `trade.searchSuppliers` already cost this build once (BUILD-NOTES 31).
+ * The raw fallback's query string for all three traversal rows (ticket 01
+ * item B), named the way the SDK's own client names it — copied from
+ * `node_modules/@sayari/sdk/api/resources/traversal/client/Client.js`, the
+ * `_queryParams[...]` assignments shared by `ownership`, `ubo` and
+ * `traversal`. `min_depth`/`max_depth`, snake_case, against the camelCase the
+ * SDK takes: a fallback that sent `maxDepth` would be answered at the
+ * server's default depth without complaint, which is the silent-wrong-key
+ * failure mode `trade.searchSuppliers` already cost this build once
+ * (BUILD-NOTES 31).
+ *
+ * Three different encodings for three different new fields, each copied
+ * rather than guessed:
+ * - `relationships`/`countries` go through as **arrays**, sent repeated —
+ *   `qs.stringify(params, { arrayFormat: 'repeat' })`
+ *   (`core/fetcher/createRequestUrl.js`), which `rawFetch` now knows how to
+ *   send (`dispatchers/sayari.ts`).
+ * - `risk_categories` is sent as **one JSON-stringified array** in a single
+ *   param — `(0, json_1.toJson)(riskCategories)` in the SDK's own code —
+ *   pre-stringified here so it stays a scalar rather than being repeated.
+ * - `min_shares`/`exclude_closed_entities`/`sanctioned`/`pep`/`psa` are plain
+ *   scalars, `.toString()`'d by the SDK the same way `rawFetch` stringifies
+ *   any scalar.
  */
-function downstreamQuery(rest: Record<string, unknown>) {
+export function downstreamQuery(rest: Record<string, unknown>) {
   return {
     limit: rest.limit as number | undefined,
     offset: rest.offset as number | undefined,
     min_depth: rest.minDepth as number | undefined,
     max_depth: rest.maxDepth as number | undefined,
+    relationships: rest.relationships as string[] | undefined,
+    countries: rest.countries as string[] | undefined,
+    min_shares: rest.minShares as number | undefined,
+    exclude_closed_entities: rest.excludeClosedEntities as boolean | undefined,
+    sanctioned: rest.sanctioned as boolean | undefined,
+    pep: rest.pep as boolean | undefined,
+    psa: rest.psa as boolean | undefined,
+    risk_categories:
+      rest.riskCategories !== undefined
+        ? (JSON.stringify(rest.riskCategories) as string)
+        : undefined,
   };
 }
 
@@ -498,7 +526,10 @@ export const sayariTraversal = defineEndpoint({
     const client = getSayariClient(deps.credentials);
     return viaSdkWithRawFallback(
       () => client.traversal.traversal(String(id), rest as never, requestOptions(deps)),
-      () => ({ path: `/v1/traversal/${encodeURIComponent(String(id))}` }),
+      () => ({
+        path: `/v1/traversal/${encodeURIComponent(String(id))}`,
+        query: downstreamQuery(rest),
+      }),
       deps,
     );
   },
