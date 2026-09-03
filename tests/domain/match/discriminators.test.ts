@@ -620,7 +620,9 @@ describe('name_cover and alias_context note the resolution response, and cannot 
     const nameCover = verdictFor(results, 'name_cover');
     expect(nameCover.reasoning).toMatch(/Sayari's own resolution/);
     expect(nameCover.reasoning).toMatch(/"AMERICAN AXLE"/);
-    expect(nameCover.reasoning).toMatch(/grading it high/);
+    expect(nameCover.reasoning).toMatch(/high-quality name match/);
+    // The caveat that keeps the note from reading as an endorsement.
+    expect(nameCover.reasoning).toMatch(/does not by itself tell this record apart/);
     // The verdict is untouched — still the same `pass` a plain candidate gets.
     expect(nameCover.verdict).toBe('pass');
   });
@@ -637,7 +639,7 @@ describe('name_cover and alias_context note the resolution response, and cannot 
       },
     });
     const results = runDiscriminators(AAM_ROW, withResolution);
-    expect(verdictFor(results, 'name_cover').reasoning).toMatch(/grading it high/);
+    expect(verdictFor(results, 'name_cover').reasoning).toMatch(/high-quality name match/);
   });
 
   it('does not move a `fail` or `unavailable` verdict either — the note is silent about the outcome', () => {
@@ -661,7 +663,7 @@ describe('name_cover and alias_context note the resolution response, and cannot 
     expect(noted.verdict).toBe(unnoted.verdict);
     expect(noted.verdict).toBe('unavailable');
     expect(noted.reasoning).toMatch(/Sayari's own resolution/);
-    expect(noted.reasoning).toMatch(/grading it low/);
+    expect(noted.reasoning).toMatch(/low-quality name match/);
   });
 
   it('names the highlighted text on alias_context too', () => {
@@ -677,7 +679,7 @@ describe('name_cover and alias_context note the resolution response, and cannot 
     });
     const alias = verdictFor(runDiscriminators(BOSCH_ROW, withResolution), 'alias_context');
     expect(alias.reasoning).toMatch(/Sayari's own resolution/);
-    expect(alias.reasoning).toMatch(/grading it medium/);
+    expect(alias.reasoning).toMatch(/medium-quality name match/);
   });
 });
 

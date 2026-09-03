@@ -297,6 +297,18 @@ export function runDiscriminators(
  * carries no resolution block (every Candidate an agent found by climbing a
  * query rung) or when the field the resolution response scored carries
  * nothing for this field.
+ *
+ * **The wording matters as much as the rule.** A verdict cannot move, but the
+ * *sentence* still reaches an agent's judgment, and a name-similarity score
+ * phrased as an endorsement — *"grading it high"* — read as one anyway: two
+ * roster rows that had settled correctly for months (Schaeffler, Tenneco)
+ * flipped to a same-named subsidiary or a duplicate record once this note
+ * started appearing only on Candidates the resolution pre-pass had scored,
+ * never on the ones an agent found by searching further. Sayari's text match
+ * cannot tell a subsidiary from its parent or one duplicate record from
+ * another with the same name — that is exactly what `name_cover` and
+ * `alias_context` cannot settle alone either — so the note says that limit
+ * explicitly instead of reporting a grade that reads as a verdict of its own.
  */
 function withResolutionEvidence(
   result: DiscriminatorResult,
@@ -307,11 +319,12 @@ function withResolutionEvidence(
   const quality = resolutionFieldQuality(candidate.resolution, field);
   if (highlighted.length === 0 && !quality) return result;
 
+  const matchedText = highlighted.length > 0 ? stripHighlightMarkup(highlighted[0]!) : undefined;
   const note = [
-    `Sayari's own resolution`,
-    highlighted.length > 0 ? ` highlighted "${stripHighlightMarkup(highlighted[0]!)}" in the ${field} field` : ` scored the ${field} field`,
-    quality ? `, grading it ${quality}` : '',
-    '.',
+    `Sayari's own resolution service scored the ${field} field`,
+    matchedText ? ` on the text "${matchedText}"` : '',
+    quality ? ` as a ${quality}-quality name match` : '',
+    ' — a text-similarity signal, and it does not by itself tell this record apart from a subsidiary, duplicate, or sibling that carries the same name.',
   ].join('');
   return { ...result, reasoning: `${result.reasoning} ${note}` };
 }

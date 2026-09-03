@@ -176,15 +176,23 @@ describe('resolve/rules-r0 replays', () => {
      * a verdict that was already decided — it never settles a Match on its
      * own (SPEC §6.2).
      *
-     * **C1**: `grading it high` is the field's own `match_quality`/
+     * **C1**: `high-quality name match` is the field's own `match_quality`/
      * `high_quality_match_name` grade, read as the PROJECTED snake_case keys
      * — the bug this pins down never fired on real data because the old code
      * read the SDK's camelCase, which `snakeKeys` had already converted away
      * by the time this body was projected.
+     *
+     * The note's wording changed after recording: the first phrasing —
+     * *"grading it high"* — read as an endorsement to the agents rather than
+     * a fact about text similarity, and two roster rows that had settled
+     * correctly for months flipped once it started appearing (see
+     * `withResolutionEvidence`'s doc comment). The caveat below is what
+     * closes that gap.
      */
     const nameCoverVerdict = verdicts.find((v) => v.discriminator === 'name_cover')!;
     expect(nameCoverVerdict.reasoning).toMatch(/Sayari's own resolution/);
-    expect(nameCoverVerdict.reasoning).toMatch(/grading it high/);
+    expect(nameCoverVerdict.reasoning).toMatch(/high-quality name match/);
+    expect(nameCoverVerdict.reasoning).toMatch(/does not by itself tell this record apart/);
     const aliasContextVerdict = verdicts.find((v) => v.discriminator === 'alias_context')!;
     expect(aliasContextVerdict.reasoning).toMatch(/Sayari's own resolution/);
   });
