@@ -1,5 +1,5 @@
 {
-  "id": "c8ece9e1-30b0-472b-832c-31a0d5364755",
+  "id": "6f4b0790-4889-46e1-9e76-7832f9e14b87",
   "prevId": "c15333cc-626d-4cc8-91bf-fdd30259c3bb",
   "version": "7",
   "dialect": "postgresql",
@@ -36,6 +36,24 @@
         "note": {
           "name": "note",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "discover_total_count": {
+          "name": "discover_total_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "discover_total_qualifier": {
+          "name": "discover_total_qualifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "discovered_at": {
+          "name": "discovered_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -3403,12 +3421,6 @@
         "arrival_countries": {
           "name": "arrival_countries",
           "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "trade_total_count": {
-          "name": "trade_total_count",
-          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },

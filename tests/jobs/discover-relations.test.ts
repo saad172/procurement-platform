@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import * as t from '@/db/schema';
-import { loadFamilyOwners, recordLead } from '@/jobs/discover';
+import { loadFamilyOwners, recordDiscoverTotal, recordLead } from '@/jobs/discover';
 import { decideLeadRelation } from '@/domain/discover-leads';
 import { getTestDb, testDatabaseIsUp, testSql } from '../support/test-db';
 import { resetDerived } from '../support/reset';
@@ -21,7 +21,7 @@ import { buildAssessableSupplier } from '../support/pipeline';
  * `nameFlag` was computed one line above the insert and thrown away with
  * `void nameFlag`.
  *
- * `discoverLeads` end to end runs a classifier per candidate and cannot replay
+ * `discoverLeads` end to end runs a classifier per row and cannot replay
  * offline, so the two halves are tested where they live: the decision purely
  * (`tests/domain/discover.test.ts`), and the query and the write here, against
  * the database that was answering the wrong question.
@@ -144,7 +144,6 @@ describe('the Lead row Discover writes', () => {
         hsCodes: ['854431'],
       },
       query: { hsCodes: ['854430'], arrivalCountries: ['USA', 'MEX'] },
-      tradeTotalCount: 5_240,
       classification: {
         classification: null,
         reasoning: null,
@@ -183,7 +182,6 @@ describe('the Lead row Discover writes', () => {
         hsCodes: ['854430'],
       },
       query: { hsCodes: ['854430'], arrivalCountries: ['USA', 'MEX'] },
-      tradeTotalCount: 5_240,
       classification: {
         classification: 'manufacturer',
         reasoning: 'assembles harnesses',
@@ -218,10 +216,108 @@ describe('the Lead row Discover writes', () => {
 
     /**
      * **A Lead's HS footprint is the row's, never the query's** (ticket 01
-     * item C). The candidate's own `hsCodes` differs from the query's here on
-     * purpose, and it is the candidate's that lands on the row.
+     * item C, `hsCodesOf`). The row's own `hsCodes` differs from the query's
+     * here on purpose, and it is the row's that lands on the Lead.
      */
     expect(lead?.topHsCodes).toEqual(['854431']);
-    expect(lead?.tradeTotalCount).toBe(5_240);
+  });
+});
+
+describe('recordLead self-heals its own row-evidence columns on conflict (A6)', () => {
+  it('rewrites top_hs_codes and shipment_count on a re-run, and leaves the rest as the first run wrote it', async () => {
+    if (!up) return;
+    const db = await getTestDb();
+
+    await resetDerived(db);
+    const built = await buildAssessableSupplier(db, ROSTER_NAME);
+    const category = await db.query.category.findFirst({
+      where: eq(t.category.programId, built.programId),
+    });
+    const owners = await loadFamilyOwners(db, built.programId);
+    const member = [...owners.keys()][0]!;
+    const memberEntity = await db.query.entity.findFirst({ where: eq(t.entity.id, member) });
+    const relation = decideLeadRelation(
+      { entityId: member, label: memberEntity!.label },
+      {
+        familyOwners: owners,
+        roster: [{ supplierId: built.supplierId, rosterName: ROSTER_NAME }],
+      },
+    );
+
+    await recordLead(db, {
+      programId: built.programId,
+      categoryId: category!.id,
+      candidate: {
+        entity: { id: member, label: memberEntity!.label } as never,
+        shipments: 10,
+        latestShipmentDate: '2020-01-01',
+        hsCodes: ['111111'],
+      },
+      query: { hsCodes: ['854430'], arrivalCountries: ['USA', 'MEX'] },
+      classification: {
+        classification: 'manufacturer',
+        reasoning: 'first run',
+        notClassifiedReason: null,
+      },
+      relation,
+      jobId: undefined,
+    });
+
+    // A second run: the row's own evidence moved (a different shipment
+    // window), but the classifier was not asked again — that column must
+    // stay exactly what the first run decided, not be voided by this run's
+    // own null.
+    await recordLead(db, {
+      programId: built.programId,
+      categoryId: category!.id,
+      candidate: {
+        entity: { id: member, label: memberEntity!.label } as never,
+        shipments: 99,
+        latestShipmentDate: '2020-01-01',
+        hsCodes: ['222222'],
+      },
+      query: { hsCodes: ['854430'], arrivalCountries: ['USA', 'MEX'] },
+      classification: {
+        classification: null,
+        reasoning: null,
+        notClassifiedReason: 'the classifier loop stopped: tool-call cap reached',
+      },
+      relation,
+      jobId: undefined,
+    });
+
+    const lead = await db.query.lead.findFirst({ where: eq(t.lead.entityId, member) });
+    // Row-own evidence self-heals.
+    expect(lead?.topHsCodes).toEqual(['222222']);
+    expect(lead?.shipmentCount).toBe(99);
+    // Everything else is untouched by the re-run.
+    expect(lead?.classification).toBe('manufacturer');
+    expect(lead?.classificationReasoning).toBe('first run');
+  });
+});
+
+describe('recordDiscoverTotal overwrites the Category row, whole, per run (A3+C3)', () => {
+  it('writes the count, the qualifier and when it ran, and a later run overwrites all three', async () => {
+    if (!up) return;
+    const db = await getTestDb();
+
+    await resetDerived(db);
+    const built = await buildAssessableSupplier(db, ROSTER_NAME);
+    const category = await db.query.category.findFirst({
+      where: eq(t.category.programId, built.programId),
+    });
+
+    await recordDiscoverTotal(db, { categoryId: category!.id, count: 25, qualifier: 'eq' });
+    const first = await db.query.category.findFirst({ where: eq(t.category.id, category!.id) });
+    expect(first?.discoverTotalCount).toBe(25);
+    expect(first?.discoverTotalQualifier).toBe('eq');
+    expect(first?.discoveredAt).toBeTruthy();
+
+    // A later run disagrees — a `gte` floor this time, off a bigger query —
+    // and the row carries the LATEST run's numbers, not a merge of the two.
+    await recordDiscoverTotal(db, { categoryId: category!.id, count: 10_000, qualifier: 'gte' });
+    const second = await db.query.category.findFirst({ where: eq(t.category.id, category!.id) });
+    expect(second?.discoverTotalCount).toBe(10_000);
+    expect(second?.discoverTotalQualifier).toBe('gte');
   });
 });

@@ -148,4 +148,24 @@ describe('fetchTradeRows follows next/offset and merges the pages', () => {
     const { tradeTotalCount } = await fetchTradeRows({ upstream }, QUERY);
     expect(tradeTotalCount).toBe(100);
   });
+
+  /**
+   * C3: `size.qualifier` is `eq` (exact) or `gte` (a floor) — read alongside
+   * the count so a `gte` total is never rendered as an exact one.
+   */
+  it('reads size.qualifier off the first page alongside the count', async () => {
+    const { upstream } = stubUpstream(() => ({
+      data: {
+        data: [row('a', 'A')],
+        size: { count: 10_000, qualifier: 'gte' },
+        next: false,
+        offset: 0,
+        limit: 100,
+      },
+    }));
+
+    const { tradeTotalCount, tradeTotalQualifier } = await fetchTradeRows({ upstream }, QUERY);
+    expect(tradeTotalCount).toBe(10_000);
+    expect(tradeTotalQualifier).toBe('gte');
+  });
 });

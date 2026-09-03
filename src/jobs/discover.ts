@@ -52,11 +52,13 @@ export type DiscoverResult = {
   /** Rows already on the roster, dropped by exact entity-id dedupe. */
   alreadyOnRoster: number;
   /**
-   * The trade search envelope's own `size.count` — how many counterparties
-   * the query matched in total, so the UI can say "n of m" rather than just
-   * "n proposed" (ticket 01 item C). Null when the search returned no count.
+   * No `tradeTotalCount` here (A3+C3): the worker never read it off this
+   * result, so keeping it on the Job's return value was a copy nothing
+   * consumed. The trade search envelope's own `size.count`/`size.qualifier`
+   * are instead written onto the Category itself, once per run — see
+   * `recordDiscoverTotal` and `category.discover_total_count`'s own comment
+   * (`src/db/schema/authored.ts`) for where and why.
    */
-  tradeTotalCount: number | null;
 };
 
 export async function discoverLeads(
@@ -68,14 +70,40 @@ export async function discoverLeads(
   if (loaded.result) return loaded.result;
 
   const search = await searchTradeCandidates(deps, args, loaded.query);
+  await recordDiscoverTotal(db, {
+    categoryId: args.categoryId,
+    count: search.tradeTotalCount,
+    qualifier: search.tradeTotalQualifier,
+  });
   const { classified } = await classifyAndRecordLeads(deps, args, loaded.query, search);
 
   return {
     proposed: search.ranked.length,
     classified,
     alreadyOnRoster: search.alreadyOnRoster,
-    tradeTotalCount: search.tradeTotalCount,
   };
+}
+
+/**
+ * Overwrites this Category's per-run Discover totals whole (A3+C3): the trade
+ * search envelope's own `size.count`/`size.qualifier` off the run that just
+ * finished, and when it finished. Never `onConflictDoNothing` — a per-run
+ * fact is exactly the thing that SHOULD be overwritten by the next run, unlike
+ * a Lead row's own evidence (see `recordLead`, item A6, for the opposite rule
+ * and why it differs).
+ */
+export async function recordDiscoverTotal(
+  db: Database,
+  args: { categoryId: string; count: number | null; qualifier: string | null },
+): Promise<void> {
+  await db
+    .update(t.category)
+    .set({
+      discoverTotalCount: args.count,
+      discoverTotalQualifier: args.qualifier,
+      discoveredAt: new Date(),
+    })
+    .where(eq(t.category.id, args.categoryId));
 }
 
 type DiscoverQuery = { hsCodes: string[]; arrivalCountries: string[] };
@@ -90,7 +118,7 @@ async function loadDiscoverQuery(
     .from(t.categoryHsLine)
     .where(eq(t.categoryHsLine.categoryId, args.categoryId));
   if (lines.length === 0) {
-    return { result: { proposed: 0, classified: 0, alreadyOnRoster: 0, tradeTotalCount: null } };
+    return { result: { proposed: 0, classified: 0, alreadyOnRoster: 0 } };
   }
 
   const program = await db.query.program.findFirst({ where: eq(t.program.id, args.programId) });
@@ -134,17 +162,17 @@ type RankedCandidates = {
     entity: SayariEntity;
     shipments: number | null;
     latestShipmentDate: string | null;
-    /** This ROW's own `metadata.hs_codes`, never the Category's queried
-     * lines — a Lead's HS footprint is the row's, not the query's (ticket 01
-     * item C). Empty when the row states none; never backfilled from `query`. */
+    /** This ROW's own `metadata.hs_codes` — see `hsCodesOf`'s own comment. */
     hsCodes: string[];
   }[];
   alreadyOnRoster: number;
   /** Family member entity id → the Supplier of THIS Program whose family holds it. */
   familyOwners: Map<string, string>;
   roster: RosterSupplier[];
-  /** The trade search envelope's own `size.count` (ticket 01 item C). */
+  /** The trade search envelope's own `size.count` (ticket 01 item C; A3). */
   tradeTotalCount: number | null;
+  /** The same envelope's `size.qualifier` — `eq` or `gte` (C3). */
+  tradeTotalQualifier: string | null;
 };
 
 /**
@@ -155,21 +183,29 @@ type RankedCandidates = {
  * `offset`/`limit` are read rather than the ones sent, and the same guard
  * against a cursor that does not advance.
  *
- * `tradeTotalCount` is read once, off the first page. It is the query's own
- * total (`size.count`), not a running tally the pages add up to, so every
- * later page would report the identical number.
+ * `tradeTotalCount`/`tradeTotalQualifier` are read once, off the first page.
+ * They are the query's own total and how exact it is (`size.count`/
+ * `size.qualifier`), not a running tally the pages add up to, so every later
+ * page would report the identical pair. The qualifier matters: `gte` is a
+ * floor, not an exact count, and rendering it as one ("25 of 10000") would
+ * overstate how precisely the query's own total is known (C3).
  *
  * Deduped across pages by entity id — a row this build has already pooled
- * from an earlier page is not a second candidate, whatever page it turns up
- * on again.
+ * from an earlier page is not a second row, whatever page it turns up on
+ * again.
  */
 export async function fetchTradeRows(
   deps: Pick<DiscoverDeps, 'upstream'>,
   query: { hsCodes: string[]; arrivalCountries: string[] },
-): Promise<{ rows: SayariTradeRow[]; tradeTotalCount: number | null }> {
+): Promise<{
+  rows: SayariTradeRow[];
+  tradeTotalCount: number | null;
+  tradeTotalQualifier: string | null;
+}> {
   const seen = new Set<string>();
   const rows: SayariTradeRow[] = [];
   let tradeTotalCount: number | null = null;
+  let tradeTotalQualifier: string | null = null;
   let offset = 0;
 
   for (let page = 0; page < DISCOVER_TRADE_PAGE_CAP; page += 1) {
@@ -184,8 +220,12 @@ export async function fetchTradeRows(
       ...(offset > 0 ? { offset } : {}),
     });
 
-    // The query's own total, read once — later pages would only repeat it.
-    if (tradeTotalCount === null) tradeTotalCount = trade.data.size?.count ?? null;
+    // The query's own total and its qualifier, read once — later pages would
+    // only repeat them.
+    if (tradeTotalCount === null) {
+      tradeTotalCount = trade.data.size?.count ?? null;
+      tradeTotalQualifier = trade.data.size?.qualifier ?? null;
+    }
 
     const pageRows = trade.data.data ?? [];
     for (const row of pageRows) {
@@ -203,7 +243,7 @@ export async function fetchTradeRows(
     offset = next;
   }
 
-  return { rows, tradeTotalCount };
+  return { rows, tradeTotalCount, tradeTotalQualifier };
 }
 
 /** `next` is a boolean on the live API, like `traversal`'s own (`paginate.ts`). */
@@ -237,7 +277,11 @@ async function searchTradeCandidates(
   const { db } = deps;
   const { hsCodes, arrivalCountries } = query;
 
-  const { rows: tradeRows, tradeTotalCount } = await fetchTradeRows(deps, { hsCodes, arrivalCountries });
+  const {
+    rows: tradeRows,
+    tradeTotalCount,
+    tradeTotalQualifier,
+  } = await fetchTradeRows(deps, { hsCodes, arrivalCountries });
 
   // Everything already on this Program's roster, by entity id.
   const onRoster = new Set(
@@ -308,7 +352,7 @@ async function searchTradeCandidates(
     )
     .slice(0, DISCOVER_CLASSIFY_TOP_N);
 
-  return { ranked, alreadyOnRoster, familyOwners, roster, tradeTotalCount };
+  return { ranked, alreadyOnRoster, familyOwners, roster, tradeTotalCount, tradeTotalQualifier };
 }
 
 /**
@@ -325,7 +369,7 @@ export function hsCodesOf(row: SayariTradeRow): string[] {
   return [...new Set(codes.map((c) => c.key).filter((k): k is string => Boolean(k)))];
 }
 
-/** Classifies each ranked candidate and records it as a Lead. */
+/** Classifies each ranked row and records it as a Lead. */
 async function classifyAndRecordLeads(
   deps: DiscoverDeps,
   args: { programId: string; categoryId: string },
@@ -333,11 +377,13 @@ async function classifyAndRecordLeads(
   search: RankedCandidates,
 ): Promise<{ classified: number }> {
   const { db } = deps;
-  const { ranked, familyOwners, roster, tradeTotalCount } = search;
+  const { ranked, familyOwners, roster } = search;
   let classified = 0;
 
   for (const candidate of ranked) {
-    await upsertEntity(db, candidate.entity);
+    // A trade row, not this entity's own payload — 'tradeSearch' names the
+    // endpoint this sighting actually came from (B2, SPEC §8.2 D5).
+    await upsertEntity(db, candidate.entity, undefined, 'tradeSearch');
 
     const result = await classifyCandidate(deps, query, candidate);
     const outcome = readLeadClassification(result);
@@ -348,7 +394,6 @@ async function classifyAndRecordLeads(
       categoryId: args.categoryId,
       candidate,
       query,
-      tradeTotalCount,
       classification: outcome,
       relation: decideLeadRelation(
         { entityId: candidate.entity.id, label: candidate.entity.label },
@@ -365,7 +410,7 @@ async function classifyAndRecordLeads(
      * `readLeadClassification` salvages a submission a ceiling fired one turn
      * too late to stop, and writes the cap's own sentence when there is
      * nothing to salvage. Raising first would throw both away along with the
-     * candidate they were about, and leave the Lead unwritten rather than
+     * row they were about, and leave the Lead unwritten rather than
      * unclassified-for-a-stated-reason.
      */
     raiseIfStopped(result);
@@ -398,8 +443,7 @@ async function classifyCandidate(
             companyName: candidate.entity.label,
             countries: candidate.entity.countries ?? [],
             shipmentCount: candidate.shipments,
-            // This ROW's own HS lines, not the Category's queried ones — a
-            // Lead's HS footprint is the row's (ticket 01 item C).
+            // This ROW's own HS lines — see `hsCodesOf`'s own comment.
             topHsCodes: candidate.hsCodes,
             businessPurpose: attributeTexts(
               candidate.entity.attributes?.business_purpose?.data,
@@ -418,11 +462,20 @@ async function classifyCandidate(
  * Writes one Lead, with everything that was decided about it.
  *
  * Separated from the loop above so the write can be exercised without a model:
- * `discoverLeads` runs a classifier per candidate and cannot replay offline,
- * and the two facts most worth pinning — that the name-token flag is stored
- * and that the related Supplier is named — are on this row rather than in the
- * loop. `void nameFlag` and a hardcoded `relatedSupplierId: null` is what a
- * value computed near an insert and never written into it looks like.
+ * `discoverLeads` runs a classifier per row and cannot replay offline, and the
+ * two facts most worth pinning — that the name-token flag is stored and that
+ * the related Supplier is named — are on this row rather than in the loop.
+ * `void nameFlag` and a hardcoded `relatedSupplierId: null` is what a value
+ * computed near an insert and never written into it looks like.
+ *
+ * **On conflict, only the row-own evidence columns move** (`top_hs_codes`,
+ * `shipment_count`) — A6. Everything else a person may have already acted on
+ * (`dismissed`, `promoted_supplier_id`) or that a first classification already
+ * settled stays as it was: a re-run should self-heal what changed meaning
+ * under the same column, not silently reopen a decision. `top_hs_codes`
+ * changed meaning under this column once already — see its own comment
+ * (`src/db/schema/narrative.ts`) — which is why a re-run rewriting it is worth
+ * doing rather than leaving a pre-fix Lead stuck holding the query's lines.
  */
 export async function recordLead(
   db: Database,
@@ -431,8 +484,6 @@ export async function recordLead(
     categoryId: string;
     candidate: RankedCandidates['ranked'][number];
     query: DiscoverQuery;
-    /** The trade search envelope's own `size.count` (ticket 01 item C). */
-    tradeTotalCount: number | null;
     classification: LeadClassificationOutcome;
     relation: LeadRelationDecision;
     jobId?: string | undefined;
@@ -456,11 +507,9 @@ export async function recordLead(
       notClassifiedReason: args.classification.notClassifiedReason,
       shipmentCount: args.candidate.shipments,
       latestShipmentDate: args.candidate.latestShipmentDate,
-      // This ROW's own HS lines, never the Category's queried ones (ticket 01
-      // item C) — a Lead's HS footprint is the row's, not the query's.
+      // This ROW's own HS lines — see `hsCodesOf`'s own comment.
       topHsCodes: args.candidate.hsCodes as never,
       arrivalCountries: args.query.arrivalCountries as never,
-      tradeTotalCount: args.tradeTotalCount,
       // Verified where THIS Program's ownership graph puts it in an accepted
       // Supplier's family; otherwise a LABELLED, never hidden, name-token
       // guess — which now names the Supplier it guessed at.
@@ -468,7 +517,13 @@ export async function recordLead(
       relationVerified: args.relation.relationVerified,
       jobId: args.jobId ?? null,
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: [t.lead.programId, t.lead.categoryId, t.lead.entityId],
+      set: {
+        topHsCodes: args.candidate.hsCodes as never,
+        shipmentCount: args.candidate.shipments,
+      },
+    });
 }
 
 /**

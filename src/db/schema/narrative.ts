@@ -403,18 +403,16 @@ export const lead = pgTable(
     shipmentCount: integer('shipment_count'),
     /** Absent on 13 of 25 sampled rows, so it is a displayed column, never a filter. */
     latestShipmentDate: text('latest_shipment_date'),
-    /** This row's OWN `metadata.hs_codes`, never the Category's queried lines
-     * (ticket 01 item C) — a Lead's HS footprint is the row's, not the query's. */
+    /**
+     * This row's OWN `metadata.hs_codes` (see `hsCodesOf`, `src/jobs/
+     * discover.ts`, for what that means and why). `recordLead` updates this
+     * column, and `shipment_count`, on conflict (A6) — before that fix
+     * `onConflictDoNothing` left a Lead first written before the fix carrying
+     * the query's lines under a column documented as the row's own, until its
+     * next Discover run re-writes it.
+     */
     topHsCodes: jsonb('top_hs_codes'),
     arrivalCountries: jsonb('arrival_countries'),
-    /**
-     * The trade search envelope's `size.count` — how many counterparties the
-     * query matched in total, so the UI can say "n of m" rather than just "n"
-     * (ticket 01 item C; the same shape as the Corporate family's
-     * `explored_count`, SPEC §8.2). Null when the search returned no envelope
-     * count.
-     */
-    tradeTotalCount: integer('trade_total_count'),
 
     /**
      * Dedupe is exact entity-id plus an **unverified name-token overlap flag** —
