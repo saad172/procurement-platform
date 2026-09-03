@@ -42,13 +42,12 @@ export type FamilyMemberWrite = {
  * **not** in the conflict `set` below.
  *
  * `source` names the endpoint this batch of members arrived from, for the risk
- * union `upsertEntity` merges on every write (SPEC §8.2 D5). Left unnamed, it
- * defaults to `'ownership'` when `discoveredByJob` is null — the automatic
- * family read, which always calls `traversal.ownership` — and to `'ubo'`
- * otherwise, because a Deep Traversal is the one caller that also walks
- * upward. `traverse.ts` is not this ticket's file to edit, so its existing
- * call (which names neither) still gets a sensible label rather than the
- * wrong one (`getEntity`) `upsertEntity`'s own default would otherwise apply.
+ * union `upsertEntity` merges on every write (SPEC §8.2 D5). Both callers now
+ * name it explicitly — `enrichFamily` (this file's only automatic caller)
+ * always with `'ownership'`, and `traverse.ts`'s Deep Traversal with
+ * `'ownership'` for its downward walk and `'ubo'` for its upward one (B1) —
+ * so the default below is exercised only by the automatic family read, which
+ * is the one caller for which `'ownership'` is always correct.
  */
 export async function writeFamilyMembers(
   db: Database,
@@ -62,7 +61,7 @@ export async function writeFamilyMembers(
   },
 ): Promise<FamilyMemberRisk[]> {
   const written: FamilyMemberRisk[] = [];
-  const source: EntitySource = args.source ?? (args.discoveredByJob ? 'ubo' : 'ownership');
+  const source: EntitySource = args.source ?? 'ownership';
 
   for (const member of args.members) {
     // The merged, persisted `risk` — the union of this sighting and whatever
