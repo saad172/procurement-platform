@@ -261,6 +261,52 @@ describe('the auto-accept gate', () => {
     expect(outcome.reason).toMatch(/no comparable score to choose between them/);
   });
 
+  /**
+   * **Ticket 01 item A: the gate does not read `score`.** `resolution.score`
+   * was a field `CandidateFacts` did not carry at all before this ticket, so
+   * this pins the invariant down now that it does: swapping which of two
+   * otherwise-clean candidates carries the huge score must not change which
+   * one the gate would settle on, or whether it settles at all.
+   */
+  it('never reads resolution.score — the outcome is the same whichever candidate carries the huge one', () => {
+    const resolutionOf = (score: number) => ({
+      score,
+      matchStrength: 'strong',
+      explanation: undefined,
+      highlight: undefined,
+    });
+
+    const highScoreFirst = evaluateAutoAccept([
+      { candidate: candidate({ resolution: resolutionOf(999_999) }), verdicts: clean().verdicts },
+      {
+        candidate: candidate({ entityId: 'e2', resolution: resolutionOf(0.001) }),
+        verdicts: clean().verdicts,
+      },
+    ]);
+    const highScoreSecond = evaluateAutoAccept([
+      { candidate: candidate({ resolution: resolutionOf(0.001) }), verdicts: clean().verdicts },
+      {
+        candidate: candidate({ entityId: 'e2', resolution: resolutionOf(999_999) }),
+        verdicts: clean().verdicts,
+      },
+    ]);
+
+    expect(highScoreFirst).toEqual(highScoreSecond);
+    expect(highScoreFirst.accepted).toBe(false);
+    expect(highScoreFirst.reason).toMatch(/no comparable score to choose between them/);
+
+    // And a single clean candidate settles identically whatever its own score
+    // reads — the gate's accept path does not read it either.
+    const acceptLowScore = evaluateAutoAccept([
+      { candidate: candidate({ resolution: resolutionOf(0.001) }), verdicts: clean().verdicts },
+    ]);
+    const acceptHighScore = evaluateAutoAccept([
+      { candidate: candidate({ resolution: resolutionOf(999_999) }), verdicts: clean().verdicts },
+    ]);
+    expect(acceptLowScore).toEqual(acceptHighScore);
+    expect(acceptLowScore.accepted).toBe(true);
+  });
+
   it('refuses when no candidate passes all eight', () => {
     const decoy = candidate({ businessPurposes: ['Venture capital'] });
     const outcome = evaluateAutoAccept([
@@ -526,6 +572,112 @@ describe('name_cover reads what the candidate ADDS', () => {
     const results = runDiscriminators(row, chinese);
     expect(verdictFor(results, 'name_cover').verdict).toBe('unavailable');
     expect(verdictFor(results, 'alias_context').verdict).toBe('unavailable');
+  });
+});
+
+/**
+ * **Ticket 01 item B — `highlight` and per-field `match_quality` are noted
+ * inputs, never a verdict input.**
+ *
+ * `name_cover` and `alias_context` name which field Sayari's own resolution
+ * highlighted and how it graded the match, appended to a verdict a wholly
+ * separate function already decided — so the note can be asserted without
+ * ever being able to move what it is attached to.
+ *
+ * **Shaped as the PROJECTED snake_case keys** (C1) — `match_quality`,
+ * `high_quality_match_name` — never the SDK's camelCase, because every
+ * resolution body runs through `snakeKeys` before `CandidateFacts.resolution`
+ * ever sees it (`tests/jobs/resolve-rules-r0.test.ts` pins the same shape
+ * against a recorded body).
+ */
+describe('name_cover and alias_context note the resolution response, and cannot move a verdict', () => {
+  const AAM_ROW: RosterRow = {
+    name: 'American Axle & Manufacturing',
+    address: 'One Dauch Drive Detroit MI 48211',
+    country: 'USA',
+    hasCategory: true,
+  };
+
+  it('is silent when the Candidate carries no resolution block — every hand-built fixture until now', () => {
+    const plain = candidate({ label: 'AMERICAN AXLE & MANUFACTURING INC', owners: [] });
+    const results = runDiscriminators(AAM_ROW, plain);
+    expect(verdictFor(results, 'name_cover').reasoning).not.toMatch(/Sayari's own resolution/);
+    expect(verdictFor(results, 'alias_context').reasoning).not.toMatch(/Sayari's own resolution/);
+  });
+
+  it('names the highlighted text and how the name field was graded — match_quality shape', () => {
+    const withResolution = candidate({
+      label: 'AMERICAN AXLE & MANUFACTURING INC',
+      owners: [],
+      resolution: {
+        score: 216.92903,
+        matchStrength: 'strong',
+        explanation: { name: [{ match_quality: 'high', matched: 'x', uploaded: 'y' }] },
+        highlight: { name: ['<em>AMERICAN</em> <em>AXLE</em>'] },
+      },
+    });
+    const results = runDiscriminators(AAM_ROW, withResolution);
+    const nameCover = verdictFor(results, 'name_cover');
+    expect(nameCover.reasoning).toMatch(/Sayari's own resolution/);
+    expect(nameCover.reasoning).toMatch(/"AMERICAN AXLE"/);
+    expect(nameCover.reasoning).toMatch(/grading it high/);
+    // The verdict is untouched — still the same `pass` a plain candidate gets.
+    expect(nameCover.verdict).toBe('pass');
+  });
+
+  it('reads `high_quality_match_name` too — the shape the resolution response actually uses for the name field', () => {
+    const withResolution = candidate({
+      label: 'AMERICAN AXLE & MANUFACTURING INC',
+      owners: [],
+      resolution: {
+        score: 216.92903,
+        matchStrength: 'strong',
+        explanation: { name: [{ high_quality_match_name: true, matched: 'x', uploaded: 'y' }] },
+        highlight: { name: ['<em>AMERICAN</em> <em>AXLE</em>'] },
+      },
+    });
+    const results = runDiscriminators(AAM_ROW, withResolution);
+    expect(verdictFor(results, 'name_cover').reasoning).toMatch(/grading it high/);
+  });
+
+  it('does not move a `fail` or `unavailable` verdict either — the note is silent about the outcome', () => {
+    const thaiWithResolution = candidate({
+      label: 'American Axle & Manufacturing (Thailand) Co., Ltd.',
+      owners: [],
+      resolution: {
+        score: 1,
+        matchStrength: 'weak',
+        explanation: { name: [{ high_quality_match_name: false, matched: 'x', uploaded: 'y' }] },
+        highlight: { name: ['<em>American</em> <em>Axle</em> (Thailand)'] },
+      },
+    });
+    const withoutResolution = candidate({
+      label: 'American Axle & Manufacturing (Thailand) Co., Ltd.',
+      owners: [],
+    });
+    const noted = verdictFor(runDiscriminators(AAM_ROW, thaiWithResolution), 'name_cover');
+    const unnoted = verdictFor(runDiscriminators(AAM_ROW, withoutResolution), 'name_cover');
+    // Same verdict either way — `unavailable` on the "(Thailand)" marker.
+    expect(noted.verdict).toBe(unnoted.verdict);
+    expect(noted.verdict).toBe('unavailable');
+    expect(noted.reasoning).toMatch(/Sayari's own resolution/);
+    expect(noted.reasoning).toMatch(/grading it low/);
+  });
+
+  it('names the highlighted text on alias_context too', () => {
+    const withResolution = candidate({
+      label: 'ROBERT BOSCH GMBH',
+      aliases: ['Bosch'],
+      resolution: {
+        score: 12,
+        matchStrength: 'strong',
+        explanation: { name: [{ match_quality: 'medium', matched: 'x', uploaded: 'y' }] },
+        highlight: { name: ['<em>Bosch</em>'] },
+      },
+    });
+    const alias = verdictFor(runDiscriminators(BOSCH_ROW, withResolution), 'alias_context');
+    expect(alias.reasoning).toMatch(/Sayari's own resolution/);
+    expect(alias.reasoning).toMatch(/grading it medium/);
   });
 });
 

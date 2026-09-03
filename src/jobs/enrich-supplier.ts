@@ -2,7 +2,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { latestCountryIndicators, latestNewsItems } from '@/db/queries/enrichments';
-import { computeFamilyExposure, unionRiskFactors } from '@/domain/family';
+import { computeFamilyExposure } from '@/domain/family';
 import { nearestPlant } from '@/domain/geo';
 import type { CountrySource } from '@/domain/match/settle-match';
 import { scoreSupplier } from '@/domain/score';
@@ -418,10 +418,9 @@ async function assembleScoringInput(
       sanctioned: profileRow.sanctioned,
       pep: profileRow.pep,
       closed: profileRow.closed,
-      // Unioned with per-factor provenance across the endpoints that reported.
-      riskFactors: unionRiskFactors([{ source: 'getEntity', risk: profileRow.risk }]).map(
-        (u) => u.factor,
-      ),
+      // `profileRow.risk` already carries every endpoint's per-factor
+      // provenance — `upsertEntity` merges it on every write (SPEC §8.2 D5).
+      riskFactors: parseRiskObject(profileRow.risk),
       psaCount: profileRow.psaCount ?? undefined,
       relationshipCount:
         (profileRow.relationshipCount as Record<string, number> | null) ?? undefined,
@@ -432,6 +431,11 @@ async function assembleScoringInput(
       label: o.label,
       riskFactors: o.riskFactors,
       isStateOwned: o.isStateOwned,
+      // Carried through so scoring can see them later (item C); nothing in
+      // this ticket's scoring reads them yet.
+      sharePercentage: o.sharePercentage,
+      startDate: o.startDate,
+      endDate: o.endDate,
     })),
     countryIndicators: indicators.map((i) => ({
       code: i.indicatorCode,
@@ -477,9 +481,29 @@ function finalizeEnrichResult(
   };
 }
 
-/** Serious flags weigh ×3, moderate ×1, unflagged ×0.5 (SPEC §9.2). */
-function scoreArticle(riskFlags: unknown): { seriousFlags: number; moderateFlags: number } {
-  const flags = Array.isArray(riskFlags) ? riskFlags.map(String) : [];
+/**
+ * Serious flags weigh ×3, moderate ×1, unflagged ×0.5 (SPEC §9.2).
+ *
+ * `risk_flags` arrives as an array on most recorded bodies and as a **record**
+ * keyed by flag name on others — the projection at
+ * `src/upstream/projections/sayari.ts:310` admits both
+ * (`z.union([z.array(z.string()), z.record(z.string(), z.unknown())])`), and
+ * this counted only the array. A record's own *keys* are the flag names, the
+ * same fact an array entry states directly; the values carry whatever detail
+ * Sayari attaches and were never read for the array shape either.
+ *
+ * **The record branch is unverified** — no recorded `negativeNews` body in
+ * this repo carries `risk_flags` as an object rather than an array (PR #19
+ * review item P4). Left lenient rather than narrowed, on the strength of the
+ * projection admitting both; confirm against a live recording before trusting
+ * a count that took this branch.
+ */
+export function scoreArticle(riskFlags: unknown): { seriousFlags: number; moderateFlags: number } {
+  const flags = Array.isArray(riskFlags)
+    ? riskFlags.map(String)
+    : riskFlags && typeof riskFlags === 'object'
+      ? Object.keys(riskFlags)
+      : [];
   const serious = flags.filter((f) =>
     /sanction|forced_labor|export_control|corruption|fraud/i.test(f),
   ).length;

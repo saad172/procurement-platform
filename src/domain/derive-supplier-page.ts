@@ -1,9 +1,5 @@
-import {
-  computeFamilyExposure,
-  unionRiskFactors,
-  type FamilyCoverage,
-  type FamilyExposure,
-} from './family';
+import { computeFamilyExposure, type FamilyCoverage, type FamilyExposure } from './family';
+import { parseRiskObject } from './scoring/risk-factors';
 import { rankSentence, type ShortlistEntry } from '@/db/queries/shortlist';
 
 /**
@@ -47,9 +43,9 @@ export function deriveFamilyCoverageAndExposure(familyRows: readonly FamilyRow[]
       entityId: row.member.id,
       label: row.member.label,
       country: row.member.country,
-      factors: unionRiskFactors([{ source: 'getEntity', risk: row.member.risk }]).map(
-        (u) => u.factor,
-      ),
+      // `row.member.risk` already carries every endpoint's per-factor
+      // provenance — `upsertEntity` merges it on every write (SPEC §8.2 D5).
+      factors: parseRiskObject(row.member.risk),
       hopDepth: row.hopDepth,
       // Read off the row rather than assumed: a Deep Traversal writes into this
       // same table and is distinguished by `discovered_by_job` (SPEC §8.5).
@@ -90,9 +86,9 @@ function widestCoverage(familyRows: readonly FamilyRow[]): FamilyCoverage {
   };
 }
 
-/** Risk factors on the company itself, as against on its family — the entity's own `risk` block, unioned with nothing else. */
+/** Risk factors on the company itself, as against on its family — the entity's own stored `risk` block. */
 export function deriveOwnRiskFactorCount(entityRisk: unknown): number {
-  return unionRiskFactors([{ source: 'getEntity', risk: entityRisk ?? null }]).length;
+  return parseRiskObject(entityRisk ?? null).length;
 }
 
 /** The oldest Enrichment age is the freshest-checked claim the page can make about the whole company. */

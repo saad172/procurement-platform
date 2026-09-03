@@ -2,11 +2,17 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { derivedId } from '@/db/derived-id';
-import { ownersOf, parseRelationships, type ParsedEdge } from '@/domain/parse-relationships';
+import {
+  ownersOf,
+  parseRelationships,
+  sharePercentageOf,
+  type ParsedEdge,
+} from '@/domain/parse-relationships';
+import { upwardOwnershipTypes } from '@/domain/relationships';
 import { FAMILY_TRAVERSAL_LIMIT } from '@/config/constants';
 import { COUNTRY_INDICATORS } from '@/domain/scoring/anchors';
 import { chooseHtsLine } from '@/domain/hs-code';
-import type { FamilyMemberRisk } from '@/domain/family';
+import type { EntitySource, FamilyMemberRisk } from '@/domain/family';
 import { nearestPlant, type PlantPoint } from '@/domain/geo';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
 import {
@@ -17,7 +23,7 @@ import {
 } from './family-members';
 import { upsertEntity } from './resolve';
 import type { Upstream, UpstreamResult } from '@/upstream';
-import type { SayariEntity } from '@/upstream/projections/sayari';
+import type { SayariEntity, SayariTraversalPath } from '@/upstream/projections/sayari';
 
 /**
  * The enrichment fan-out (SPEC §7, §8).
@@ -528,6 +534,10 @@ export async function enrichFamily(
     members: [...byId.values()],
     coverage: { truncated, exploredCount: byId.size, reachableCount },
     discoveredByJob: null,
+    // This is `traversal.ownership`, named explicitly rather than left to
+    // `writeFamilyMembers`'s default — which exists for the one caller this
+    // ticket does not own (`traverse.ts`'s Deep Traversal).
+    source: 'ownership',
   });
 
   return { enrichmentId, members, truncated, reachable: reachableCount };
@@ -535,25 +545,36 @@ export async function enrichFamily(
 
 // ── Owner edges ──────────────────────────────────────────────────────────────
 
+/** One owner edge, as scoring and the Entity page see it (items B, C). */
+export type OwnerEdge = {
+  entityId: string;
+  label: string;
+  riskFactors: ReturnType<typeof parseRiskObject>;
+  isStateOwned: boolean;
+  /** From `attributes.shares[].percentage`, when the occurrence carries one. */
+  sharePercentage: number | null;
+  startDate: string | null;
+  endDate: string | null;
+};
+
 /**
  * Current one-hop owner edges, for the Ownership exposure Criterion.
  *
  * Where `relationshipCount` says owner edges exist but the entity payload's
  * window was swamped by trade edges, this reads them with a **type-filtered
  * traversal at `maxDepth: 1`** rather than paging the entity payload — which is
- * cheaper and answers the question directly.
+ * cheaper and answers the question directly (SPEC §16.6).
+ *
+ * **`relationshipsTruncated` alone is not the test.** That flag fires on any
+ * truncated window — trade edges alone can do it — so it says nothing about
+ * whether an *owner* edge was actually lost. The real test is per type: does
+ * `relationship_count` claim more edges of an upward-ownership type than
+ * `parseRelationships` actually found in the window that came back.
  */
 export async function readOwnerEdges(
   ctx: EnrichContext,
   args: { entityId: string; entity: SayariEntity },
-): Promise<
-  {
-    entityId: string;
-    label: string;
-    riskFactors: ReturnType<typeof parseRiskObject>;
-    isStateOwned: boolean;
-  }[]
-> {
+): Promise<OwnerEdge[]> {
   const { edges, unclassified } = parseRelationships(args.entity, args.entityId);
 
   if (unclassified.length > 0) {
@@ -570,16 +591,73 @@ export async function readOwnerEdges(
     );
   }
 
-  await storeRelationships(ctx.db, edges, ctx.jobId);
+  // These came out of the entity's own payload, so `getEntity` names the
+  // source and `1` the hop depth — both the defaults, named explicitly.
+  await storeRelationships(ctx.db, edges, ctx.jobId, { hopDepth: 1, source: 'getEntity' });
 
-  const owners: {
-    entityId: string;
-    label: string;
-    riskFactors: ReturnType<typeof parseRiskObject>;
-    isStateOwned: boolean;
-  }[] = [];
+  let ownerEdges = edges;
+  const missingTypes = ownerEdgeGap(args.entity, edges);
+  if (missingTypes.length > 0) {
+    try {
+      const typed = await ctx.upstream.sayari.traversal({
+        id: args.entityId,
+        maxDepth: 1,
+        relationships: missingTypes,
+      });
+      await recordEnrichment(ctx, {
+        source: 'sayari_owner_edges',
+        subjectKind: 'entity',
+        subjectKey: args.entityId,
+        requestParams: { entityId: args.entityId, maxDepth: 1, relationships: missingTypes },
+        result: typed,
+      });
 
-  for (const edge of ownersOf(edges)) {
+      const typedEdges = parseTypedOwnerEdges(typed.data, args.entityId);
+
+      /**
+       * **Skip a typed edge the window already stored, by (from, to, type)**
+       * (P3). `ownerEdgeGap` fires per relationship TYPE, not per target —
+       * a window short one `has_shareholder` edge asks the traversal for
+       * every `has_shareholder` edge it can find, which legitimately
+       * re-returns owners the window already named alongside the one it was
+       * missing. Storing those re-echoes anyway is what duplicated a
+       * "Current owner" row before this fix, even with `record` now carried
+       * (some traversal paths still answer with none of their own).
+       */
+      const windowKeys = new Set(
+        edges.map((e) => `${e.subjectId}:${e.targetId}:${e.relationshipType}`),
+      );
+      const newTypedEdges = typedEdges.filter(
+        (e) => !windowKeys.has(`${e.subjectId}:${e.targetId}:${e.relationshipType}`),
+      );
+      await storeRelationships(ctx.db, newTypedEdges, ctx.jobId, {
+        hopDepth: 1,
+        source: 'traversal',
+      });
+
+      // Additive, not a replacement: the window's own edges are kept, and the
+      // typed read only fills in owner-type edges the window missed. A target
+      // both already named is not counted twice.
+      const seen = new Set(ownersOf(edges).map((e) => `${e.relationshipType}:${e.targetId}`));
+      for (const edge of ownersOf(newTypedEdges)) {
+        const key = `${edge.relationshipType}:${edge.targetId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        ownerEdges = [...ownerEdges, edge];
+      }
+    } catch (error) {
+      // Loud, and not fatal — the same rule as an unclassified type. Ownership
+      // still reads whatever the window itself carried; it is only the gap
+      // that goes unfilled.
+      console.warn(
+        `  typed owner-edge read failed for ${args.entityId}, falling back to the window's ` +
+          `edges: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  const owners: OwnerEdge[] = [];
+  for (const edge of ownersOf(ownerEdges)) {
     const target = edge.targetEntity as SayariEntity | null;
     const factors = parseRiskObject(target?.risk);
     owners.push({
@@ -587,9 +665,105 @@ export async function readOwnerEdges(
       label: edge.targetLabel ?? edge.targetId,
       riskFactors: factors,
       isStateOwned: factors.some((f) => /soe|state_owned|government/i.test(f.name)),
+      sharePercentage: sharePercentageOf(edge.attributes),
+      startDate: edge.startDate,
+      endDate: edge.endDate,
     });
   }
   return owners;
+}
+
+/**
+ * Which of the three upward-ownership types `relationship_count` claims more
+ * edges of than the window actually delivered.
+ *
+ * `relationship_count` is keyed by relation type (SPEC §16.6), so the
+ * comparison is per type rather than a single before/after count — a window
+ * that is complete for `has_shareholder` but short two `subsidiary_of` edges
+ * should ask a traversal for `subsidiary_of` alone, not repeat the whole read.
+ */
+export function ownerEdgeGap(entity: SayariEntity, edges: readonly ParsedEdge[]): string[] {
+  const counts = (entity.relationship_count ?? {}) as Record<string, unknown>;
+  const seenByType = new Map<string, number>();
+  for (const edge of ownersOf(edges)) {
+    seenByType.set(edge.relationshipType, (seenByType.get(edge.relationshipType) ?? 0) + 1);
+  }
+  return upwardOwnershipTypes().filter((type) => {
+    const claimed = counts[type];
+    return typeof claimed === 'number' && claimed > (seenByType.get(type) ?? 0);
+  });
+}
+
+/** One occurrence of a typed traversal path's own `relationships[type].values[]` entry. */
+type TypedRelationshipValue = {
+  record?: string | null;
+  from_date?: string | null;
+  to_date?: string | null;
+  former?: boolean | null;
+  attributes?: unknown;
+};
+
+/**
+ * Turns a type-filtered `traversal.traversal` response into edges shaped like
+ * `parseRelationships`'s, so the typed read can share `storeRelationships` and
+ * `ownersOf` with the window read rather than needing its own copy of either.
+ *
+ * A traversal path names the relationship from the root's own side — the same
+ * convention `parseRelationships`'s header documents for the entity payload —
+ * so a one-hop path's `field` is exactly what `relationshipType` would have
+ * been had the window included this edge.
+ *
+ * **Occurrence-level detail comes off the same step's own `relationships`
+ * group** (P3, PR #19 review): one row per `values[]` entry, exactly the
+ * "one row per occurrence" rule `parseRelationships` applies to the entity
+ * payload. This is not optional — `record` is what lets `storeRelationships`'
+ * unique key `(from, to, type, source_record_id)` recognise a re-sighting of
+ * an edge the window already stored as the SAME row rather than a new one:
+ * Postgres does not treat two NULLs as equal for that constraint, so leaving
+ * `sourceRecordId` null duplicated every typed-read owner.
+ */
+export function parseTypedOwnerEdges(
+  traversal: { data?: unknown },
+  rootEntityId: string,
+): ParsedEdge[] {
+  const paths = Array.isArray(traversal.data) ? (traversal.data as SayariTraversalPath[]) : [];
+  const edges: ParsedEdge[] = [];
+  for (const path of paths) {
+    const target = terminalEntityOf(path, rootEntityId);
+    if (!target) continue;
+    const step = path.path?.[0];
+    const relationshipType = step?.field;
+    if (typeof relationshipType !== 'string') continue;
+
+    const bag = step?.relationships;
+    const group =
+      bag && typeof bag === 'object' && !Array.isArray(bag)
+        ? (bag as Record<string, { values?: readonly TypedRelationshipValue[] | null } | null>)[
+            relationshipType
+          ]
+        : undefined;
+    const values = group?.values && group.values.length > 0 ? group.values : [undefined];
+
+    for (const value of values) {
+      edges.push({
+        subjectId: rootEntityId,
+        targetId: target.id,
+        targetLabel: target.label ?? null,
+        targetType: target.type ?? null,
+        relationshipType,
+        former: value?.former === true,
+        startDate: value?.from_date ?? null,
+        endDate: value?.to_date ?? null,
+        sourceRecordId: value?.record ?? null,
+        attributes:
+          value?.attributes && typeof value.attributes === 'object'
+            ? (value.attributes as Record<string, unknown>)
+            : null,
+        targetEntity: target as unknown as Record<string, unknown>,
+      });
+    }
+  }
+  return edges;
 }
 
 /**
@@ -601,17 +775,27 @@ export async function readOwnerEdges(
  * as a bare id therefore has no row to write — it is skipped rather than
  * invented, which is the same rule the rest of this app follows about evidence
  * it does not hold.
+ *
+ * **`hopDepth` is the minimum on conflict, never the newest** — the schema
+ * comment on `entity_relationship.hop_depth` has said so since before this
+ * function implemented it. An edge first seen at depth 3 by a Deep Traversal
+ * and later at depth 1 by an ownership read is a 1-hop edge; the pattern is
+ * `conflictSet` in `family-members.ts`, applied here to one column instead of
+ * three because an edge carries no coverage figures of its own to overwrite.
  */
 export async function storeRelationships(
   db: Database,
   edges: readonly ParsedEdge[],
   jobId?: string | undefined,
+  options?: { hopDepth?: number; source?: EntitySource },
 ): Promise<number> {
+  const hopDepth = options?.hopDepth ?? 1;
+  const source = options?.source ?? 'getEntity';
   let written = 0;
 
   for (const edge of edges) {
     if (!edge.targetEntity) continue;
-    await upsertEntity(db, edge.targetEntity as unknown as SayariEntity);
+    await upsertEntity(db, edge.targetEntity as unknown as SayariEntity, undefined, source);
 
     await db
       .insert(t.entityRelationship)
@@ -625,13 +809,22 @@ export async function storeRelationships(
         startDate: edge.startDate,
         endDate: edge.endDate,
         sourceRecordId: edge.sourceRecordId,
-        hopDepth: 1,
+        hopDepth,
         discoveredByJob: jobId ?? null,
         attributes: edge.attributes as never,
       })
-      // The unique key is (from, to, type, source_record_id); seeing the same
-      // edge twice is the normal case on a warm cache, not a conflict to fix.
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        // The unique key is (from, to, type, source_record_id); seeing the
+        // same edge twice is the normal case on a warm cache, and the only
+        // thing a repeat sighting may change is how close it says the edge is.
+        target: [
+          t.entityRelationship.fromEntityId,
+          t.entityRelationship.toEntityId,
+          t.entityRelationship.relationshipType,
+          t.entityRelationship.sourceRecordId,
+        ],
+        set: { hopDepth: sql`least(${t.entityRelationship.hopDepth}, excluded.hop_depth)` },
+      });
     written += 1;
   }
 

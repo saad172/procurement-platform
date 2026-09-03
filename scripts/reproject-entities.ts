@@ -4,6 +4,7 @@ import { asc, eq } from 'drizzle-orm';
 import { closeDirectDb, getDirectDb } from '@/db/client';
 import * as t from '@/db/schema';
 import { upsertEntity } from '@/jobs/resolve';
+import { isFullEntityFetch } from '@/upstream/params';
 import { entitySchema, type SayariEntity } from '@/upstream/projections/sayari';
 
 /**
@@ -78,10 +79,13 @@ async function main() {
     }
     // A body whose id does not match what was asked for is not this entity's
     // own payload, and passing it as one would misattribute the provenance.
+    // Nor is a relationship-filtered read (N2, `isFullEntityFetch`) — narrower
+    // than the entity's full payload, so it does not get to claim the
+    // provenance link either.
     const asked = (row.params as { id?: unknown } | null)?.id;
-    const own = typeof asked === 'string' && asked === entity.id;
+    const own = typeof asked === 'string' && asked === entity.id && isFullEntityFetch(row.params);
 
-    if (!dryRun) await upsertEntity(db, entity, own ? row.id : null);
+    if (!dryRun) await upsertEntity(db, entity, own ? row.id : null, 'getEntity');
     projected += 1;
 
     const was = before.get(entity.id);

@@ -21,6 +21,7 @@ config({ path: '.env', quiet: true });
 import postgres from 'postgres';
 import { runDiscriminators, type RosterRow } from '../src/domain/match/discriminators';
 import { toCandidateFacts } from '../src/jobs/resolve';
+import { RELATIONSHIP_FILTER_PARAM_KEYS } from '../src/upstream/params';
 import { entitySchema, type SayariEntity } from '../src/upstream/projections/sayari';
 
 type Row = {
@@ -66,6 +67,15 @@ async function main() {
  *
  * `distinct on` keeps the newest payload per entity — a Candidate refetched
  * in a later attempt should be re-measured against what we hold now.
+ *
+ * **Full fetches only** (N2, `RELATIONSHIP_FILTER_PARAM_KEYS`). A stored
+ * `entity.getEntity` row can now be a relationship-filtered read (SPEC
+ * §16.6's typed owner-edge read widened the params it may carry) rather than
+ * the entity's full payload — `toCandidateFacts` below reads `attributes`,
+ * `identifiers`, `closed`, `latest_status` and more that a filtered read
+ * still carries in full, but excluding these rows keeps this script honest
+ * about "the payload we hold now" rather than picking whichever body was
+ * merely the newest.
  */
 async function queryJudgedCandidates(sql: postgres.Sql): Promise<Row[]> {
   return (await sql`
@@ -74,6 +84,7 @@ async function queryJudgedCandidates(sql: postgres.Sql): Promise<Row[]> {
              u.params->>'id' as entity_id, u.body
       from upstream_response u
       where u.endpoint = 'entity.getEntity' and u.params ? 'id'
+        and not (u.params ?| ${[...RELATIONSHIP_FILTER_PARAM_KEYS]})
       order by u.params->>'id', u.fetched_at desc
     )
     select mc.entity_id,

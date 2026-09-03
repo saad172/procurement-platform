@@ -109,7 +109,7 @@ async function main(): Promise<void> {
     {
       supplierId: supplier.id,
       roster,
-      prepassEntityIds: candidateIds.map((c) => c.entityId),
+      prepassCandidates: candidateIds,
     },
   );
 

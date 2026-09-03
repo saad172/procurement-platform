@@ -97,6 +97,9 @@ describe('resolve/rules-r0 replays', () => {
     expect(match?.status).toBe('accepted');
     expect(match?.settledBy).toBe('rules');
     expect(match?.entityId).toBe(ACCEPTED_ENTITY_ID);
+    // Sayari's own `match_strength` for the accepted Candidate, carried onto
+    // the Match row (ticket 01 item A) — recorded "strong" for this row.
+    expect(match?.matchStrength).toBe('strong');
 
     // Zero model turns — not "few", zero. No `runRound` was ever handed to
     // `resolveSupplier`, and this is the row a Trace view would read.
@@ -142,5 +145,47 @@ describe('resolve/rules-r0 replays', () => {
     expect(verdicts).toHaveLength(8);
     expect(new Set(verdicts.map((v) => v.discriminator))).toEqual(new Set(DISCRIMINATOR_NAMES));
     expect(verdicts.every((v) => v.verdict === 'pass')).toBe(true);
+
+    /**
+     * **The four evidence columns, read from the actual recorded resolution
+     * body** (ticket 01 item A). `settleMatch` has always written these when
+     * given them; what was broken is that nothing upstream of it ever was —
+     * every one of these four read null on every row in the database before
+     * this fix, on every Candidate, not only the accepted one.
+     */
+    expect(Number(accepted!.score)).toBeCloseTo(216.92903, 3);
+    expect(accepted!.matchStrength).toBe('strong');
+    expect(accepted!.explanation).toBeTruthy();
+    expect(accepted!.explanation).toHaveProperty('name');
+    expect(accepted!.highlight).toBeTruthy();
+    expect(accepted!.highlight).toHaveProperty('name');
+
+    // Every one of the five pre-pass Candidates carries its OWN resolution
+    // row's evidence, not only the accepted Candidate's (V3).
+    for (const candidate of candidates) {
+      expect(candidate.score, `${candidate.entity.label} should carry its own score`).not.toBeNull();
+      expect(
+        candidate.matchStrength,
+        `${candidate.entity.label} should carry its own match_strength`,
+      ).not.toBeNull();
+    }
+
+    /**
+     * **B: noted, never scored on.** `name_cover` and `alias_context` name
+     * which field Sayari's own resolution highlighted, as a note appended to
+     * a verdict that was already decided — it never settles a Match on its
+     * own (SPEC §6.2).
+     *
+     * **C1**: `grading it high` is the field's own `match_quality`/
+     * `high_quality_match_name` grade, read as the PROJECTED snake_case keys
+     * — the bug this pins down never fired on real data because the old code
+     * read the SDK's camelCase, which `snakeKeys` had already converted away
+     * by the time this body was projected.
+     */
+    const nameCoverVerdict = verdicts.find((v) => v.discriminator === 'name_cover')!;
+    expect(nameCoverVerdict.reasoning).toMatch(/Sayari's own resolution/);
+    expect(nameCoverVerdict.reasoning).toMatch(/grading it high/);
+    const aliasContextVerdict = verdicts.find((v) => v.discriminator === 'alias_context')!;
+    expect(aliasContextVerdict.reasoning).toMatch(/Sayari's own resolution/);
   });
 });

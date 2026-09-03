@@ -180,6 +180,17 @@ export const enrichmentSource = pgEnum('enrichment_source', [
   'sayari_negative_news',
   'sayari_ownership_family',
   'sayari_deep_traversal',
+  /**
+   * The **type-filtered `traversal.traversal` at `maxDepth: 1`** that recovers
+   * one-hop owner edges when `relationship_count` says they exist but the
+   * entity payload's own relationship window was too swamped with trade edges
+   * to include them (SPEC §16.6). Distinct from `sayari_deep_traversal` for
+   * the same reason that one is distinct from `sayari_ownership_family`: it is
+   * automatic — the enrich Job asks it whenever the gap shows up, nobody
+   * requested it — so labelling it a Deep Traversal would make a spend the
+   * pipeline made on its own indistinguishable from one a person asked for.
+   */
+  'sayari_owner_edges',
   'world_bank',
   'gleif',
   'usitc',

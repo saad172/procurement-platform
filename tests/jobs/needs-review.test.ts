@@ -103,7 +103,7 @@ describe('resolveSupplier when the agents never converge', () => {
       {
         supplierId: supplier.id,
         roster: ROSTER,
-        prepassEntityIds: [],
+        prepassCandidates: [],
       },
     );
 

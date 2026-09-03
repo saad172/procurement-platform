@@ -75,7 +75,14 @@ export const plant = pgTable(
 
 // ── Categories and their HS lines ────────────────────────────────────────────
 
-/** One kind of thing a Program buys, carrying the HS codes used for tariffs. */
+/**
+ * One kind of thing a Program buys, carrying the HS codes used for tariffs.
+ *
+ * Every other column in this file is authored-only (see the file's own header
+ * comment). The three `discover_*` columns below are the one exception:
+ * they are written by the Discover job (`src/jobs/discover.ts`), overwritten
+ * whole on every run of that job for this Category, never by the seed.
+ */
 export const category = pgTable(
   'category',
   {
@@ -86,6 +93,31 @@ export const category = pgTable(
     code: text('code').notNull(),
     name: text('name').notNull(),
     note: text('note'),
+    /**
+     * The trade search envelope's own `size.count` off the most recent Discover
+     * run for this Category — how many counterparties the query matched in
+     * total, so the UI can say "n of m" rather than just "n proposed" (ticket
+     * 01 item C; A3). Null when no Discover run has completed yet, or the last
+     * one's search returned no count.
+     *
+     * **Not on the Lead row.** A trade total is a fact about one Discover
+     * RUN, not about any one Lead it proposed: `lead` rows are written
+     * `onConflictDoNothing` (`recordLead`), so a second run's rows disagree
+     * with the first run's about a number that was never theirs to carry, and
+     * nothing ever read it off the Lead. It lives here instead, overwritten
+     * whole each run, which is what a per-run fact overwritten per run should
+     * do (A3+C3).
+     */
+    discoverTotalCount: integer('discover_total_count'),
+    /**
+     * `size.qualifier` off the same envelope — `eq` (the count is exact) or
+     * `gte` (the count is a floor: the query matched at least this many).
+     * Read beside `discover_total_count` so a `gte` renders "at least n"
+     * rather than an exact total it never was (C3).
+     */
+    discoverTotalQualifier: text('discover_total_qualifier'),
+    /** When the Discover run that produced the two columns above finished. */
+    discoveredAt: timestamp('discovered_at', { withTimezone: true }),
     createdAt: now(),
   },
   (t) => [uniqueIndex('category_program_code_key').on(t.programId, t.code)],

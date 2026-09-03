@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { parseRelationships, ownersOf } from '@/domain/parse-relationships';
-import { directionOf, isOwnership, targetOwnsSubject } from '@/domain/relationships';
+import { parseRelationships, ownersOf, sharePercentageOf } from '@/domain/parse-relationships';
+import {
+  directionOf,
+  isOwnership,
+  targetOwnsSubject,
+  upwardOwnershipTypes,
+} from '@/domain/relationships';
 
 /**
  * The shape as Sayari actually sends it — `types` plural, an object keyed by
@@ -122,5 +127,51 @@ describe('owners of the subject', () => {
 
   it('is the current upward ownership edges and nothing else', () => {
     expect(ownersOf(edges).map((e) => e.targetId)).toEqual(['PARENT']);
+  });
+});
+
+/**
+ * The three types the typed owner-edge read asks a traversal for by name
+ * (SPEC §16.6, item B) — derived from the same table `targetOwnsSubject`
+ * reads, so the two can never name a different set.
+ */
+describe('upwardOwnershipTypes', () => {
+  it('is exactly the three upward ownership types, and no others', () => {
+    expect(upwardOwnershipTypes().sort()).toEqual(
+      ['has_beneficial_owner', 'has_shareholder', 'subsidiary_of'].sort(),
+    );
+  });
+
+  it('agrees with targetOwnsSubject about every type in the table', () => {
+    for (const type of upwardOwnershipTypes()) {
+      expect(targetOwnsSubject(type)).toBe(true);
+    }
+  });
+});
+
+/**
+ * `attributes.shares[].percentage` — stored by `parseRelationships` since
+ * before this ticket, and never read until item C (SPEC §16.6). Shaped from a
+ * real recorded `has_shareholder` occurrence in
+ * `tests/fixtures/resolve/rules-r0.json`.
+ */
+describe('sharePercentageOf', () => {
+  it('reads the percentage off a real recorded share occurrence', () => {
+    expect(sharePercentageOf({ shares: [{ percentage: 16.3 }] })).toBe(16.3);
+  });
+
+  it('is null when there is no shares array at all', () => {
+    expect(sharePercentageOf(null)).toBeNull();
+    expect(sharePercentageOf({})).toBeNull();
+  });
+
+  it('is null when the share entry carries a monetary value but no percentage', () => {
+    // A real shape from the same fixture: `{ currency, num_shares }` with no
+    // percentage — a share COUNT is not a percentage, and is not read as one.
+    expect(sharePercentageOf({ shares: [{ num_shares: 30846 }] })).toBeNull();
+  });
+
+  it('takes the first entry that names a percentage, not only the first entry', () => {
+    expect(sharePercentageOf({ shares: [{ num_shares: 100 }, { percentage: 6.2 }] })).toBe(6.2);
   });
 });

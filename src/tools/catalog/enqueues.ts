@@ -10,6 +10,7 @@ import {
   DOSSIER_BUDGET_USD,
 } from '@/config/constants';
 import { enqueueJob, openRun } from '@/jobs/runs';
+import { isFullEntityFetch } from '@/upstream/params';
 import { defineTool, type Estimate, type ToolContext } from '../define';
 
 /**
@@ -62,11 +63,18 @@ import { defineTool, type Estimate, type ToolContext } from '../define';
  * Before this, the `where` clause matched `endpoint` alone — so one stored
  * `getEntity` body anywhere in the database made **every** enrichment proposal
  * say *"cached — no credits, no wait"*, whichever entity it was about.
+ *
+ * **Full fetches only** (N2). A `getEntity` row can now be a relationship-
+ * filtered read rather than the full body (SPEC §16.6's typed owner-edge
+ * read widened the params it may carry); `isFullEntityFetch` is what tells
+ * the two apart, so a filtered row cannot be mistaken for "the entity body
+ * is cached" here. No live caller sends a filtered `getEntity` yet, so this
+ * is latent rather than a behaviour change today.
  */
 async function cachedUpstreamFor(ctx: ToolContext, entityId: string | null): Promise<boolean> {
   if (!entityId) return false;
   const rows = await ctx.db
-    .select({ id: t.upstreamResponse.id })
+    .select({ id: t.upstreamResponse.id, params: t.upstreamResponse.params })
     .from(t.upstreamResponse)
     .where(
       and(
@@ -74,9 +82,8 @@ async function cachedUpstreamFor(ctx: ToolContext, entityId: string | null): Pro
         eq(t.upstreamResponse.endpoint, 'entity.getEntity'),
         sql`${t.upstreamResponse.params}->>'id' = ${entityId}`,
       ),
-    )
-    .limit(1);
-  return rows.length > 0;
+    );
+  return rows.some((row) => isFullEntityFetch(row.params));
 }
 
 const VERSIONING_CAVEAT =

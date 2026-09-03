@@ -28,6 +28,8 @@ export function createUpstream(ctx: UpstreamContext) {
 
     sayari: {
       getEntity: run(endpoints.sayariGetEntity),
+      /** Cheaper than `getEntity`, no `relationships` block (SPEC §9 renames row 5). */
+      entitySummary: run(endpoints.sayariEntitySummary),
       getRecord: run(endpoints.sayariGetRecord),
       resolve: run(endpoints.sayariResolve),
       searchEntity: run(endpoints.sayariSearchEntity),
@@ -40,7 +42,8 @@ export function createUpstream(ctx: UpstreamContext) {
       negativeNews: run(endpoints.sayariNegativeNews),
       /** Slow (3.6–13.4 s) and barred from chat. Discover's mechanism. */
       tradeSearchSuppliers: run(endpoints.sayariTradeSearchSuppliers),
-      usage: run(endpoints.sayariUsage),
+      // No `usage` wrapper: `info.getUsage` had no caller anywhere in the app
+      // and was removed rather than wired (ticket 01 item D; A8; S7).
     },
 
     gleif: {

@@ -25,11 +25,23 @@ type SdkCall<T> = () => Promise<T>;
  * The raw request the fallback re-issues. Paths and query-parameter names are
  * taken from the SDK's own client, so the fallback hits the same endpoint the
  * SDK would have — a fallback aimed somewhere else is not a fallback.
+ *
+ * An array value is sent **repeated**, one `key=value` pair per entry —
+ * `qs.stringify(params, { arrayFormat: 'repeat' })` is what the SDK's own
+ * fetcher uses (`node_modules/@sayari/sdk/core/fetcher/createRequestUrl.js`),
+ * not `key[]=value` and not a comma-joined single value. A caller that wants
+ * the SDK's other array encoding — the single JSON-stringified value it uses
+ * for `risk_categories` (`(0, json_1.toJson)(riskCategories)` in
+ * `.../traversal/client/Client.js`) — pre-stringifies it and passes a plain
+ * string here instead.
  */
 export type RawRequest = {
   path: string;
   method?: 'GET' | 'POST';
-  query?: Record<string, string | number | boolean | undefined>;
+  query?: Record<
+    string,
+    string | number | boolean | readonly (string | number)[] | undefined | null
+  >;
   body?: unknown;
 };
 
@@ -67,13 +79,40 @@ export async function viaSdkWithRawFallback<T>(
   }
 }
 
+/**
+ * Builds the query string by hand rather than through `URLSearchParams`
+ * (N3, N4).
+ *
+ * **`null` is skipped, same as `undefined`.** Every SDK client tests
+ * `!= null` before adding a param, so a `null` value never reaches the wire
+ * at all; `URLSearchParams` has no such test, and would have sent it as the
+ * literal string `"null"`.
+ *
+ * **A space encodes to `%20`, not `+`.** `URLSearchParams` follows
+ * `application/x-www-form-urlencoded` and emits `+` for a space; the SDK's
+ * own fetcher builds its query string with `qs.stringify`, which uses
+ * `encodeURIComponent` and emits `%20`. A raw-path replay of an SDK request
+ * has to match it byte for byte, or it is not a replay of that request.
+ */
+function encodeQuery(
+  query: Record<string, string | number | boolean | readonly (string | number)[] | undefined | null>,
+): string {
+  const pairs: string[] = [];
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null) continue;
+    const values = Array.isArray(value) ? value : [value];
+    for (const item of values) {
+      pairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(item))}`);
+    }
+  }
+  return pairs.join('&');
+}
+
 /** The raw path. Authenticates by minting its own bearer token. */
 export async function rawFetch(request: RawRequest, deps: DispatchDeps): Promise<unknown> {
   const token = await getBearerToken(deps);
   const url = new URL(request.path, SAYARI_BASE_URL);
-  for (const [key, value] of Object.entries(request.query ?? {})) {
-    if (value !== undefined) url.searchParams.set(key, String(value));
-  }
+  url.search = encodeQuery(request.query ?? {});
   const method = request.method ?? 'GET';
   const response = await fetch(url, {
     method,

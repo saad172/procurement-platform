@@ -61,9 +61,12 @@ export type EndpointDef<TParams extends Record<string, unknown>, TProjected> = {
   /** Stable name; part of the cache key, so renaming one is a cache flush. */
   endpoint: string;
   /**
-   * Sayari's own endpoint-class bucket, for reconciling our count against
-   * `info.getUsage()`. `negativeNews` has no bucket there at all, which is why
-   * this is optional and why the UI carries a footnote saying so.
+   * The endpoint class Sayari's own `info.getUsage()` counters use, for
+   * labelling our own `usage_event` rows the same way (R1). Nothing here
+   * calls `info.getUsage()` — this app was never wired to fetch Sayari's own
+   * account-wide counters (ticket 01 item D) — so `bucket` names a class for
+   * our own metering only, not a live reconciliation. `negativeNews` has no
+   * bucket at all, which is why this is optional.
    */
   bucket?: string;
   /**

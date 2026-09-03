@@ -87,8 +87,12 @@ type Page = UpstreamResult<SayariTraversal>;
 type WalkState = {
   rootEntityId: string;
   found: Map<string, FamilyMemberWrite>;
-  /** Members grouped by the Enrichment of the page that found them. */
-  byEnrichment: { enrichmentId: string; members: FamilyMemberWrite[] }[];
+  /**
+   * Members grouped by the Enrichment of the page that found them, carrying
+   * that page's own direction — needed at write time (below) so each page's
+   * members are written with the endpoint that actually found them, `B1`.
+   */
+  byEnrichment: { enrichmentId: string; members: FamilyMemberWrite[]; direction: Direction }[];
   enrichmentIds: string[];
   /** The largest `explored_count` any page reported: the *m* in "n of m". */
   exploredCount: number | null;
@@ -145,6 +149,11 @@ export async function runDeepTraversal(
       members: page.members,
       coverage,
       discoveredByJob: ctx.jobId ?? null,
+      // Named explicitly, not guessed at by `writeFamilyMembers`'s own
+      // default (B1): the downward walk calls `ownership`, the upward one
+      // calls `ubo`, and each page's members are written under the endpoint
+      // that page actually came from.
+      source: page.direction === 'downward' ? 'ownership' : 'ubo',
     });
   }
 
@@ -250,6 +259,7 @@ async function absorbPage(
   state.enrichmentIds.push(enrichmentId);
   state.byEnrichment.push({
     enrichmentId,
+    direction,
     members: mergeMembers({
       rootEntityId: state.rootEntityId,
       held: state.found,

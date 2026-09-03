@@ -2,13 +2,13 @@ import { eq } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import type { Database } from '@/db/client';
 import type { Upstream } from '@/upstream';
-import { PREPASS_CANDIDATES } from '@/config/constants';
 import { loadRoundCheckpoint, saveRoundCheckpoint } from './checkpoint';
 import {
   prepassCandidateIds,
   resolveSupplier,
   type MatchLadder,
   type MatchLadderCheckpoint,
+  type PrepassCandidateInfo,
   type ResolveOutcome,
 } from './resolve';
 import { makeRunRound, type ResolveRoundDeps } from './resolve-round';
@@ -73,6 +73,9 @@ export async function runResolveJob(
       ...(supplier.rosterCountry ? { country: [supplier.rosterCountry] } : {}),
     },
   });
+  // The whole ranked list, unsliced — `resolveSupplier` itself decides how
+  // many of these it fetches via `getEntity` (Reuse 5; C4).
+  const prepassCandidates: PrepassCandidateInfo[] = prepassCandidateIds(prepass.data);
 
   return resolveSupplier(
     {
@@ -101,9 +104,11 @@ export async function runResolveJob(
         country: supplier.rosterCountry,
         hasCategory: categories.length > 0,
       },
-      prepassEntityIds: prepassCandidateIds(prepass.data)
-        .slice(0, PREPASS_CANDIDATES)
-        .map((candidate) => candidate.entityId),
+      // Every row the pre-pass returned, ranked, with what it said about
+      // itself — `score`, `match_strength`, `explanation` and `highlight` —
+      // so the ladder can carry Sayari's own evidence onto every
+      // CandidateRecord it settles (ticket 01 item A; Reuse 5).
+      prepassCandidates,
       jobId: deps.jobId,
     },
   );

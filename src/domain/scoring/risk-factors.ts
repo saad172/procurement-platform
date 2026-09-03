@@ -64,6 +64,13 @@ export type RiskFactor = {
   /** The evidence a compliance sentence cites. */
   traversalPath: unknown;
   value: unknown;
+  /**
+   * Which endpoint(s) have ever reported this factor — `getEntity`,
+   * `ownership`, `traversal`, … — once `upsertEntity`'s merge has written it
+   * back (SPEC §8.2 D5). Absent on a factor freshly parsed straight out of a
+   * Sayari payload that has not yet been through that merge.
+   */
+  sources?: string[] | undefined;
 };
 
 /** Levels in order, so "one band down" is an index shift rather than a table. */
@@ -214,7 +221,20 @@ export function dedupePsaAgainstBase(factors: readonly RiskFactor[]): RiskFactor
   );
 }
 
-/** Turns Sayari's `risk` object into the flat list the Criteria work over. */
+/**
+ * Turns Sayari's `risk` object into the flat list the Criteria work over.
+ *
+ * **Reads exactly the three keys Sayari's own shape carries — `level`,
+ * `value`, `metadata` — and no more.** `src/tools/catalog/reads.ts` passes
+ * `entity.risk` to a model turn **verbatim, with no projection**
+ * (`risk: match.entity.risk`), so this column's shape is load-bearing beyond
+ * this function: an extra key here would be an extra key in a live prompt,
+ * silently different from every recorded fixture that predates it. That is
+ * why the risk union's per-factor provenance (SPEC §8.2 D5) lives on the
+ * *sibling* `risk_sources` column instead — see its own comment, and
+ * `attachRiskSources` below, which is the one place the two are joined back
+ * together for a caller that wants both.
+ */
 export function parseRiskObject(risk: unknown): RiskFactor[] {
   if (!risk || typeof risk !== 'object') return [];
   return Object.entries(risk as Record<string, unknown>).map(([name, raw]) => {
@@ -231,5 +251,26 @@ export function parseRiskObject(risk: unknown): RiskFactor[] {
       traversalPath: detail.metadata?.traversal_path ?? null,
       value: detail.value ?? null,
     };
+  });
+}
+
+/**
+ * Joins `parseRiskObject`'s factors back up with the `risk_sources` column,
+ * for a caller that wants to say *which endpoint(s) reported this* (SPEC §8.2
+ * D5) — never a caller whose output could reach a model turn verbatim, since
+ * that is precisely the case `parseRiskObject` itself stays clear of.
+ */
+export function attachRiskSources(
+  factors: readonly RiskFactor[],
+  riskSources: unknown,
+): RiskFactor[] {
+  if (!riskSources || typeof riskSources !== 'object') return [...factors];
+  const bySources = riskSources as Record<string, unknown>;
+  return factors.map((factor) => {
+    const raw = bySources[factor.name];
+    const sources = Array.isArray(raw)
+      ? raw.filter((s): s is string => typeof s === 'string')
+      : undefined;
+    return sources && sources.length > 0 ? { ...factor, sources } : factor;
   });
 }

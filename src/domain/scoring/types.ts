@@ -91,6 +91,14 @@ export type SupplierScoringInput = {
     label: string;
     riskFactors: RiskFactor[];
     isStateOwned: boolean;
+    /**
+     * From the edge's `attributes.shares[].percentage`, where it is stated
+     * (SPEC §16.6, item C). Not read by any Criterion yet — carried here so
+     * scoring can see it once one does.
+     */
+    sharePercentage?: number | null | undefined;
+    startDate?: string | null | undefined;
+    endDate?: string | null | undefined;
   }[];
 
   /** World Bank rows for the Profile's country. */

@@ -115,7 +115,7 @@ async function settleYazakiByHand(
   const jobId = await openJob(db, run!.id, 'enrich', supplier.id);
 
   const fetched = await replayUpstream(db, run!.id, jobId).sayari.getEntity({ id: YAZAKI_ENTITY });
-  await upsertEntity(db, fetched.data);
+  await upsertEntity(db, fetched.data, fetched.upstreamResponseId, 'getEntity');
   await settleMatch(db, {
     supplierId: supplier.id,
     status: 'accepted',

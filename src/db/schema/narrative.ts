@@ -403,6 +403,14 @@ export const lead = pgTable(
     shipmentCount: integer('shipment_count'),
     /** Absent on 13 of 25 sampled rows, so it is a displayed column, never a filter. */
     latestShipmentDate: text('latest_shipment_date'),
+    /**
+     * This row's OWN `metadata.hs_codes` (see `hsCodesOf`, `src/jobs/
+     * discover.ts`, for what that means and why). `recordLead` updates this
+     * column, and `shipment_count`, on conflict (A6) — before that fix
+     * `onConflictDoNothing` left a Lead first written before the fix carrying
+     * the query's lines under a column documented as the row's own, until its
+     * next Discover run re-writes it.
+     */
     topHsCodes: jsonb('top_hs_codes'),
     arrivalCountries: jsonb('arrival_countries'),
 
