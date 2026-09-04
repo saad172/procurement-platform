@@ -3,6 +3,8 @@ import type * as t from '@/db/schema';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { CriterionCell } from '@/components/criterion-cell';
 import { WeightRail } from '@/components/weight-rail';
+import { NetworkMap } from '@/components/widgets/network-map';
+import type { NetworkPathKind } from '@/db/queries/family-paths';
 import type { loadSupplierPage } from '@/db/queries/supplier-page';
 import type { ScoredCriterion } from '@/domain/score';
 import { settledByLine } from '@/domain/supplier-answer';
@@ -563,19 +565,32 @@ function oneCoverageSentence(label: string, coverage: NetworkPathCoverageRaw): s
 
 /**
  * The Network section (network spec §8, §9 — replaces the former Corporate
- * family section): `network_exposure`'s own value and band through
- * `CriterionCell` (consistent with the generic criteria table further down,
- * which already renders this Criterion with zero changes needed), then its
- * raw inputs broken out by what each entity did — deducted, state-owned, or
- * named without deducting — because `CriterionCell`'s generic
- * `describeRawInputs` has no branch for this Criterion's own shape and was
- * never meant to (SPEC §9.1's "beside its raw inputs" is earned here, not
- * there).
+ * family section): the diagram (ticket 05 unit 05e), `network_exposure`'s own
+ * value and band through `CriterionCell` (consistent with the generic
+ * criteria table further down, which already renders this Criterion with
+ * zero changes needed), then its raw inputs broken out by what each entity
+ * did — deducted, state-owned, or named without deducting — because
+ * `CriterionCell`'s generic `describeRawInputs` has no branch for this
+ * Criterion's own shape and was never meant to (SPEC §9.1's "beside its raw
+ * inputs" is earned here, not there).
+ *
+ * **The diagram joins this section, it does not replace anything already
+ * here** (network spec §8's table row: "Network exposure with its raw
+ * inputs, the diagram, the chains, the coverage sentence"). It reads the same
+ * `familyChain` Paths — now every `graph_path` kind this Profile holds, not
+ * only `family` (`loadNetworkPaths`, widened by this unit) — that
+ * `FamilyChainRows` renders beneath it, so the diagram and the collapsed
+ * chain rows can never disagree about what the Network holds. `onExpand` is
+ * deliberately left unwired here: `network-map-inner.tsx`'s own doc comment
+ * scopes wiring a real confirm-gated Deep Traversal enqueue to unit 05g, for
+ * the Recommendation and Entity pages — the Supplier page's own on-demand
+ * enrichment already has its own gate (`SupplierActions`'s Re-enrich, below).
  */
 export function Network({ data, programId }: { data: Data; programId: string }) {
-  const { scored } = data;
+  const { scored, match, supplier, familyChain } = data;
   const criterion = scored?.criteria.find((c) => c.key === 'network_exposure');
   const raw = criterion ? networkRawInputs(criterion.outcome.rawInputs) : null;
+  const rootEntityId = match?.entityId ?? null;
 
   return (
     <>
@@ -597,6 +612,20 @@ export function Network({ data, programId }: { data: Data; programId: string }) 
             <p className="note" style={{ margin: '0.8rem 0' }}>
               {describeNetworkCoverage(raw)}
             </p>
+            {rootEntityId && familyChain.length > 0 ? (
+              <div style={{ margin: '0.8rem 0' }}>
+                <NetworkMap
+                  roots={[
+                    {
+                      id: rootEntityId,
+                      label: match?.entity?.label ?? supplier.rosterName ?? 'This supplier',
+                    },
+                  ]}
+                  paths={familyChain}
+                  programId={programId}
+                />
+              </div>
+            ) : null}
             {criterion.outcome.status === 'value' ? (
               <>
                 <NetworkMembersTable members={raw.members} programId={programId} />
@@ -738,93 +767,142 @@ function NetworkShownDetails({
 }
 /**
  * The citable chain beneath the Network section above (network spec §6, §8):
- * every Path of kind `family` this Supplier holds, each edge with its type,
- * shares, date and a link to the record asserting it.
+ * every Path this Supplier holds, of every `graph_path` kind, each edge with
+ * its type, shares, date and a link to the record asserting it — grouped by
+ * kind, one table per kind present.
  *
- * **This is the fallback without scripts** — the diagram (ticket 05) is a
- * client-rendered `cytoscape` component fed the same stored Paths as JSON;
- * this section is plain server-rendered rows, collapsed beneath where that
- * diagram will sit, and it is what stays true with JavaScript off. It is also
- * what a citation resolves through: a Family member is cited to the record
+ * **This is the fallback without scripts** — the diagram above is a
+ * client-rendered `cytoscape` component fed the exact same `familyChain`
+ * Paths as JSON; this section is plain server-rendered rows, collapsed
+ * beneath it, and it is what stays true with JavaScript off. It is also what
+ * a citation resolves through: a Family member is cited to the record
  * asserting its own edge (ticket 02 "Done when"), and this table is that
  * record made legible rather than only machine-resolvable.
  *
- * **Still `family`-only, not widened to `watchlist` too (unit 03e's own
- * decision).** `data` (`loadSupplierPage`) only ever loaded `kind='family'`
- * Paths — `loadFamilyPaths`, never `loadNetworkExposurePaths` — and widening
- * that read is a change to `src/db/queries/supplier-page.ts`, a file this
- * unit does not own (two other units were building `src/db/*` at the same
- * time). The Network section above already names every watchlist-reached
- * entity at the level `networkExposure`'s `rawInputs` carries (`members`/
- * `shown`, tagged by `sources`); what is missing here is only the edge-level
- * chain for those Paths, which whichever unit next touches this query should
- * add — either by widening this table's own `familyChain` prop to accept
- * both kinds, or a second `<details>` block beside it. Either reads fine; the
- * absent piece is the query, not a rendering choice.
+ * **Widened past `family`-only (ticket 05 unit 05e).** The gap this unit's
+ * own former doc comment flagged — "`data` only ever loaded `kind='family'`
+ * Paths … the absent piece is the query, not a rendering choice" — is closed:
+ * `loadSupplierPage` now reads `loadNetworkPaths`, every kind a `graph_path`
+ * row can carry, and this component groups by `kind` rather than assuming
+ * one. The grouping order and labels (`NETWORK_KIND_ORDER`/`KIND_LABEL`)
+ * deliberately match `SupplierFamilyWidget`'s own (`src/components/widgets/
+ * supplier-family.tsx`) — one shared vocabulary for "what kind of Path is
+ * this", not a second one invented here. Unlike that widget, an EMPTY kind is
+ * not rendered here at all rather than shown as "not covered": this table is
+ * the citable-edge fallback, and a kind with zero Paths has no edges to cite.
  */
 export function FamilyChainRows({ data, programId }: { data: Data; programId: string }) {
   const { familyChain } = data;
   if (familyChain.length === 0) return null;
 
+  const groups = groupChainByKind(familyChain);
+
   return (
     <details className="card scroll-x" style={{ marginTop: '0.6rem' }}>
-      <summary>Chain rows — every cited edge the downward family walk holds</summary>
-      <table>
-        <thead>
-          <tr>
-            <th>Member</th>
-            <th>Edge type</th>
-            <th className="num">Share</th>
-            <th>From</th>
-            <th>To</th>
-            <th>Record</th>
-          </tr>
-        </thead>
-        <tbody>
-          {familyChain.map((path) =>
-            path.edges.length === 0 ? (
-              <tr key={path.terminalEntityId}>
+      <summary>Chain rows — every cited edge this Supplier’s Network holds</summary>
+      {groups.map(({ kind, paths }) => (
+        <div key={kind} style={{ marginTop: '0.8rem' }}>
+          <h4 style={{ margin: '0 0 0.3rem' }}>{KIND_LABEL[kind]}</h4>
+          <ChainTable paths={paths} programId={programId} />
+        </div>
+      ))}
+    </details>
+  );
+}
+
+/** The order and wording `SupplierFamilyWidget`'s own `NETWORK_KIND_ORDER`/`KIND_LABEL` already established — a second, small, allowed-to-drift copy (that map is module-private there), the same precedent `network-map-inner.tsx`'s own `KIND_LABEL` follows. */
+const NETWORK_KIND_ORDER: readonly NetworkPathKind[] = [
+  'family',
+  'watchlist',
+  'shortest_path',
+  'deep_traversal',
+  'supply_chain',
+];
+
+const KIND_LABEL: Record<NetworkPathKind, string> = {
+  family: 'Corporate family (ownership)',
+  watchlist: 'Watchlist',
+  shortest_path: 'Shortest path',
+  deep_traversal: 'Deep traversal',
+  supply_chain: 'Supply chain',
+};
+
+/**
+ * The pure half of `FamilyChainRows` — grouping `Data['familyChain']` by
+ * `kind`, in `NETWORK_KIND_ORDER`, dropping any kind with no Paths. Exported
+ * and kept apart from the JSX above for the same reason `derive-supplier-page.ts`
+ * keeps its own shaping apart from `db/queries` (this file's own header
+ * comment): a page renders and derives, and the derivation is what a test can
+ * exercise directly, with a handful of synthetic Paths, rather than through a
+ * full server-rendered `Data` bag or a database.
+ */
+export function groupChainByKind(
+  familyChain: Data['familyChain'],
+): { kind: NetworkPathKind; paths: Data['familyChain'] }[] {
+  return NETWORK_KIND_ORDER.map((kind) => ({
+    kind,
+    paths: familyChain.filter((path) => path.kind === kind),
+  })).filter((group) => group.paths.length > 0);
+}
+
+/** One kind's rows — the same per-edge table every kind renders, factored out once groups by kind rather than assuming there is exactly one group. */
+function ChainTable({ paths, programId }: { paths: Data['familyChain']; programId: string }) {
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Member</th>
+          <th>Edge type</th>
+          <th className="num">Share</th>
+          <th>From</th>
+          <th>To</th>
+          <th>Record</th>
+        </tr>
+      </thead>
+      <tbody>
+        {paths.map((path) =>
+          path.edges.length === 0 ? (
+            <tr key={path.terminalEntityId}>
+              <td>
+                <Link href={`/program/${programId}/entity/${path.terminalEntityId}` as never}>
+                  {path.label}
+                </Link>
+              </td>
+              {/* A migrated `family_member` row (migration 0013) or one whose
+                  edge upsert has not landed yet — a stated gap, not a guess. */}
+              <td className="note" colSpan={5}>
+                no citable edge yet
+              </td>
+            </tr>
+          ) : (
+            path.edges.map((edge, i) => (
+              <tr key={edge.id}>
                 <td>
-                  <Link href={`/program/${programId}/entity/${path.terminalEntityId}` as never}>
-                    {path.label}
-                  </Link>
+                  {i === 0 ? (
+                    <Link href={`/program/${programId}/entity/${path.terminalEntityId}` as never}>
+                      {path.label}
+                    </Link>
+                  ) : null}
                 </td>
-                {/* A migrated `family_member` row (migration 0013) or one whose
-                    edge upsert has not landed yet — a stated gap, not a guess. */}
-                <td className="note" colSpan={5}>
-                  no citable edge yet
+                <td className="note">{edge.relationshipType.replace(/_/g, ' ')}</td>
+                <td className="num">
+                  {edge.sharePercentage != null ? `${edge.sharePercentage}%` : '—'}
+                </td>
+                <td className="note">{edge.startDate ?? '—'}</td>
+                <td className="note">{edge.endDate ?? '—'}</td>
+                <td>
+                  {edge.sourceRecordId ? (
+                    <Link href={recordHref(programId, edge.sourceRecordId) as never}>record</Link>
+                  ) : (
+                    <span className="note">—</span>
+                  )}
                 </td>
               </tr>
-            ) : (
-              path.edges.map((edge, i) => (
-                <tr key={edge.id}>
-                  <td>
-                    {i === 0 ? (
-                      <Link href={`/program/${programId}/entity/${path.terminalEntityId}` as never}>
-                        {path.label}
-                      </Link>
-                    ) : null}
-                  </td>
-                  <td className="note">{edge.relationshipType.replace(/_/g, ' ')}</td>
-                  <td className="num">
-                    {edge.sharePercentage != null ? `${edge.sharePercentage}%` : '—'}
-                  </td>
-                  <td className="note">{edge.startDate ?? '—'}</td>
-                  <td className="note">{edge.endDate ?? '—'}</td>
-                  <td>
-                    {edge.sourceRecordId ? (
-                      <Link href={recordHref(programId, edge.sourceRecordId) as never}>record</Link>
-                    ) : (
-                      <span className="note">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))
-            ),
-          )}
-        </tbody>
-      </table>
-    </details>
+            ))
+          ),
+        )}
+      </tbody>
+    </table>
   );
 }
 

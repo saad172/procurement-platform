@@ -13,7 +13,7 @@ import {
 import { entitySchema, type SayariEntity } from '@/upstream/projections/sayari';
 import { parseViewState } from '@/lib/view-state';
 import { loadEnrichmentHistory } from './enrichments';
-import { loadFamilyPaths, type FamilyPath } from './family-paths';
+import { loadNetworkPaths, type NetworkPath } from './family-paths';
 import { loadShortlist, loadSupplierSnapshots, scoreSnapshot } from './shortlist';
 
 /**
@@ -75,16 +75,23 @@ async function readSupplierRows(db: Database, programId: string, supplierId: str
   const [snapshot] = await loadSupplierSnapshots(db, { programId, supplierIds: [supplierId] });
 
   /**
-   * `graph_path` of kind `family` (network spec §6), joined out to its
-   * `entity_relationship` chain — the same `loadFamilyPaths` `get_supplier_family`
-   * reads (`src/tools/catalog/reads.ts`), so the page's coverage sentence and
-   * its chain rows cannot disagree about what the family graph says. `discoveredByJob`
-   * still distinguishes a Deep Traversal find from the automatic read's own
-   * (SPEC §8.5) — a Deep Traversal that walked **down** stays `kind = 'family'`
+   * Every `graph_path` this Profile holds, of ANY kind (network spec §6, §8,
+   * §9), joined out to its `entity_relationship` chain — `loadNetworkPaths`,
+   * the same widened-past-`family` read `get_supplier_network`
+   * (`src/tools/catalog/reads.ts`) groups by kind. Ticket 05 unit 05e widened
+   * this from `loadFamilyPaths` (kind `family` only): the diagram and the
+   * chain rows below now feed off the SAME list, grouped by kind, so neither
+   * can disagree with the other about what the Network holds — and neither
+   * can disagree with the chat widget's own `get_supplier_network` grouping,
+   * since both read through `loadPathRows`. `discoveredByJob` still
+   * distinguishes a Deep Traversal find from an automatic read's own (SPEC
+   * §8.5) — a Deep Traversal that walked **down** stays `kind = 'family'`
    * (migration 0013's own comment), so this column, not the row's presence
    * here, is what the page reads to say which walk found a given member.
    */
-  const familyPaths: FamilyPath[] = match?.entityId ? await loadFamilyPaths(db, match.entityId) : [];
+  const networkPaths: NetworkPath[] = match?.entityId
+    ? await loadNetworkPaths(db, match.entityId)
+    : [];
 
   // Ages are computed in the query, not during render: reading a clock while
   // rendering is not idempotent, and one read per request is the right number.
@@ -132,7 +139,7 @@ async function readSupplierRows(db: Database, programId: string, supplierId: str
     supplier,
     match,
     snapshot,
-    familyPaths,
+    networkPaths,
     enrichments,
     assessment,
     version,
@@ -164,7 +171,7 @@ export async function loadSupplierPage(
 
   const rows = await readSupplierRows(db, programId, supplierId);
   if (!rows) return undefined;
-  const { program, supplier, match, snapshot, familyPaths, enrichments } = rows;
+  const { program, supplier, match, snapshot, networkPaths, enrichments } = rows;
   const { version, sentences, dissent, ownPayload, firstCategory } = rows;
 
   const programDefault = parseSupplierWeights(program);
@@ -181,14 +188,20 @@ export async function loadSupplierPage(
     ? await loadShortlist(db, { programId, categoryId: firstCategory.id, weights: view.weights })
     : undefined;
 
+  // `deriveFamilyCoverage`'s own doc: "The Corporate family's coverage" — kind
+  // `family` only, same scope as before `loadNetworkPaths` widened the read
+  // past it. Filtered here rather than by a narrower query, since the SAME
+  // rows now also feed the diagram and the widened chain rows below.
   const coverage = deriveFamilyCoverage(
-    familyPaths.map((p) => ({
-      member: { id: p.terminalEntityId, label: p.label, country: p.country, risk: p.risk },
-      hopDepth: p.hopDepth,
-      truncated: p.truncated,
-      reachableCount: p.reachableCount,
-      discoveredByJob: p.discoveredByJob,
-    })),
+    networkPaths
+      .filter((p) => p.kind === 'family')
+      .map((p) => ({
+        member: { id: p.terminalEntityId, label: p.label, country: p.country, risk: p.risk },
+        hopDepth: p.hopDepth,
+        truncated: p.truncated,
+        reachableCount: p.reachableCount,
+        discoveredByJob: p.discoveredByJob,
+      })),
   );
 
   let profile: SayariEntity | undefined;
@@ -236,15 +249,20 @@ export async function loadSupplierPage(
     match,
     scored,
     coverage,
-    // The citable chain rows sit beneath Network exposure's raw inputs
-    // (network spec §5, §6, §8) — every Path this family holds, each with
-    // its own ordered `entity_relationship` chain, ready for ticket 05's
-    // diagram to sit above. The Corporate-family-only exposure badge that
-    // used to sit here is gone; a member's own risk is scored once, in
-    // `networkExposure` (`src/domain/scoring/criteria.ts`) — the Network
-    // section 03e builds on this data replaces the old Corporate family
-    // section that read `coverage`/`exposure` together.
-    familyChain: familyPaths,
+    // The citable chain rows sit beneath Network exposure's raw inputs and
+    // the diagram (network spec §5, §6, §8) — every Path this Profile holds,
+    // of every kind, each with its own ordered `entity_relationship` chain.
+    // Field name kept as `familyChain` (ticket 05 unit 05e widened its
+    // CONTENT past `kind = 'family'`, not this name — `FamilyChainRows` and
+    // the tests that read this field both already use it): the diagram and
+    // the widened `FamilyChainRows` render the exact same list, grouped by
+    // kind, so neither can disagree with the other about what the Network
+    // holds. The Corporate-family-only exposure badge that used to sit here
+    // is gone; a member's own risk is scored once, in `networkExposure`
+    // (`src/domain/scoring/criteria.ts`) — the Network section 03e builds on
+    // this data replaces the old Corporate family section that read
+    // `coverage`/`exposure` together.
+    familyChain: networkPaths,
     enrichments,
     version,
     sentences,
