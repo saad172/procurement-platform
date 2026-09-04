@@ -270,20 +270,20 @@ describe('an enqueue_* tool whose Job kind no worker runs', () => {
   });
 
   it('names the ones the real catalog still carries, and no others', async () => {
-    // The finding, kept where a reader will see it: `enqueue_dossier` was the
-    // only one, until `enqueue_trade` (network spec §4.3, §8; ticket 05)
-    // joined it — `trade` is not in `RUNNABLE_JOB_KINDS` on this branch's
-    // base yet, the same temporary, documented gap `enqueue_trade`'s own doc
-    // comment names (unit 05b's `RUNNABLE_JOB_KINDS` addition has not landed
-    // here). `enqueue_deep_traversal` is deliberately asserted absent — a
-    // Deep Traversal a person accepts now reaches a worker that runs it.
+    // `enqueue_trade` (network spec §4.3, §8; ticket 05, unit 05c) joined
+    // `enqueue_dossier` here only transiently, on unit 05c's own branch,
+    // before unit 05b's `RUNNABLE_JOB_KINDS` addition landed — the wave's
+    // integration branch carries both, so `trade` is now a runnable kind and
+    // `enqueue_trade` warns about nothing, the same as `enqueue_deep_traversal`
+    // once `traverse` gained a handler. `enqueue_dossier` remains the one
+    // real gap: `dossier` still has no worker handler.
     const { getRegistry, resetRegistryForTesting } = await import('@/tools');
     resetRegistryForTesting();
     const warnings = getRegistry().warnings.join(' ');
     expect(warnings).toContain('enqueue_dossier');
-    expect(warnings).toContain('enqueue_trade');
+    expect(warnings).not.toContain('enqueue_trade');
     expect(warnings).not.toContain('enqueue_deep_traversal');
-    expect(getRegistry().warnings).toHaveLength(2);
+    expect(getRegistry().warnings).toHaveLength(1);
   });
 });
 
