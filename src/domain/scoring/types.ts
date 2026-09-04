@@ -101,6 +101,22 @@ export type SupplierScoringInput = {
     endDate?: string | null | undefined;
   }[];
 
+  /**
+   * Whether `owners` above can be trusted as the whole current one-hop owner
+   * set, or only as far as the window read plus a gap-fill traversal that did
+   * not answer (`readOwnerEdges`, `src/jobs/enrich.ts`).
+   *
+   * `'unknown'` means a gap was detected (`relationship_count` claimed an
+   * upward-ownership edge the window did not return) and the traversal that
+   * would have filled it failed — a Sayari 5xx or timeout that survived
+   * `call()`'s own retries, most likely. `owners` is not necessarily empty in
+   * this case: a company usually already carries at least one owner edge in
+   * its own payload, so an empty check on `owners` cannot see this failure.
+   * `undefined` (every construction site outside `enrich-supplier.ts`) reads
+   * the same as `'complete'` — there was no gap-fill attempt to fail.
+   */
+  ownerGapCoverage?: 'complete' | 'unknown' | undefined;
+
   /** World Bank rows for the Profile's country. */
   countryIndicators: {
     code: string;

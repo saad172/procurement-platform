@@ -12,7 +12,9 @@ import {
 import { loadShortlist } from '@/db/queries/shortlist';
 import { DEFAULT_WEIGHTS, normaliseWeights } from '@/domain/score';
 import { parseRiskObject } from '@/domain/scoring/risk-factors';
+import { toRecordView } from '@/domain/record-view';
 import { isWhatIf, parseViewState } from '@/lib/view-state';
+import type { SayariRecord } from '@/upstream/projections/sayari';
 
 /**
  * Families 1 and 2: page reads, and reads no page owns (SPEC §15.2).
@@ -484,7 +486,25 @@ export const getRecord = defineTool({
   handler: async (input, ctx) => {
     const record = await ctx.db.query.record.findFirst({ where: eq(t.record.id, input.recordId) });
     if (!record) return { ok: false, objections: [`no stored record ${input.recordId}`] };
-    return { ok: true, data: widget('record_card', record) };
+
+    /**
+     * `record.fields` is the whole record body as Sayari sent it, and its
+     * `references` block embeds every entity the record mentions in full —
+     * the same over-fetch `toRecordView` exists to trim. `data` is what the
+     * MODEL reads, `payload` is what the widget renders for a person. They
+     * are not the same thing here: the widget's own "Fields, as the source
+     * recorded them" panel still wants the whole body, which is why only
+     * `payload` below keeps it.
+     */
+    const { fields, ...forModel } = record;
+    return {
+      ok: true,
+      data: widget(
+        'record_card',
+        { ...forModel, fields: fields ? toRecordView(fields as SayariRecord) : null },
+        record,
+      ),
+    };
   },
 });
 

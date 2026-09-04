@@ -75,6 +75,104 @@ const submitMatchVerdict = defineTool({
 });
 
 /**
+ * The five scalar target fields. `shortlist` is the sixth target group — a
+ * pair of columns in the database, but one field here — so it is counted
+ * alongside these rather than folded into the list.
+ */
+const CITATION_SCALAR_TARGET_FIELDS = [
+  'entityId',
+  'recordId',
+  'enrichmentId',
+  'criterionValueId',
+  'matchId',
+] as const;
+
+/**
+ * One citation: the id of a stored thing, named by the one field it belongs
+ * in.
+ *
+ * **Exactly one target group per citation, and each field says where its id
+ * comes from.**
+ *
+ * These fields carried no descriptions at all, and a recommendation put a
+ * *supplier* id in `recordId` — the only slot it does not belong in. The
+ * foreign key refused it three Rounds later, having spent the whole budget on
+ * a mistake nothing had ever told the model how to avoid.
+ *
+ * A schema that names the source of each id is the cheapest possible fix, and
+ * the right one: an id's meaning is not guessable from its shape, since every
+ * one of these is a uuid.
+ *
+ * The "exactly one" part of that sentence was prose only — nothing stopped a
+ * citation naming two or more target fields at once, and a model that did so
+ * would only find out from the database's own CHECK constraint, which fails
+ * the whole insert rather than telling the model what to fix. The
+ * `superRefine` below counts the same six groups the database CHECK counts —
+ * five scalar fields plus `shortlist` as one pair — and rejects more than one,
+ * so this is a schema failure the model can read and correct rather than a
+ * constraint violation nothing recovers from. Zero fields is deliberately left
+ * alone here: a citation naming nothing already fails to resolve, and that is
+ * reported as an objection elsewhere.
+ */
+const citationTarget = z
+  .object({
+    entityId: z
+      .string()
+      .optional()
+      .describe(
+        'A Sayari entity id, as returned by sayari_get_entity or get_supplier. Not a uuid.',
+      ),
+    recordId: z
+      .string()
+      .optional()
+      .describe(
+        'A Sayari SOURCE RECORD id, which exists locally only after sayari_get_record has fetched it. Never a supplier, entity or criterion id.',
+      ),
+    enrichmentId: z
+      .string()
+      .optional()
+      .describe('The `id` of a row in the enrichments list returned by get_supplier.'),
+    criterionValueId: z
+      .string()
+      .optional()
+      .describe(
+        "The `id` from get_assessment_brief's criterionValueIds, or from get_supplier's criterionValues.",
+      ),
+    matchId: z
+      .string()
+      .optional()
+      .describe(
+        "The `matchId` from get_assessment_brief, or the match's `id` from get_supplier.",
+      ),
+    shortlist: z
+      .object({
+        programId: z
+          .string()
+          .describe(
+            "The program's `id` from get_program or get_shortlist — a uuid, never its name.",
+          ),
+        categoryId: z
+          .string()
+          .describe("The category's `id` — a uuid, never its code like 'HAR'."),
+      })
+      .optional()
+      .describe(
+        'Both halves, for a claim about the shortlist itself rather than about one supplier.',
+      ),
+  })
+  .superRefine((citation, ctx) => {
+    const present = [
+      ...CITATION_SCALAR_TARGET_FIELDS.filter((field) => citation[field] != null),
+      ...(citation.shortlist != null ? ['shortlist'] : []),
+    ];
+    if (present.length > 1) {
+      ctx.addIssue(
+        `A citation names exactly one target group, never more than one. This one names ${present.length}: ${present.join(', ')}.`,
+      );
+    }
+  });
+
+/**
  * A sentence and the rows it cites. The pair is inseparable by construction.
  *
  * `section` mirrors `sentenceSection` (`src/db/schema/enums.ts`) — the DB enum
@@ -100,67 +198,8 @@ const citedSentence = z.object({
     'open_questions',
   ]),
   text: z.string(),
-  /**
-   * **Exactly one target group per citation, and each field says where its id
-   * comes from.**
-   *
-   * These fields carried no descriptions at all, and a recommendation put a
-   * *supplier* id in `recordId` — the only slot it does not belong in. The
-   * foreign key refused it three Rounds later, having spent the whole budget on
-   * a mistake nothing had ever told the model how to avoid.
-   *
-   * A schema that names the source of each id is the cheapest possible fix, and
-   * the right one: an id's meaning is not guessable from its shape, since every
-   * one of these is a uuid.
-   */
   citations: z
-    .array(
-      z.object({
-        entityId: z
-          .string()
-          .optional()
-          .describe(
-            'A Sayari entity id, as returned by sayari_get_entity or get_supplier. Not a uuid.',
-          ),
-        recordId: z
-          .string()
-          .optional()
-          .describe(
-            'A Sayari SOURCE RECORD id, which exists locally only after sayari_get_record has fetched it. Never a supplier, entity or criterion id.',
-          ),
-        enrichmentId: z
-          .string()
-          .optional()
-          .describe('The `id` of a row in the enrichments list returned by get_supplier.'),
-        criterionValueId: z
-          .string()
-          .optional()
-          .describe(
-            "The `id` from get_assessment_brief's criterionValueIds, or from get_supplier's criterionValues.",
-          ),
-        matchId: z
-          .string()
-          .optional()
-          .describe(
-            "The `matchId` from get_assessment_brief, or the match's `id` from get_supplier.",
-          ),
-        shortlist: z
-          .object({
-            programId: z
-              .string()
-              .describe(
-                "The program's `id` from get_program or get_shortlist — a uuid, never its name.",
-              ),
-            categoryId: z
-              .string()
-              .describe("The category's `id` — a uuid, never its code like 'HAR'."),
-          })
-          .optional()
-          .describe(
-            'Both halves, for a claim about the shortlist itself rather than about one supplier.',
-          ),
-      }),
-    )
+    .array(citationTarget)
     .min(1)
     .describe(
       'At least one, each naming exactly one target. A sentence without a citation cannot be inserted, and an id in the wrong field is refused by the database.',

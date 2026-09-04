@@ -202,7 +202,7 @@ async function runRecommendPropose(
     ctx.deps.modelCtx,
   );
 
-  if (result.status !== 'done') {
+  if (result.status !== 'done' && result.status !== 'terminated') {
     // A ceiling or a budget pause is not the draft's fault, and retrying it
     // three times only spends the ceiling three more times.
     raiseIfStopped(result);
@@ -215,11 +215,28 @@ async function runRecommendPropose(
     };
   }
 
+  // A ceiling firing one turn after `submit_recommendation` already ran is the
+  // likely case, not an edge one: that submit carries every Pick plus every
+  // cited sentence for the whole Category, so it is the single most expensive
+  // turn in the loop. A `terminated` loop is therefore still read for a
+  // submission below rather than treated as if nothing came back, and it is
+  // logged because a Round that only just fitted is worth knowing about even
+  // when it worked.
+  if (result.status === 'terminated') {
+    console.warn(`[recommend] round ${roundN} submit_recommendation: ${result.reason}`);
+  }
+
   // The LAST submission, parsed against the tool's own schema: a first one the
   // SDK's parse refused never reached `run()`, and what follows it is the
   // model's answer to that objection.
   const submitted = readSubmission<RecommendDraft>(result.toolUses, 'submit_recommendation');
-  if (!submitted.ok) return { kind: 'refinement_failure', message: submitted.message };
+  if (!submitted.ok) {
+    // A terminated loop that holds no submission to salvage is genuinely
+    // unrecoverable, and only raises here — after the read above found nothing
+    // — rather than being reported as an ordinary refinement failure.
+    raiseIfStopped(result);
+    return { kind: 'refinement_failure', message: submitted.message };
+  }
   return {
     kind: 'draft',
     draft: { picks: submitted.value.picks ?? [], sentences: submitted.value.sentences },

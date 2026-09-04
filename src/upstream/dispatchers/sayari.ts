@@ -4,11 +4,16 @@ import type { DispatchDeps, UpstreamVia } from '../types';
 /**
  * Sayari dispatch, with the raw-fetch fallback (SPEC §16.1).
  *
- * **The fallback is insurance, not a path.** Nothing this design calls is a
- * confirmed parse-bug endpoint: the two documented deserialization bugs are
- * `resolution` with `profile: "suppliers"` (avoided by omitting `profile`) and
- * `supplyChain.upstreamTradeTraversal` (which lost to `trade.searchSuppliers`),
- * and a third, `ontology.getRiskFactors`, is called by no tool here.
+ * **The fallback is insurance, not merely a path for a known-broken call.**
+ * Three endpoints this design calls have a confirmed client-side parse bug:
+ * `resolution` with `profile: "suppliers"` (avoided here by omitting
+ * `profile`), `negativeNews.negativeNews`, and `ontology.getRiskFactors` — for
+ * all three, the SDK throws a `ParseError` deserialising a response Sayari
+ * already answered correctly. `supplyChain.upstreamTradeTraversal` has a
+ * different, non-`ParseError` bug instead: a malformed *request* that gets a
+ * clean `422` back, never a response the SDK fails to read, which is why its
+ * own dispatcher (`endpoints.ts`) routes it around the SDK unconditionally
+ * rather than relying on this catch.
  *
  * That is why the insurance is bought with a **deliberately-routed live
  * endpoint** — `metadata` runs raw on every boot (§16.7) — rather than with a

@@ -20,6 +20,7 @@ import {
   isDisqualifying,
   variantOf,
   type RiskFactor,
+  type RiskIntelligenceEntry,
   type RiskLevel,
 } from './risk-factors';
 import type { CriterionOutcome, DataConfidenceBand, SupplierScoringInput } from './types';
@@ -122,7 +123,20 @@ export function complianceRisk(
   // An empty `risk` object is never clean on its own — but with adequate or
   // strong coverage it is a real finding, so it scores rather than dropping out.
   let value = 100;
-  const deductions: { factor: string; level: string; variant: string; points: number }[] = [];
+  const deductions: {
+    factor: string;
+    level: string;
+    variant: string;
+    points: number;
+    /**
+     * The program/authority/list/reason/date evidence `attachRiskIntelligence`
+     * (`./risk-factors`) attaches from `attributes.risk_intelligence`, when
+     * present — so a compliance sentence can cite the specific listing rather
+     * than only the bare factor name. Absent on a factor no `risk_intelligence`
+     * entry named, which is most of them.
+     */
+    evidence?: RiskIntelligenceEntry[];
+  }[] = [];
   const badgedOnly: string[] = [];
   const disqualifying: string[] = [];
 
@@ -135,7 +149,13 @@ export function complianceRisk(
     }
     const points = DEDUCTION_BY_LEVEL[level];
     value -= points;
-    deductions.push({ factor: factor.name, level, variant, points });
+    deductions.push({
+      factor: factor.name,
+      level,
+      variant,
+      points,
+      ...(factor.riskIntelligence?.length ? { evidence: factor.riskIntelligence } : {}),
+    });
     if (isDisqualifying(factor)) disqualifying.push(factor.name);
   }
 
@@ -305,6 +325,34 @@ export function networkExposure(
     watchlist: { exploredCount: null, truncated: false },
   };
   const coverageRaw = { familyCoverage: coverage.family, watchlistCoverage: coverage.watchlist };
+
+  /**
+   * **A partial owner set is not a complete one merely because it is
+   * non-empty.** `readOwnerEdges` only fills a detected gap when its
+   * gap-fill traversal succeeds; where that traversal failed (a Sayari 5xx
+   * or timeout that survived `call()`'s own retries), the window's own
+   * edges are all `owners` carries — usually at least one, since a company
+   * typically names an owner in its own payload even when it names fewer
+   * than `relationship_count` claims. The empty-owner-set check below cannot
+   * see this: `owners` is non-empty, so it never fires, and a score computed
+   * from a known-incomplete owner set would read as clean and complete. Read
+   * off `ownerGapCoverage` instead, which `readOwnerEdges` sets independently
+   * of how many owners it ended up returning.
+   */
+  if (input.owners.length > 0 && input.ownerGapCoverage === 'unknown') {
+    return UNKNOWN(
+      'the gap-fill traversal for missing owner edges failed, so the owner set the window ' +
+        'returned may be incomplete — a partial result is not the same as a complete one',
+      {
+        ownerEdgeCount: ownerEdgeCountOf(profile),
+        psaCount: profile.psaCount ?? 0,
+        relationshipsTruncated: profile.relationshipsTruncated,
+        relationshipCount: profile.relationshipCount ?? {},
+        ...coverageRaw,
+      },
+      NETWORK_ANCHOR_LINE,
+    );
+  }
 
   if (input.owners.length === 0 && networkPaths.length === 0) {
     const unknown = networkUnknownReason(profile, band);

@@ -2,6 +2,7 @@ import { z } from 'zod/v4';
 import * as t from '@/db/schema';
 import { matchStrengthValue } from '@/upstream/projections/sayari';
 import { toEntityView } from '@/domain/entity-view';
+import { toRecordView } from '@/domain/record-view';
 import { defineTool, type Estimate, type ToolContext } from '../define';
 
 /**
@@ -261,7 +262,13 @@ export const sayariSearchEntity = defineTool({
   confirm: spendOneSayariCall('Search the Sayari entity graph.'),
   handler: async (input, ctx) => {
     const r = await ctx.upstream.sayari.searchEntity({ q: input.q, limit: input.limit ?? 10 });
-    return { ok: true, data: sourceResult('Sayari search', r.cacheHit, r.data.data ?? []) };
+    // Projected per result, same as `sayari_get_entity` below — a pick-list
+    // has no use for a full entity's worth of attributes and relationships
+    // per row, only enough to tell candidates apart.
+    return {
+      ok: true,
+      data: sourceResult('Sayari search', r.cacheHit, (r.data.data ?? []).map(toEntityView)),
+    };
   },
 });
 
@@ -349,7 +356,14 @@ export const sayariGetRecord = defineTool({
         },
       });
 
-    return { ok: true, data: sourceResult('Sayari record', r.cacheHit, r.data) };
+    // Projected, not raw — a record's own `references` block embeds every
+    // entity it mentions in full, and nothing downstream reads it. This
+    // tool's actual job is making the record id locally citable, which the
+    // upsert above already did; the value returned to the model only needs
+    // enough to describe and cite the record, so it gets `toRecordView`
+    // instead of the raw body. The full row, references included, is what
+    // got stored above.
+    return { ok: true, data: sourceResult('Sayari record', r.cacheHit, toRecordView(r.data)) };
   },
 });
 
