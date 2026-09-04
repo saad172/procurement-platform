@@ -429,6 +429,172 @@ export const sayariShortestPath = defineTool({
   },
 });
 
+/**
+ * `trade.searchBuyers` by `filter.supplierId` (network spec §4.3, §9;
+ * ticket 05) — the customer list, with each buyer's risk and country. The
+ * trade Job's own second automatic call runs this unconditionally at
+ * `limit: 50`; this tool exposes the identical read on demand for a job or
+ * the MCP surface, `limit` left an optional knob the same way `sayari_
+ * ownership`/`sayari_watchlist` leave theirs open beside their own baked-in
+ * read.
+ *
+ * `sayari_trade_search` beside this wraps the same underlying
+ * `trade.searchSuppliers` **endpoint** keyed by HS line and arrival country,
+ * for Discover — genuinely a different call (`searchSuppliers`, not
+ * `searchBuyers`) answering a different question (*who ships this line
+ * anywhere* vs. *who buys from this one supplier*), so this is a new tool
+ * rather than a second name for the same wrapper.
+ *
+ * Modelled closely on `sayariOwnership`/`sayariShortestPath` above: same
+ * restricted `surfaces`, no `confirm` (job/mcp-only, so boot invariant 9
+ * would refuse a tool nobody in chat ever sees one), same thin
+ * `sourceResult` passthrough. **`ctx.upstream.sayari.tradeSearchBuyers` does
+ * not exist on this branch's base yet** — unit 05b's `upstream/index.ts`
+ * wiring has not landed as of this writing. Written against the sugar name
+ * every other lookup tool in this file uses regardless, on the same
+ * reasoning `sayariShortestPath`'s own doc comment gives for ticket 04's
+ * identical situation (it also depended on another unit's endpoint landing
+ * first, and was written against `ctx.upstream.sayari.shortestPath`
+ * directly rather than `ENDPOINTS.*`) — this resolves once both units' PRs
+ * land into `wave5-integration`, in either order.
+ */
+export const sayariSearchBuyers = defineTool({
+  name: 'sayari_search_buyers',
+  description:
+    'Sayari trade buyers for one supplier: the customer list with each buyer’s risk and country.',
+  input: z.object({
+    supplierId: z.string(),
+    limit: z.number().int().min(1).max(100).optional(),
+  }),
+  surfaces: ['job', 'mcp'],
+  effect: 'read',
+  spends: ['sayari'],
+  latency: 'slow',
+  handler: async (input, ctx) => {
+    const r = await ctx.upstream.sayari.tradeSearchBuyers({
+      supplierId: [input.supplierId],
+      limit: input.limit ?? 50,
+    });
+    return { ok: true, data: sourceResult('Sayari trade buyers', r.cacheHit, r.data.data ?? []) };
+  },
+});
+
+/**
+ * `trade.searchShipments` by `filter.supplierId` (network spec §4.3, §9;
+ * ticket 05) — dated, citable shipment rows: buyer, product origin, value,
+ * weight, `record`. The trade Job's own third automatic call runs this
+ * unconditionally at `limit: 50`, filtered to the trailing 24 months via
+ * `filter.arrivalDate`; this tool exposes the same read on demand, the date
+ * window left an optional knob rather than baked in — a job or MCP caller
+ * may want a different window than the automatic one, the same way `sayari_
+ * ownership`/`sayari_watchlist` leave `limit` open beside their own
+ * baked-in read.
+ *
+ * `arrivalDate` is the wire shape verbatim (`sayariTradeSearchShipments`'s
+ * own doc comment in `src/upstream/endpoints.ts`): a single `"<from>|<to>"`
+ * range string, or one date — built by the caller, not parsed here, the same
+ * division `sayariTradeSearchShipments` itself keeps.
+ *
+ * Same dependency note as `sayariSearchBuyers` above: written against
+ * `ctx.upstream.sayari.tradeSearchShipments`, which does not exist on this
+ * branch's base yet.
+ */
+export const sayariSearchShipments = defineTool({
+  name: 'sayari_search_shipments',
+  description:
+    'Sayari trade shipments for one supplier: dated rows with buyer, product origin, value, weight and record.',
+  input: z.object({
+    supplierId: z.string(),
+    arrivalDate: z
+      .string()
+      .optional()
+      .describe(
+        'A "<from>|<to>" range, or a single date — Sayari’s own TradeFilterList.arrivalDate shape.',
+      ),
+    limit: z.number().int().min(1).max(100).optional(),
+  }),
+  surfaces: ['job', 'mcp'],
+  effect: 'read',
+  spends: ['sayari'],
+  latency: 'slow',
+  handler: async (input, ctx) => {
+    const r = await ctx.upstream.sayari.tradeSearchShipments({
+      supplierId: [input.supplierId],
+      ...(input.arrivalDate ? { arrivalDate: input.arrivalDate } : {}),
+      limit: input.limit ?? 50,
+    });
+    return {
+      ok: true,
+      data: sourceResult('Sayari trade shipments', r.cacheHit, r.data.data ?? []),
+    };
+  },
+});
+
+/**
+ * `supplyChain.upstreamTradeTraversal` (network spec §4.3, §5, §9; ticket
+ * 05) — upstream tiers, filtered by HS `component` and `risk` stems. The
+ * trade Job's own fourth automatic call always populates `component` (the
+ * Category's six-digit HS codes) and `risk` (forced-labour-origin and
+ * sanctions stems), per spec §4.3; this tool exposes the same endpoint
+ * on demand with every filter optional, matching the endpoint's own
+ * `SupplyChainUpstreamTradeTraversalParams` shape (`src/upstream/
+ * endpoints.ts`) rather than the trade Job's narrower always-populated call
+ * — a job or MCP caller may reasonably want an unfiltered walk, and the
+ * endpoint itself accepts one.
+ *
+ * `entityId` names the field the way `sayariOwnership`/`sayariWatchlist`/
+ * `sayariShortestPath` above name theirs, rather than the endpoint's own
+ * `id` — this file's own established convention for a raw lookup wrapping a
+ * traversal endpoint keyed on one entity.
+ *
+ * Same dependency note as the two tools above: written against
+ * `ctx.upstream.sayari.upstreamTradeTraversal`, the sugar name this file's
+ * naming convention implies (`supplyChain.upstreamTradeTraversal` losing its
+ * namespace prefix, the same way `traversal.ownership`/`traversal.watchlist`
+ * lose theirs to become `ownership`/`watchlist` above) — it does not exist
+ * on this branch's base yet, and this is the best-guess, documented name
+ * this ticket's own brief asked for in that case; it resolves, possibly
+ * under a different name if 05b chose one, once both units' PRs land into
+ * `wave5-integration`.
+ */
+export const sayariUpstream = defineTool({
+  name: 'sayari_upstream',
+  description:
+    'Walk Sayari’s upstream supply chain from one company, filtered by HS component and risk stem.',
+  input: z.object({
+    entityId: z.string(),
+    component: z
+      .array(z.string())
+      .optional()
+      .describe('Six-digit HS headings — a Category’s HS lines, widened.'),
+    risk: z
+      .array(z.string())
+      .optional()
+      .describe('Risk stems, e.g. the forced-labour-origin and sanctions stems.'),
+    countries: z.array(z.string()).optional(),
+    maxDepth: z.number().int().min(1).optional(),
+    minDate: z.string().optional(),
+  }),
+  surfaces: ['job', 'mcp'],
+  effect: 'read',
+  spends: ['sayari'],
+  latency: 'slow',
+  handler: async (input, ctx) => {
+    const r = await ctx.upstream.sayari.upstreamTradeTraversal({
+      id: input.entityId,
+      ...(input.component ? { component: input.component } : {}),
+      ...(input.risk ? { risk: input.risk } : {}),
+      ...(input.countries ? { countries: input.countries } : {}),
+      ...(input.maxDepth != null ? { maxDepth: input.maxDepth } : {}),
+      ...(input.minDate ? { minDate: input.minDate } : {}),
+    });
+    return {
+      ok: true,
+      data: sourceResult('Sayari upstream supply chain', r.cacheHit, r.data),
+    };
+  },
+});
+
 /** 7–15 s measured, so `slow`, so barred from chat by boot invariant 5. */
 export const sayariNegativeNews = defineTool({
   name: 'sayari_negative_news',
@@ -570,6 +736,9 @@ export const RAW_LOOKUPS = [
   sayariShortestPath,
   sayariNegativeNews,
   sayariTradeSearch,
+  sayariSearchBuyers,
+  sayariSearchShipments,
+  sayariUpstream,
   gleifJoinLei,
   gleifSearchName,
   worldbankIndicator,

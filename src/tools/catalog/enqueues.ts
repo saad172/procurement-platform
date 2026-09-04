@@ -421,6 +421,110 @@ const enqueueCheckEveryPair = defineTool({
 });
 
 /**
+ * The trade Job (network spec §4.3, §8; ticket 05) — on demand, from the
+ * Supplier page or chat through the confirm gate, for one accepted Profile.
+ *
+ * **Fixed at exactly four calls, so the estimator does no arithmetic at
+ * all.** That is what sets it apart from `enqueueCheckEveryPair` and
+ * `enqueueDeepTraversal` above, both of which read a local count (a roster
+ * size, a hop/page cap) to bound a call count that genuinely varies. The
+ * trade Job's four calls never vary: `trade.searchSuppliers` (the HS facet
+ * and shipment count), `trade.searchBuyers` (the customer list),
+ * `trade.searchShipments` (dated rows over the trailing 24 months) and
+ * `supplyChain.upstreamTradeTraversal` (upstream tiers, filtered by the
+ * Category's HS `component`s) — one call each, always, whatever the
+ * Profile's own size (network spec §4.3's own table, four rows). So
+ * `confirm` reads nothing off `ctx.db`, unlike every other estimator in this
+ * file: there is no local row to read before quoting a range, because there
+ * is no range.
+ *
+ * **`categoryId` beside `supplierId`, not `supplierId` alone.** Unlike
+ * `enqueueEnrichment`/`enqueueReassess`, which need only the Supplier a
+ * Profile is attached to, the fourth call's `component` filter is a
+ * Category's own six-digit HS codes (`category_hs_line`, widened to a
+ * heading by `hsHeading()` in `src/domain/hs-code.ts`) — a Supplier alone
+ * does not carry that; it can bid several Categories, and the trade Job's
+ * upstream read is scoped to whichever one this button was pressed from
+ * (network spec §4.3). Modelled on `enqueueCheckEveryPair`'s own
+ * `programId`/`categoryId` input shape above for that reason, rather than on
+ * `enqueueEnrichment`'s single `supplierId`.
+ *
+ * **`categoryId` travels in `job.params`, resolved by the Job and not here.**
+ * `job.params` is documented on the schema itself (`src/db/schema/
+ * runs.ts`) as the bag later Job kinds are expected to reuse, naming *"a
+ * trade Job's parameters"* by name — so this handler passes `categoryId`
+ * through rather than reading `category_hs_line` rows itself, the same
+ * division of labour `enqueueCheckEveryPair` keeps with `loadAcceptedBidders`
+ * above: the enqueue tool names *what* the Job is about, the Job resolves
+ * *how*. `src/jobs/trade.ts` does not exist on this branch's base yet (unit
+ * 05b, not merged as of this writing) — this is the documented, reasonable
+ * choice made in its absence, per this ticket's own brief; it costs the
+ * Job's own handler a two-line read (`category_hs_line` rows for
+ * `params.categoryId`, `hsHeading()` each) and nothing here changes if that
+ * handler would rather receive the codes pre-resolved instead.
+ *
+ * **`kind: 'trade'`/`trigger: 'trade'` do not yet type-check on this
+ * branch.** `JobKind` (`src/config/constants.ts`'s `JOB_CAPS`) and
+ * `RunTrigger` (`src/jobs/runs.ts`) are both unit 05b's files, and neither
+ * has grown a `'trade'` member yet — the identical, one-unit-wider version of
+ * the gap this ticket's brief names for `ctx.upstream.sayari.
+ * tradeSearchShipments` below. `enqueueJob`'s own boot-time cousin,
+ * `finalizeRegistry()`'s invariant 12, only *warns* rather than refuses to
+ * boot on a tool naming a kind `RUNNABLE_JOB_KINDS` does not carry yet (its
+ * own doc comment, `src/tools/registry.ts`) — the same accommodation that
+ * already lets `enqueue_dossier` sit in the catalog. Both gaps resolve
+ * together once 05b's PR lands into `wave5-integration` and either branch
+ * rebases past the other.
+ */
+const enqueueTrade = defineTool({
+  name: 'enqueue_trade',
+  enqueues: 'trade',
+  description:
+    'Fetch one supplier’s trade footprint: shipments, buyers, and upstream tiers filtered by this category’s HS codes.',
+  input: z.object({ supplierId: z.string(), categoryId: z.string() }),
+  surfaces: ['chat'],
+  effect: 'write',
+  spends: ['sayari'],
+  latency: 'fast',
+  confirm: async (): Promise<Estimate> => ({
+    what:
+      'Fetch this supplier’s trade footprint: shipments, buyers, and upstream tiers filtered by this category’s HS codes.',
+    spends: { sayariCalls: 4 },
+    basis:
+      'Exactly four Sayari calls, always: trade.searchSuppliers (the HS facet and shipment count), ' +
+      'trade.searchBuyers (the customer list, with risk and country), trade.searchShipments (dated, ' +
+      'citable rows over the trailing 24 months) and supplyChain.upstreamTradeTraversal (upstream ' +
+      'tiers, filtered by this category’s HS codes and the forced-labour/sanctions risk stems). Unlike ' +
+      'a Deep Traversal or a pairs sweep, this count never varies with the Profile’s own size, so there ' +
+      'is no local row to read before quoting it.',
+    caveats: [
+      'The count is fixed regardless of what is already cached — unlike enqueue_enrichment’s estimate, this one does not check upstream_response first, so a re-run still quotes 4 even where every call would be a cache hit.',
+      'Trade edges are shown and cited, never deducted: Compliance already scores this Profile’s own exports_to_*/*_origin_* factors, and deducting again on a Path would count one fact twice (network spec §5).',
+    ],
+  }),
+  handler: async (input, ctx) => {
+    const supplier = await ctx.db.query.supplier.findFirst({
+      where: eq(t.supplier.id, input.supplierId),
+    });
+    if (!supplier) return { ok: false, objections: [`no supplier with id ${input.supplierId}`] };
+    const runId = await openRun(ctx.db, {
+      programId: supplier.programId,
+      trigger: 'trade',
+      subjectLabel: `trade footprint: ${supplier.rosterName ?? supplier.id}`,
+      supplierCount: 1,
+    });
+    const jobId = await enqueueJob(ctx.db, {
+      runId,
+      kind: 'trade',
+      subjectType: 'supplier',
+      subjectId: supplier.id,
+      params: { categoryId: input.categoryId },
+    });
+    return { ok: true, data: { runId, jobId } };
+  },
+});
+
+/**
  * Flag-gated in a way a union member could not be (SPEC §15.2).
  *
  * `DOSSIER_ENABLED` is off in both environments, so this refuses rather than
@@ -603,6 +707,7 @@ export const JOB_STARTS = [
   enqueueDeepTraversal,
   enqueueDiscover,
   enqueueCheckEveryPair,
+  enqueueTrade,
   enqueueDossier,
   enqueueMatchSettlement,
 ];
