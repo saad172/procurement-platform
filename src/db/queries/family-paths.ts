@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lt } from 'drizzle-orm';
+import { and, asc, eq, inArray, lt, or } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
@@ -58,8 +58,20 @@ export type FamilyPath = {
   edges: FamilyPathEdge[];
 };
 
-/** A `graph_path.kind` value, narrowed to the two this file reads. */
+/** A `graph_path.kind` value, narrowed to the two `NetworkExposurePath.kind` itself is contracted to — unchanged, so nothing downstream of it (`src/jobs/enrich-supplier.ts`'s own narrower literal) widens. */
 type PathKind = 'family' | 'watchlist';
+
+/**
+ * `PathKind`, plus `shortest_path` — every `graph_path.kind` value
+ * `loadPathRows` itself can be ASKED to read. Kept separate from `PathKind`
+ * on purpose: `loadPathRows` is now generic over which of these its caller
+ * passes (see its own signature below), so `loadFamilyPaths`/
+ * `loadNetworkExposurePaths` still get rows typed `kind: PathKind` exactly as
+ * before, and only `loadShortestPathPaths` (ticket 05, unit 05g — the
+ * recommend Job's targeted award-vs-Pick check, `findAndWriteShortestPath`,
+ * `src/jobs/shortest-path.ts`) ever sees `'shortest_path'`.
+ */
+type LoadablePathKind = PathKind | 'shortest_path';
 
 /**
  * The join every Path reader needs — one Path row plus the `entity_relationship`
@@ -74,15 +86,24 @@ type PathKind = 'family' | 'watchlist';
  * that function's own comment for why duplicating the query there was the
  * right call rather than widening this one.
  *
+ * **Generic over `K`**, so each caller's own return type carries exactly the
+ * `kind`(s) it asked for — `loadFamilyPaths(['family'])` gets rows typed
+ * `kind: 'family'`, `loadShortestPathPaths(['shortest_path'])` gets
+ * `kind: 'shortest_path'`, with no caller able to see a `kind` value it never
+ * asked for. `NetworkExposurePath.kind: PathKind` (`'family'|'watchlist'`
+ * only) depends on this: a single non-generic `kinds: LoadablePathKind[]`
+ * parameter would have widened that field's type too, which is exactly the
+ * regression `src/jobs/enrich-supplier.ts`'s own narrower literal caught.
+ *
  * Ordered by hop depth then terminal id — the order a person reads a family
  * in, and the total order a prompt can rely on (mirrors `family_member`'s
  * former ordering, per its own now-removed comment in `reads.ts`/`supplier-page.ts`).
  */
-async function loadPathRows(
+async function loadPathRows<K extends LoadablePathKind>(
   db: Database,
   rootEntityId: string,
-  kinds: readonly PathKind[],
-): Promise<(FamilyPath & { kind: PathKind })[]> {
+  kinds: readonly K[],
+): Promise<(FamilyPath & { kind: K })[]> {
   const paths = await db
     .select({
       terminalEntityId: t.graphPath.terminalEntityId,
@@ -118,7 +139,7 @@ async function loadPathRows(
 
   return paths.map((p) => ({
     terminalEntityId: p.terminalEntityId,
-    kind: p.kind as PathKind,
+    kind: p.kind as K,
     label: p.label,
     country: p.country,
     sanctioned: p.sanctioned,
@@ -289,6 +310,33 @@ export async function loadNetworkExposurePaths(
 }
 
 /**
+ * Every Path of kind `shortest_path` rooted at one entity (network spec §4.2,
+ * §7, ticket 04) — the recommend Job's own targeted award-vs-Pick check
+ * (`findAndWriteShortestPath`, `src/jobs/shortest-path.ts`), which writes at
+ * most one such row per (award, second-source) pair with `rootEntityId`
+ * always the **award's** own entity id
+ * (`findConcentrations`'s own `rootEntityId: awardEntityId`,
+ * `src/jobs/recommend.ts`).
+ *
+ * The Recommendation page (ticket 05, unit 05g) calls this for the award
+ * Pick's own entity id, then matches each returned Path's `terminalEntityId`
+ * against a `second_source` Pick's own entity id — see
+ * `loadRecommendationPage`'s own doc comment for that match.
+ *
+ * A **sibling**, not a widened `loadFamilyPaths` — same reasoning as
+ * `loadNetworkExposurePaths` above: built over the shared `loadPathRows` join
+ * so the edge-resolution logic can never drift between the two, kept as its
+ * own function so a caller of one shape is never rippled by a change to the
+ * other's.
+ */
+export async function loadShortestPathPaths(
+  db: Database,
+  rootEntityId: string,
+): Promise<FamilyPath[]> {
+  return loadPathRows(db, rootEntityId, ['shortest_path']);
+}
+
+/**
  * The record asserting one Path's own inclusion of its terminal entity —
  * the **last** hop in `edge_ids` order, the edge most proximate to the
  * member itself (ticket 02 "Done when").
@@ -377,6 +425,145 @@ export async function loadNetworkPaths(db: Database, rootEntityId: string): Prom
     enrichmentId: p.enrichmentId,
     discoveredByJob: p.discoveredByJob,
     edges: p.edgeIds
+      .map((id) => edgeById.get(id))
+      .filter((e): e is NonNullable<typeof e> => e != null)
+      .map((e) => ({
+        id: e.id,
+        relationshipType: e.relationshipType,
+        fromEntityId: e.fromEntityId,
+        toEntityId: e.toEntityId,
+        former: e.former,
+        sharePercentage: sharePercentageOf(e.attributes),
+        startDate: e.startDate,
+        endDate: e.endDate,
+        sourceRecordId: e.sourceRecordId,
+      })),
+  }));
+}
+
+/**
+ * A `NetworkPath` widened with which side of the `graph_path` row the
+ * entity `loadPathsThroughEntity` was called for actually sat on (network
+ * spec §8: *"Paths through this entity in either role"*).
+ */
+export type PathThroughEntity = NetworkPath & {
+  /**
+   * `graph_path.root_entity_id` verbatim. Equal to the entityId
+   * `loadPathsThroughEntity` was called with when `role` is `'root'`; the
+   * OTHER entity's id — whoever's Network this Path actually belongs to —
+   * when `role` is `'terminal'`.
+   */
+  rootEntityId: string;
+  /**
+   * That root's own label, hydrated via a second join so a caller can add a
+   * `NetworkMapRoot` for a `'terminal'`-role row's root without a second
+   * query. Redundant (and equal to the page's own already-loaded entity
+   * label) on a `'root'`-role row — kept anyway so every row of this type
+   * carries the same shape, rather than an optional field a caller has to
+   * branch on.
+   */
+  rootLabel: string;
+  /**
+   * Which side of this `graph_path` row the queried entity id sat on.
+   *
+   * `'root'` — the ordinary case every other Path reader in this file
+   * already covers: this entity is `graph_path.root_entity_id`, and
+   * `terminalEntityId`/`label`/etc. describe the OTHER end this entity's own
+   * Network reaches.
+   *
+   * `'terminal'` — this entity is `graph_path.terminal_entity_id` instead: a
+   * Path SOME OTHER entity's Network reaches THIS one through. `terminalEntityId`
+   * here therefore equals the entity id this function was called with (the
+   * `entity` join always resolves off `graph_path.terminal_entity_id`,
+   * unconditionally — see `loadNetworkPaths`'s identical join above), and
+   * `rootEntityId`/`rootLabel` name who the Path actually belongs to.
+   */
+  role: 'root' | 'terminal';
+};
+
+/**
+ * Every Path **through** one entity, in either role (network spec §8, ticket
+ * 05 unit 05g's own Entity-page brief: *"Paths through this entity in either
+ * role, with Expand"*) — `graph_path.root_entity_id = entityId` (this
+ * entity's own Network, exactly what `loadNetworkPaths` already reads) **OR**
+ * `graph_path.terminal_entity_id = entityId` (a Path some OTHER entity's
+ * Network reaches this one through, e.g. this entity is a Family member or a
+ * Listed entity on somebody else's walk).
+ *
+ * A genuinely different query from `loadNetworkPaths`, not a widened call to
+ * it: `loadNetworkPaths` fixes `root_entity_id` alone, and the `OR` here
+ * needs its own join to `entity` (aliased) to hydrate the OTHER root's own
+ * label for a `'terminal'`-role row — see `PathThroughEntity.rootLabel`'s own
+ * doc comment for why. Duplicating the query/hydration shape against
+ * `loadNetworkPaths` rather than parameterising it is this file's own
+ * established pattern (see `loadNetworkPaths`'s doc comment on why it does
+ * not call `loadPathRows`) — two small functions that can drift
+ * independently, rather than one shared internal every caller of either has
+ * to reason about.
+ *
+ * Ordered the same way `loadNetworkPaths` is: `kind`, then `hopDepth`, then
+ * `terminalEntityId` — a caller groups by the leading key with nothing to
+ * re-sort. `role` is not part of the order, so a `'root'` and a `'terminal'`
+ * row of the same kind/depth/terminal interleave rather than cluster; no
+ * caller of this function needs them separated further than that.
+ */
+export async function loadPathsThroughEntity(
+  db: Database,
+  entityId: string,
+): Promise<PathThroughEntity[]> {
+  const rootEntity = alias(t.entity, 'path_through_entity_root');
+
+  const rows = await db
+    .select({
+      kind: t.graphPath.kind,
+      rootEntityId: t.graphPath.rootEntityId,
+      terminalEntityId: t.graphPath.terminalEntityId,
+      hopDepth: t.graphPath.hopDepth,
+      truncated: t.graphPath.truncated,
+      reachableCount: t.graphPath.exploredCount,
+      enrichmentId: t.graphPath.enrichmentId,
+      discoveredByJob: t.graphPath.discoveredByJob,
+      edgeIds: t.graphPath.edgeIds,
+      label: t.entity.label,
+      country: t.entity.country,
+      sanctioned: t.entity.sanctioned,
+      risk: t.entity.risk,
+      rootLabel: rootEntity.label,
+    })
+    .from(t.graphPath)
+    .innerJoin(t.entity, eq(t.entity.id, t.graphPath.terminalEntityId))
+    .innerJoin(rootEntity, eq(rootEntity.id, t.graphPath.rootEntityId))
+    .where(or(eq(t.graphPath.rootEntityId, entityId), eq(t.graphPath.terminalEntityId, entityId)))
+    .orderBy(asc(t.graphPath.kind), asc(t.graphPath.hopDepth), asc(t.graphPath.terminalEntityId));
+
+  // One batched fetch for every edge every Path cites, across every row —
+  // the same de-duplication `loadNetworkPaths`/`loadFamilyPaths` do, for the
+  // same reason: a shared intermediate hop should be fetched once.
+  const allEdgeIds = [...new Set(rows.flatMap((r) => r.edgeIds))];
+  const edgeRows = allEdgeIds.length
+    ? await db
+        .select()
+        .from(t.entityRelationship)
+        .where(inArray(t.entityRelationship.id, allEdgeIds))
+    : [];
+  const edgeById = new Map(edgeRows.map((e) => [e.id, e] as const));
+
+  return rows.map((r) => ({
+    kind: r.kind as NetworkPathKind,
+    terminalEntityId: r.terminalEntityId,
+    label: r.label,
+    country: r.country,
+    sanctioned: r.sanctioned,
+    risk: r.risk,
+    hopDepth: r.hopDepth,
+    truncated: r.truncated,
+    reachableCount: r.reachableCount,
+    enrichmentId: r.enrichmentId,
+    discoveredByJob: r.discoveredByJob,
+    rootEntityId: r.rootEntityId,
+    rootLabel: r.rootLabel,
+    role: r.rootEntityId === entityId ? 'root' : 'terminal',
+    edges: r.edgeIds
       .map((id) => edgeById.get(id))
       .filter((e): e is NonNullable<typeof e> => e != null)
       .map((e) => ({

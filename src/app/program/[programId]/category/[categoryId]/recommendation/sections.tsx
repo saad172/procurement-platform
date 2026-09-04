@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type * as t from '@/db/schema';
+import { NetworkMapWithExpand } from '@/components/widgets/expand-node-button';
 import type { loadRecommendationPage } from '@/db/queries/recommendation-page';
 import {
   ACCEPT_CONTROL_NOTE,
@@ -102,6 +103,52 @@ export function Argument({ data, programId }: { data: Data; programId: string })
           ))
         )}
       </div>
+    </>
+  );
+}
+
+/**
+ * ── Concentration Paths ──
+ *
+ * Network spec §8's own Recommendation row: *"the Picks' Paths beside the
+ * conditions that name them"*. Placed directly after Argument (which is
+ * where the `conditions`/`open_questions` sentences render, grouped by
+ * section — see `groupBySection` below) and before Dissent — juxtaposition
+ * is what "beside" asks for here, not a cross-referencing UI: a condition
+ * naming a second source's Concentration sits one section above the actual
+ * Path backing it, rather than the two living on separate pages.
+ *
+ * `data.concentrationPaths` (`loadConcentrationPaths`,
+ * `src/db/queries/recommendation-page.ts`) is already matched Pick-to-Path —
+ * one row per `second_source` Pick a `shortest_path` Path was found for, the
+ * SAME Path the ninth check's own objection names by `entityId` when it
+ * fires (`checkConcentration`, `src/domain/validation/submit-checks.ts`).
+ * Nothing renders when the array is empty — the common case, since most
+ * Recommendations name no Concentration at all — the same "return null"
+ * convention `Dissent` below already follows for its own empty case.
+ */
+export function ConcentrationPaths({ data, programId }: { data: Data; programId: string }) {
+  const { concentrationPaths } = data;
+  if (concentrationPaths.length === 0) return null;
+  return (
+    <>
+      <h2>Concentration Paths</h2>
+      {concentrationPaths.map(({ award, pick, path }) => (
+        <div className="card" key={pick.supplierId} style={{ marginTop: '0.6rem' }}>
+          <p className="note" style={{ marginTop: 0 }}>
+            The award and{' '}
+            <Link href={`/program/${programId}/supplier/${pick.supplierId}` as never}>
+              {pick.rosterName ?? pick.entityLabel ?? 'this second source'}
+            </Link>{' '}
+            share a Path — the Concentration a condition or open question above should name.
+          </p>
+          <NetworkMapWithExpand
+            roots={[{ id: award.entityId, label: award.label ?? award.entityId }]}
+            paths={[{ ...path, kind: 'shortest_path', rootEntityId: award.entityId }]}
+            programId={programId}
+          />
+        </div>
+      ))}
     </>
   );
 }

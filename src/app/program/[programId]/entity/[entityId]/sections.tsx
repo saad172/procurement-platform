@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Breadcrumb } from '@/components/breadcrumb';
+import { NetworkMapWithExpand } from '@/components/widgets/expand-node-button';
 import type { loadEntityPage } from '@/db/queries/entity-page';
 import type { KnownAsCase } from '@/domain/derive-entity-page';
 import {
@@ -374,6 +375,153 @@ function RiskFactorRow({ factor }: { factor: Data['factors'][number] }) {
       <td className="note">{factor.sources?.length ? factor.sources.join(', ') : '—'}</td>
     </tr>
   );
+}
+
+/**
+ * ── Paths through this entity ──
+ *
+ * Network spec §8's own Display table, Entity row: *"Paths through this
+ * entity in either role, with Expand"* — this entity's own Network (a Path it
+ * is the ROOT of, exactly what the Supplier page's Network section already
+ * draws for a Profile) alongside every Path some OTHER entity's Network
+ * reaches THIS one through (a Path it is only the TERMINAL of — e.g. this
+ * entity is a Family member, or a Listed entity, on somebody else's walk).
+ * `loadPathsThroughEntity` (`src/db/queries/family-paths.ts`) is the
+ * either-role query; `data.pathRoots` is that query's own root PLUS one hub
+ * per distinct other root a `'terminal'`-role Path names, computed once in
+ * the loader (`entity-page.ts`'s own "a section receives already-derived
+ * props" rule).
+ *
+ * The diagram is the primary view (spec §8); the chain rows below it are the
+ * fallback without scripts and what a citation resolves through — same
+ * relationship the Supplier page's `NetworkMap`/`FamilyChainRows` pair has,
+ * adapted here for a Path that can run in either direction rather than
+ * always outward from one root.
+ */
+export function PathsThroughEntity({ data, programId }: { data: Data; programId: string }) {
+  const { paths, pathRoots } = data;
+  return (
+    <>
+      <h2>
+        Paths through this entity <span className="note">{paths.length} stored</span>
+      </h2>
+      {paths.length === 0 ? (
+        <div className="card">
+          <p className="empty" style={{ margin: 0 }}>
+            No Path stored yet — neither this entity’s own Network, nor another entity’s Network,
+            reaches here. Tap Expand on a Network diagram elsewhere to start a Deep Traversal that
+            might.
+          </p>
+        </div>
+      ) : (
+        <>
+          <NetworkMapWithExpand roots={pathRoots} paths={paths} programId={programId} />
+          <PathThroughEntityChainRows paths={paths} programId={programId} />
+        </>
+      )}
+    </>
+  );
+}
+
+/**
+ * The citable chain beneath the diagram above, adapted from the Supplier
+ * page's `FamilyChainRows` (`.../supplier/[supplierId]/sections.tsx`, network
+ * spec §6, §8) for an either-role Path: **Kind** and **Direction** columns
+ * stand in for that table's implicit "always downward family, always from the
+ * root" assumption, and **Other party** names whichever end is NOT this
+ * entity — the far end of the Network for a `'root'`-role row, the Network's
+ * own root for a `'terminal'`-role one. The per-edge repeat-blank-until-a-new-
+ * Path convention (a cell fills only on a Path's first edge row) is
+ * unchanged.
+ */
+function PathThroughEntityChainRows({
+  paths,
+  programId,
+}: {
+  paths: Data['paths'];
+  programId: string;
+}) {
+  return (
+    <details className="card scroll-x" style={{ marginTop: '0.6rem' }}>
+      <summary>Chain rows — every cited edge these Paths hold</summary>
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>Direction</th>
+            <th>Other party</th>
+            <th>Edge type</th>
+            <th className="num">Share</th>
+            <th>From</th>
+            <th>To</th>
+            <th>Record</th>
+          </tr>
+        </thead>
+        <tbody>
+          {paths.map((path) => {
+            // The far end is whichever id is NOT this entity — the query's
+            // own `role` says which of `terminalEntityId`/`rootEntityId`
+            // that is (`loadPathsThroughEntity`'s own doc comment).
+            const otherPartyId = path.role === 'root' ? path.terminalEntityId : path.rootEntityId;
+            const otherPartyLabel = path.role === 'root' ? path.label : path.rootLabel;
+            const direction = path.role === 'root' ? 'from this entity' : 'to this entity';
+            const rowKey = `${path.kind}-${path.role}-${path.rootEntityId}-${path.terminalEntityId}`;
+
+            if (path.edges.length === 0) {
+              // A migrated row, or one whose edge upsert has not landed yet —
+              // `FamilyChainRows`'s own documented gap, same treatment.
+              return (
+                <tr key={rowKey}>
+                  <td className="note">{path.kind.replace(/_/g, ' ')}</td>
+                  <td className="note">{direction}</td>
+                  <td>
+                    <Link href={`/program/${programId}/entity/${otherPartyId}` as never}>
+                      {otherPartyLabel}
+                    </Link>
+                  </td>
+                  <td className="note" colSpan={5}>
+                    no citable edge yet
+                  </td>
+                </tr>
+              );
+            }
+
+            return path.edges.map((edge, i) => (
+              <tr key={edge.id}>
+                <td className="note">{i === 0 ? path.kind.replace(/_/g, ' ') : ''}</td>
+                <td className="note">{i === 0 ? direction : ''}</td>
+                <td>
+                  {i === 0 ? (
+                    <Link href={`/program/${programId}/entity/${otherPartyId}` as never}>
+                      {otherPartyLabel}
+                    </Link>
+                  ) : null}
+                </td>
+                <td className="note">{edge.relationshipType.replace(/_/g, ' ')}</td>
+                <td className="num">
+                  {edge.sharePercentage != null ? `${edge.sharePercentage}%` : '—'}
+                </td>
+                <td className="note">{edge.startDate ?? '—'}</td>
+                <td className="note">{edge.endDate ?? '—'}</td>
+                <td>
+                  {edge.sourceRecordId ? (
+                    <Link href={recordHref(programId, edge.sourceRecordId) as never}>record</Link>
+                  ) : (
+                    <span className="note">—</span>
+                  )}
+                </td>
+              </tr>
+            ));
+          })}
+        </tbody>
+      </table>
+    </details>
+  );
+}
+
+/** Matches the Supplier page's own `recordHref` exactly (`.../supplier/[supplierId]/sections.tsx`) — a record id is itself a `/`-joined path, so the catch-all segment is built the same way, encoded per-part. */
+function recordHref(programId: string, recordId: string): string {
+  return `/program/${programId}/record/${recordId.split('/').map(encodeURIComponent).join('/')}`;
 }
 
 /** ── Relationships ── */

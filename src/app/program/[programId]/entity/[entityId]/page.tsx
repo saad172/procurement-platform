@@ -6,6 +6,7 @@ import { ChatDock } from '@/components/chat-dock';
 import {
   Attributes,
   Heading,
+  PathsThroughEntity,
   RelationshipCounts,
   Relationships,
   RiskFactors,
@@ -45,6 +46,7 @@ export default async function EntityPage({
 
       <Sources data={data} />
       <RiskFactors data={data} />
+      <PathsThroughEntity data={data} programId={programId} />
 
       <p className="note" style={{ marginTop: '1rem' }}>
         <Link href={`/program/${programId}` as never}>← back to the program</Link>

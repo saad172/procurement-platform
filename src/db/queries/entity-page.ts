@@ -3,6 +3,7 @@ import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
 import { attachRiskSources, parseRiskObject } from '@/domain/scoring/risk-factors';
 import { deriveEdgeGroups, deriveKnownAs, deriveOwnerEdges } from '@/domain/derive-entity-page';
+import { loadPathsThroughEntity } from './family-paths';
 
 /**
  * Everything this page renders, in one read (SPEC §13.1).
@@ -76,6 +77,31 @@ export async function loadEntityPage(db: Database, args: { programId: string; en
     await readKnownAsRows(db, programId, entityId),
   );
 
+  /**
+   * Paths through this entity in either role (network spec §8, ticket 05
+   * unit 05g) — this entity's own Network (`role: 'root'`) alongside every
+   * Path some OTHER entity's Network reaches this one through
+   * (`role: 'terminal'`).
+   */
+  const paths = await loadPathsThroughEntity(db, entityId);
+
+  /**
+   * `NetworkMap`'s own `roots` prop (`src/components/widgets/network-map.tsx`)
+   * — this entity is always the diagram's own anchor, plus one more hub per
+   * DISTINCT other root a `'terminal'`-role Path names (someone else's
+   * Network reaching in). Computed here, not in a section component: "a
+   * section receives already-derived props; it does not derive"
+   * (`sections.tsx`'s own established rule, stated on `edgeGroups` above).
+   */
+  const otherRoots = new Map<string, string>();
+  for (const path of paths) {
+    if (path.role === 'terminal') otherRoots.set(path.rootEntityId, path.rootLabel);
+  }
+  const pathRoots = [
+    { id: entity.id, label: entity.label },
+    ...[...otherRoots].map(([id, label]) => ({ id, label })),
+  ];
+
   return {
     entity,
     program,
@@ -87,6 +113,8 @@ export async function loadEntityPage(db: Database, args: { programId: string; en
     factors,
     knownAs,
     breadcrumbSupplier,
+    paths,
+    pathRoots,
   };
 }
 

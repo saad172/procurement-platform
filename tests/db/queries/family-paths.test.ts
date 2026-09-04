@@ -6,6 +6,8 @@ import {
   findConcentrations,
   loadFamilyPaths,
   loadNetworkExposurePaths,
+  loadPathsThroughEntity,
+  loadShortestPathPaths,
   terminalEdgeOf,
 } from '@/db/queries/family-paths';
 import { loadSupplierPage } from '@/db/queries/supplier-page';
@@ -870,5 +872,258 @@ describe('findConcentrations — Concentration derived for free from stored Path
     const db = await getTestDb();
     expect(await findConcentrations(db, [])).toEqual([]);
     expect(await findConcentrations(db, [ROOT_A])).toEqual([]);
+  });
+});
+
+/**
+ * `loadPathsThroughEntity` (network spec §8, ticket 05 unit 05g) — "Paths
+ * through this entity in either role": `graph_path.root_entity_id = entityId`
+ * (the ordinary case every other reader in this file covers) **or**
+ * `graph_path.terminal_entity_id = entityId` (a Path some OTHER entity's
+ * Network reaches this one through).
+ *
+ * `SUBJECT` sits in both roles in this fixture on purpose:
+ *
+ * - Root of a `family` Path reaching `DOWNSTREAM_OF_SUBJECT` — proves the
+ *   ordinary case still reads correctly through the widened `OR` query.
+ * - Terminal of a `watchlist` Path `UPSTREAM_ROOT` holds — proves the NEW
+ *   case: `SUBJECT` is reached by somebody else's Network, not its own.
+ */
+describe('loadPathsThroughEntity — Paths through one entity in either role', () => {
+  const SUBJECT = 'test-path-through-subject';
+  const DOWNSTREAM_OF_SUBJECT = 'test-path-through-downstream';
+  const UPSTREAM_ROOT = 'test-path-through-upstream-root';
+
+  async function seedEitherRoleFixture() {
+    const db = await getTestDb();
+    await resetDerived(db);
+
+    await db.insert(t.entity).values([
+      { id: SUBJECT, label: 'Subject Co', country: 'JPN' },
+      { id: DOWNSTREAM_OF_SUBJECT, label: 'Downstream Of Subject', country: 'DEU' },
+      { id: UPSTREAM_ROOT, label: 'Upstream Root Holding', country: 'GBR', sanctioned: true },
+    ]);
+
+    const [upstreamResponse] = await db
+      .insert(t.upstreamResponse)
+      .values({
+        source: 'sayari',
+        endpoint: 'traversal.ownership',
+        paramsHash: 'test-hash-path-through-entity',
+        params: { entityId: SUBJECT },
+        body: {},
+        bodyHash: 'test-body-hash-path-through-entity',
+        via: 'sdk',
+      })
+      .returning({ id: t.upstreamResponse.id });
+    const [enrichmentFromSubject] = await db
+      .insert(t.enrichment)
+      .values({
+        source: 'sayari_ownership_family',
+        subjectKind: 'entity',
+        subjectKey: SUBJECT,
+        requestParams: { entityId: SUBJECT },
+        upstreamResponseId: upstreamResponse!.id,
+      })
+      .returning({ id: t.enrichment.id });
+    const [enrichmentFromUpstreamRoot] = await db
+      .insert(t.enrichment)
+      .values({
+        source: 'sayari_watchlist',
+        subjectKind: 'entity',
+        subjectKey: UPSTREAM_ROOT,
+        requestParams: { entityId: UPSTREAM_ROOT },
+        upstreamResponseId: upstreamResponse!.id,
+      })
+      .returning({ id: t.enrichment.id });
+
+    await db
+      .insert(t.record)
+      .values([
+        { id: 'source/rec-path-through-down/1700000000000' },
+        { id: 'source/rec-path-through-up/1700000000000' },
+      ]);
+
+    // SUBJECT is the ROOT of this one — its own downward family.
+    const [edgeDown] = await db
+      .insert(t.entityRelationship)
+      .values({
+        fromEntityId: SUBJECT,
+        toEntityId: DOWNSTREAM_OF_SUBJECT,
+        relationshipType: 'has_shareholder',
+        sourceRecordId: 'source/rec-path-through-down/1700000000000',
+      })
+      .returning({ id: t.entityRelationship.id });
+    // SUBJECT is the TERMINAL of this one — reached by UPSTREAM_ROOT's OWN
+    // watchlist walk, not by anything SUBJECT itself explored.
+    const [edgeUp] = await db
+      .insert(t.entityRelationship)
+      .values({
+        fromEntityId: UPSTREAM_ROOT,
+        toEntityId: SUBJECT,
+        relationshipType: 'shareholder_of',
+        sourceRecordId: 'source/rec-path-through-up/1700000000000',
+      })
+      .returning({ id: t.entityRelationship.id });
+
+    await db.insert(t.graphPath).values([
+      {
+        rootEntityId: SUBJECT,
+        terminalEntityId: DOWNSTREAM_OF_SUBJECT,
+        kind: 'family',
+        direction: 'down',
+        hopDepth: 1,
+        edgeIds: [edgeDown!.id],
+        exploredCount: 2,
+        enrichmentId: enrichmentFromSubject!.id,
+      },
+      {
+        rootEntityId: UPSTREAM_ROOT,
+        terminalEntityId: SUBJECT,
+        kind: 'watchlist',
+        direction: 'either',
+        hopDepth: 1,
+        edgeIds: [edgeUp!.id],
+        exploredCount: 5,
+        enrichmentId: enrichmentFromUpstreamRoot!.id,
+      },
+    ]);
+
+    return { db };
+  }
+
+  it('finds a Path SUBJECT is the root of, tagged role: root, rootEntityId equal to SUBJECT itself', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const { db } = await seedEitherRoleFixture();
+
+    const paths = await loadPathsThroughEntity(db, SUBJECT);
+    const rootRow = paths.find((p) => p.terminalEntityId === DOWNSTREAM_OF_SUBJECT);
+    expect(rootRow).toBeDefined();
+    expect(rootRow!.role).toBe('root');
+    expect(rootRow!.rootEntityId).toBe(SUBJECT);
+    expect(rootRow!.rootLabel).toBe('Subject Co');
+    expect(rootRow!.kind).toBe('family');
+    expect(rootRow!.label).toBe('Downstream Of Subject');
+    expect(rootRow!.edges.map((e) => e.sourceRecordId)).toEqual([
+      'source/rec-path-through-down/1700000000000',
+    ]);
+  });
+
+  it("finds a Path SUBJECT is only the TERMINAL of — someone else's Network reaching in — tagged role: terminal", async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const { db } = await seedEitherRoleFixture();
+
+    const paths = await loadPathsThroughEntity(db, SUBJECT);
+    const terminalRow = paths.find((p) => p.rootEntityId === UPSTREAM_ROOT);
+    expect(terminalRow).toBeDefined();
+    expect(terminalRow!.role).toBe('terminal');
+    // The join always resolves off `graph_path.terminal_entity_id`
+    // (`loadPathsThroughEntity`'s own doc comment) — so on a `'terminal'`-role
+    // row this is SUBJECT's own id, not UPSTREAM_ROOT's.
+    expect(terminalRow!.terminalEntityId).toBe(SUBJECT);
+    expect(terminalRow!.rootLabel).toBe('Upstream Root Holding');
+    expect(terminalRow!.kind).toBe('watchlist');
+    expect(terminalRow!.sanctioned).toBe(false);
+    expect(terminalRow!.edges.map((e) => e.sourceRecordId)).toEqual([
+      'source/rec-path-through-up/1700000000000',
+    ]);
+  });
+
+  it('finds both rows in one call — SUBJECT is a root of one Path and a terminal of another, simultaneously', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const { db } = await seedEitherRoleFixture();
+
+    const paths = await loadPathsThroughEntity(db, SUBJECT);
+    expect(paths).toHaveLength(2);
+    expect(paths.map((p) => p.role).sort()).toEqual(['root', 'terminal']);
+  });
+
+  it('an entity with no Path in either role returns an empty array, not an error', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const { db } = await seedEitherRoleFixture();
+
+    // DOWNSTREAM_OF_SUBJECT is not a fit here — it IS the terminal of the
+    // `family` Path SUBJECT holds, so it correctly finds one row. The
+    // negative case needs an id that appears in NO graph_path row at all.
+    expect(await loadPathsThroughEntity(db, 'test-path-through-nobody')).toEqual([]);
+  });
+});
+
+/**
+ * `loadShortestPathPaths` (network spec §4.2, §7, ticket 05 unit 05g) — every
+ * Path of kind `shortest_path` rooted at one entity, the Recommendation
+ * page's own read for its Concentration Paths section.
+ */
+describe('loadShortestPathPaths — kind shortest_path rooted at one entity', () => {
+  const AWARD = 'test-shortest-path-award';
+  const SECOND_SOURCE = 'test-shortest-path-second-source';
+
+  it('reads a shortest_path row rooted at the award, hydrated with its edge chain', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const db = await getTestDb();
+    await resetDerived(db);
+
+    await db.insert(t.entity).values([
+      { id: AWARD, label: 'Award Co', country: 'USA' },
+      { id: SECOND_SOURCE, label: 'Second Source Co', country: 'MEX' },
+    ]);
+    const [upstreamResponse] = await db
+      .insert(t.upstreamResponse)
+      .values({
+        source: 'sayari',
+        endpoint: 'traversal.shortestPath',
+        paramsHash: 'test-hash-shortest-path',
+        params: { entities: [AWARD, SECOND_SOURCE] },
+        body: {},
+        bodyHash: 'test-body-hash-shortest-path',
+        via: 'sdk',
+      })
+      .returning({ id: t.upstreamResponse.id });
+    const [enrichment] = await db
+      .insert(t.enrichment)
+      .values({
+        source: 'sayari_shortest_path',
+        subjectKind: 'entity',
+        subjectKey: AWARD,
+        requestParams: { entities: [AWARD, SECOND_SOURCE] },
+        upstreamResponseId: upstreamResponse!.id,
+      })
+      .returning({ id: t.enrichment.id });
+    await db.insert(t.record).values([{ id: 'source/rec-shortest-path/1700000000000' }]);
+    const [edge] = await db
+      .insert(t.entityRelationship)
+      .values({
+        fromEntityId: AWARD,
+        toEntityId: SECOND_SOURCE,
+        relationshipType: 'shareholder_of',
+        sourceRecordId: 'source/rec-shortest-path/1700000000000',
+      })
+      .returning({ id: t.entityRelationship.id });
+    await db.insert(t.graphPath).values({
+      rootEntityId: AWARD,
+      terminalEntityId: SECOND_SOURCE,
+      kind: 'shortest_path',
+      direction: 'either',
+      hopDepth: 1,
+      edgeIds: [edge!.id],
+      enrichmentId: enrichment!.id,
+    });
+
+    const paths = await loadShortestPathPaths(db, AWARD);
+    expect(paths).toHaveLength(1);
+    expect(paths[0]!.terminalEntityId).toBe(SECOND_SOURCE);
+    expect(paths[0]!.edges.map((e) => e.sourceRecordId)).toEqual([
+      'source/rec-shortest-path/1700000000000',
+    ]);
+
+    // Reading `family`/`watchlist` off the same root sees nothing — this
+    // fixture wrote only a `shortest_path` row.
+    expect(await loadFamilyPaths(db, AWARD)).toEqual([]);
+  });
+
+  it('an award with no shortest_path row returns an empty array', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const db = await getTestDb();
+    expect(await loadShortestPathPaths(db, 'no-such-award-id')).toEqual([]);
   });
 });
