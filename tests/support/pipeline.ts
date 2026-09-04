@@ -5,6 +5,7 @@ import { enrichSupplier } from '@/jobs/enrich-supplier';
 import { replayFetch } from '@/fixtures/replay-fetch';
 import { loadFixture } from '@/fixtures/load';
 import { replayUpstream, seedUpstream } from '@/fixtures/replay-upstream';
+import type { Fixture } from '@/fixtures/types';
 import type { TestDb } from './test-db';
 import { seededProgram } from './seeded-program';
 
@@ -61,6 +62,8 @@ export async function buildAssessableSupplier(
   const enrichFixture = await loadFixture('enrich/yazaki');
   await seedUpstream(db, resolveFixture);
   await seedUpstream(db, enrichFixture);
+  await seedRecordsFromFixture(db, resolveFixture);
+  await seedRecordsFromFixture(db, enrichFixture);
 
   const [run] = await db
     .insert(t.run)
@@ -166,4 +169,85 @@ export async function openJob(
     })
     .returning({ id: t.job.id });
   return job!.id;
+}
+
+/**
+ * Seeds a `record` row for every source record the cached bodies name.
+ *
+ * ## The asymmetry this closes
+ *
+ * Only `sayari_get_record` writes to `record` (`tools/catalog/lookups.ts`), and
+ * nothing in the reconstructed pipeline calls it — so the table is empty here,
+ * while the development database a recording runs against has it warm from
+ * every earlier Job. That difference is invisible until a model cites a source
+ * record: `resolveCitations` looks the row up, finds nothing, and the citation
+ * check rejects the whole draft.
+ *
+ * It is not hypothetical. `assess/published-with-objections` carries **eight**
+ * `recordId` citations and its recording never called `sayari_get_record`, so
+ * those rows can only have come from the development database's own history.
+ * Re-recording that fixture against this starting state fails for exactly that
+ * reason — twelve objections, every one of them *"points at a row that does not
+ * exist"*. This is the residual half of finding 85: recording and replay must
+ * not own different starting states, and `record` was the table still doing so.
+ *
+ * ## Deliberately partial rows
+ *
+ * The ids and their two dates are what the cached bodies genuinely carry. A
+ * record's `source`, `label` and `fields` come only from `getRecord`, which
+ * spends a Sayari credit — so they are left null rather than invented. That is
+ * enough for a citation to resolve against evidence the recording really saw,
+ * and it never puts made-up content behind one.
+ */
+export async function seedRecordsFromFixture(db: TestDb, fixture: Fixture): Promise<number> {
+  const seen = new Map<string, { publishedAt: Date | null; collectedAt: Date | null }>();
+
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (node === null || typeof node !== 'object') return;
+    const obj = node as Record<string, unknown>;
+
+    // A record id rides under `record` on a relationship value and under
+    // `referenceId` on an entity; both name the same id space, and a model can
+    // cite either.
+    for (const key of ['record', 'referenceId'] as const) {
+      const id = obj[key];
+      if (typeof id === 'string' && id.length > 0 && !seen.has(id)) {
+        seen.set(id, {
+          publishedAt: asDate(obj.publicationDate),
+          collectedAt: asDate(obj.acquisitionDate),
+        });
+      }
+    }
+
+    for (const value of Object.values(obj)) walk(value);
+  };
+
+  for (const row of fixture.upstream) walk(row.body);
+  if (seen.size === 0) return 0;
+
+  await db
+    .insert(t.record)
+    .values(
+      [...seen].map(([id, dates]) => ({
+        id,
+        publishedAt: dates.publishedAt,
+        collectedAt: dates.collectedAt,
+      })),
+    )
+    // A later fixture naming the same record must not overwrite the first, and
+    // `first_seen_at` is what the staleness rule reads (SPEC §12.1).
+    .onConflictDoNothing({ target: t.record.id });
+
+  return seen.size;
+}
+
+/** A date the cached body carries, or null. Never throws on a malformed one. */
+function asDate(value: unknown): Date | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

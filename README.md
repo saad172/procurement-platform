@@ -215,16 +215,11 @@ pnpm worker     # background jobs, in a second terminal
 pnpm check      # typecheck + lint + tests — no credentials, no network required
 ```
 
-128 test files, 1,233 tests, 1,230 of them passing against a real Postgres
-instance (not mocks). The three failures are a single known fixture drift:
-the recorded `assess/published-with-objections` conversation predates a
-change to the assessment prompt, so its replay misses — two assess tests fail
-on it directly and one recommend test fails through it, because a
-Recommendation needs a published Assessment first. Re-recording it takes a
-live, billed model run, and the last attempt was rejected by the app's own
-citation check, because the re-recorded draft cites evidence rows the
-replay's reconstructed starting state does not hold. So it is written down
-here rather than hidden behind a skip.
+128 test files, 1,233 tests, all passing against a real Postgres instance
+(not mocks). A replay is only as honest as the state it starts from, so the
+harness rebuilds that state from the cached bodies themselves — down to the
+`record` rows a citation has to resolve through — rather than inheriting
+whatever a development database happened to be holding.
 
 CI (`.github/workflows/ci.yml`) runs the same suite against a real
 `postgres:17` service container on every push and PR — with no API keys
