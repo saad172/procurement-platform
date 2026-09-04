@@ -16,6 +16,8 @@ import { PROGRAM } from '@/db/seed-data/program';
  *   pnpm enqueue assess "Sumitomo Electric"
  *   pnpm enqueue recommend HAR
  *   pnpm enqueue discover BAT
+ *   pnpm enqueue pairs PWR
+ *   pnpm enqueue trade Yazaki HAR
  *
  * **The point is to drive the real path.** The smoke scripts call a Job's
  * function directly, which is right for probing one layer — but they pass no
@@ -31,6 +33,13 @@ import { PROGRAM } from '@/db/seed-data/program';
  * `fetch_entity` is absent on purpose: its subject is an entity id, not a name
  * a person types, and the system queues it the first time it meets a company
  * nested in somebody else's payload. The guard below rejects it by name.
+ *
+ * `pairs` and `trade` are both here too (network spec §7, §4.3; tickets 04,
+ * 05), matching each Job's own `enqueue_*` tool subject: `pairs` runs over a
+ * Category's whole roster (`enqueue_check_every_pair`), `trade` over one
+ * accepted Supplier's Profile (`enqueue_trade` — `subjectType: 'supplier'`,
+ * resolved to its entity id by the worker, `resolveTradeEntityId`,
+ * BUILD-NOTES finding 161).
  */
 const SUBJECT_BY_KIND: Partial<Record<JobKind, 'supplier' | 'category'>> = {
   resolve: 'supplier',
@@ -40,6 +49,8 @@ const SUBJECT_BY_KIND: Partial<Record<JobKind, 'supplier' | 'category'>> = {
   recommend: 'category',
   discover: 'category',
   dossier: 'supplier',
+  pairs: 'category',
+  trade: 'supplier',
 };
 
 const TRIGGER_BY_KIND: Partial<Record<JobKind, Parameters<typeof openRun>[1]['trigger']>> = {
@@ -50,24 +61,36 @@ const TRIGGER_BY_KIND: Partial<Record<JobKind, Parameters<typeof openRun>[1]['tr
   recommend: 'rerun_recommendation',
   discover: 'discover',
   dossier: 'dossier',
+  pairs: 'pairs',
+  trade: 'trade',
 };
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2).filter((arg) => !arg.startsWith('--'));
   const kind = args[0] as JobKind | undefined;
   const subject = args[1];
+  /**
+   * `trade` alone takes a third positional argument — a Category code — for
+   * the fourth call's HS-code filter (`enqueue_trade`'s own `categoryId`
+   * input, `src/tools/catalog/enqueues.ts`). Every other kind here ignores a
+   * third argument entirely.
+   */
+  const tradeCategoryCode = args[2];
 
-  if (!kind || !subject || !(kind in SUBJECT_BY_KIND)) {
+  if (!kind || !subject || !(kind in SUBJECT_BY_KIND) || (kind === 'trade' && !tradeCategoryCode)) {
     console.error(
       [
-        'Usage: pnpm enqueue <kind> <subject>',
+        'Usage: pnpm enqueue <kind> <subject> [category-code]',
         `  kinds:    ${Object.keys(SUBJECT_BY_KIND).join(', ')}`,
         '  subject:  a Supplier roster name, or a Category code',
+        '  [category-code]:  required for trade only — the Category whose HS lines filter call 4',
         '',
         '  --test-program  use the arranged fixtures program (SPEC §19.3)',
         '',
         '  e.g. pnpm enqueue resolve Yazaki',
         '       pnpm enqueue recommend HAR',
+        '       pnpm enqueue pairs PWR',
+        '       pnpm enqueue trade Yazaki HAR',
         '       pnpm enqueue resolve Rosoboronexport --test-program',
       ].join('\n'),
     );
@@ -117,17 +140,36 @@ async function main(): Promise<void> {
       return;
     }
 
+    /**
+     * Mirrors `enqueue_trade`'s own `params: { categoryId }` shape exactly
+     * (`src/tools/catalog/enqueues.ts`), so a `trade` Job queued from here is
+     * indistinguishable in the `job` table from one a real chat confirm would
+     * have produced.
+     */
+    let params: Record<string, unknown> | undefined;
+    if (kind === 'trade') {
+      const tradeCategory = await db.query.category.findFirst({
+        where: and(eq(t.category.code, tradeCategoryCode!), eq(t.category.programId, program.id)),
+      });
+      if (!tradeCategory) {
+        console.error(`No category coded "${tradeCategoryCode}" on this program.`);
+        process.exitCode = 1;
+        return;
+      }
+      params = { categoryId: tradeCategory.id };
+    }
+
     const runId = await openRun(db, {
       programId: program.id,
       trigger,
-      subjectLabel: `${kind} ${subject}`,
+      subjectLabel: kind === 'trade' ? `${kind} ${subject} (${tradeCategoryCode})` : `${kind} ${subject}`,
       // One subject, so the Run's budget is one Supplier's worth. A Run opened
       // with no count carries no budget at all, which is right for chat and
       // wrong here — a fixture recording should meet the same ceiling a real
       // run would.
       supplierCount: 1,
     });
-    const jobId = await enqueueJob(db, { runId, kind, subjectType, subjectId: row.id });
+    const jobId = await enqueueJob(db, { runId, kind, subjectType, subjectId: row.id, params });
 
     console.warn(
       `queued ${kind} "${subject}"\n  job ${jobId}\n  run ${runId}\n\nRun \`pnpm worker\` to process it.`,

@@ -12,7 +12,7 @@ import { upsertEntity } from '@/jobs/resolve';
 import { runResolveJob } from '@/jobs/resolve-job';
 import { readDeepTraversalParams, runDeepTraversal } from '@/jobs/traverse';
 import { runPairsCheck } from '@/jobs/pairs';
-import { runTradeJob } from '@/jobs/trade';
+import { resolveTradeEntityId, runTradeJob } from '@/jobs/trade';
 import { checkRunBudget, enqueueJob } from '@/jobs/runs';
 import { assessSupplier } from '@/jobs/assess';
 import { recommendCategory } from '@/jobs/recommend';
@@ -367,13 +367,25 @@ async function pairsJobHandler(job: JobRow, database: Database, env: Env): Promi
  * confirm-gated.
  *
  * Deterministic, like `pairs`/`traverse`: no model turn, so its Trace is its
- * `usage_event` rows. The subject is an **entity**, like `traverse`
- * (`enqueue_deep_traversal`'s own "one company's own record" convention) —
- * a Profile's trade footprint is about the company in the graph, not about
- * the Supplier row or the Category that happened to trigger the confirm
- * gate.
+ * `usage_event` rows. **The subject is the Supplier row**, like
+ * `enrich`/`assess` — `enqueue_trade` (`src/tools/catalog/enqueues.ts`) takes
+ * `supplierId` from the Supplier page and chat both, not a raw entity id, so
+ * `job.subjectId` is resolved to the accepted Match's entity id
+ * (`resolveTradeEntityId`, `src/jobs/trade.ts`) before any of the four calls
+ * run. This used to read `job.subjectId` straight into `runTradeJob` on the
+ * belief the subject was already an entity id, like `traverse`'s — see
+ * `resolveTradeEntityId`'s own doc comment for why that went uncaught
+ * (BUILD-NOTES finding 161).
  */
 async function tradeJobHandler(job: JobRow, database: Database, env: Env): Promise<JobOutcome> {
+  const entityId = await resolveTradeEntityId(database, job.subjectId);
+  if (!entityId) {
+    return {
+      state: 'failed',
+      error: `supplier ${job.subjectId} has no accepted match with an entity id`,
+    };
+  }
+
   const upstream = createUpstream({
     db: database,
     runId: job.runId,
@@ -384,11 +396,11 @@ async function tradeJobHandler(job: JobRow, database: Database, env: Env): Promi
 
   const result = await runTradeJob(
     { db: database, upstream, jobId: job.id },
-    { entityId: job.subjectId },
+    { entityId },
   );
 
   console.log(
-    `  trade ${job.subjectId}: footprint ${result.footprintWritten ? 'written' : 'empty'}, ` +
+    `  trade ${job.subjectId} (${entityId}): footprint ${result.footprintWritten ? 'written' : 'empty'}, ` +
       `${result.buyerCount} buyer(s), ${result.shipmentCount} shipment(s), ` +
       `${result.supplyChainPathCount} upstream Path(s)` +
       (result.supplyChainTruncated ? ' (upstream truncated)' : ''),

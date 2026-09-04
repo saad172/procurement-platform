@@ -12,6 +12,7 @@ import {
 } from '@/config/constants';
 import { hsHeading } from '@/domain/hs-code';
 import type { ParsedEdge } from '@/domain/parse-relationships';
+import { UpstreamError } from '@/upstream/errors';
 import { recordEnrichment, storeHopEdges, type EnrichContext } from './enrich';
 import { writeGraphPaths, type GraphPathWrite, type PathHop } from './family-members';
 import type {
@@ -526,11 +527,21 @@ export function summariseTradeTraversalPath(
 }
 
 export type SupplyChainUpstreamResult = {
-  enrichmentId: string;
+  /** Null when Sayari 404'd — see this function's own doc comment. */
+  enrichmentId: string | null;
   members: Awaited<ReturnType<typeof writeGraphPaths>>;
   truncated: boolean;
   reachable: number | null;
   pathsConsidered: number;
+};
+
+/** Nothing found, nothing to cite — Sayari's own 404, not our own failure. */
+const EMPTY_SUPPLY_CHAIN_RESULT: SupplyChainUpstreamResult = {
+  enrichmentId: null,
+  members: [],
+  truncated: false,
+  reachable: null,
+  pathsConsidered: 0,
 };
 
 /**
@@ -547,6 +558,28 @@ export type SupplyChainUpstreamResult = {
  * (`src/jobs/enrich.ts`): the first `path` entry to reach a given terminal
  * wins, and a second entry reaching the same terminal by a different route
  * is not written a second time.
+ *
+ * **A 404 here means "nothing upstream," not "something broke."** Live
+ * against Yazaki (BUILD-NOTES finding 161): unlike the three `trade.search*`
+ * calls above, which are searches and answer an empty result with `200` and
+ * `data: []`, this is a `GET /v1/supply_chain/upstream/{id}` **resource**
+ * fetch, and Sayari answers a Profile with no upstream tiers matching this
+ * ticket's own `component`/`risk`/`maxDepth`/`minDate` filter with a bare
+ * `404`, classified `not_found` (`src/upstream/classify.ts`) — a real,
+ * previously-unexercised case, since nothing before a live, worker-driven
+ * trade Job ever sent this endpoint a filter narrow enough to come back
+ * empty. Left uncaught, that 404 propagated past this function, past
+ * `runTradeJob`, and `runOneJob`'s catch (`src/worker/poll.ts`) turned the
+ * WHOLE Job `failed` — discarding the three already-written, successful
+ * `sayari_trade_footprint` calls' work along with it, over a Profile that
+ * legitimately has no upstream chain to report. Spec §4.3's own table calls
+ * this call's Paths *"if any"* — this function now reads that literally:
+ * `not_found` is caught and answered with
+ * `EMPTY_SUPPLY_CHAIN_RESULT` (no Enrichment, because there is no successful
+ * response to cite — the attempt itself stays on the record via this call's
+ * own `usage_event` row, `outcome: 'error'`, `error_kind: 'not_found'`) —
+ * every other `UpstreamErrorKind` still throws, unchanged, because every
+ * other kind names something only we can fix.
  */
 export async function runSupplyChainUpstreamTradeTraversal(
   ctx: EnrichContext,
@@ -557,13 +590,19 @@ export async function runSupplyChainUpstreamTradeTraversal(
   const component = [...new Set(args.component)];
   const risk = [...SUPPLY_CHAIN_UPSTREAM_RISK_STEMS];
 
-  const result = await ctx.upstream.sayari.upstreamTradeTraversal({
-    id: args.entityId,
-    component,
-    risk,
-    maxDepth: SUPPLY_CHAIN_UPSTREAM_MAX_DEPTH,
-    minDate,
-  });
+  let result: Awaited<ReturnType<typeof ctx.upstream.sayari.upstreamTradeTraversal>>;
+  try {
+    result = await ctx.upstream.sayari.upstreamTradeTraversal({
+      id: args.entityId,
+      component,
+      risk,
+      maxDepth: SUPPLY_CHAIN_UPSTREAM_MAX_DEPTH,
+      minDate,
+    });
+  } catch (error) {
+    if (error instanceof UpstreamError && error.kind === 'not_found') return EMPTY_SUPPLY_CHAIN_RESULT;
+    throw error;
+  }
 
   const enrichmentId = await recordEnrichment(ctx, {
     source: 'sayari_supply_chain_upstream',
@@ -628,6 +667,41 @@ export async function runSupplyChainUpstreamTradeTraversal(
   return { enrichmentId, members, truncated, reachable: exploredCount, pathsConsidered: paths.length };
 }
 
+// ── The trade Job's subject: a Supplier row, resolved to its Profile ───────
+
+/**
+ * Resolves a trade Job's subject — `job.subjectId`, a **Supplier row's own
+ * id** — to the accepted Profile's Sayari entity id every downstream call
+ * needs (network spec §4.3; BUILD-NOTES finding 161).
+ *
+ * **`enqueue_trade` enqueues `subjectType: 'supplier'`, not `'entity'`.**
+ * `src/tools/catalog/enqueues.ts`'s `enqueueTrade` takes `supplierId` from
+ * the Supplier page and chat both — the same convention `enqueueEnrichment`/
+ * `enqueueReassess` already use, and its own test
+ * (`tests/tools/enqueue-trade.test.ts`) asserts the call shape
+ * (`subjectType: 'supplier'`) directly. `src/worker/main.ts`'s
+ * `tradeJobHandler` used to read `job.subjectId` straight into `runTradeJob`'s
+ * `entityId` on the belief that the subject was already an entity id, like
+ * `traverse`'s — a stale assumption from before `enqueue_trade`'s own unit
+ * settled its input shape on a Supplier instead, never reconciled because no
+ * test crosses the boundary between the two: `enqueue-trade.test.ts` mocks
+ * `enqueueJob` itself, and `trade.test.ts` calls `runTradeJob` directly with a
+ * hand-picked entity id, so a real, worker-driven trade Job was the first
+ * thing to ever pass a Supplier's own uuid to a Sayari `filter.supplierId`
+ * expecting a Sayari entity id.
+ *
+ * Returns `null` when the Supplier has no accepted Match or an accepted Match
+ * with no entity id (the schema allows the combination even though nothing
+ * today writes it) — the caller's to fail rather than this function's, the
+ * same division `loadAcceptedBidders` (`src/jobs/pairs.ts`) keeps.
+ */
+export async function resolveTradeEntityId(db: Database, supplierId: string): Promise<string | null> {
+  const match = await db.query.match.findFirst({
+    where: and(eq(t.match.supplierId, supplierId), eq(t.match.status, 'accepted')),
+  });
+  return match?.entityId ?? null;
+}
+
 // ── The Category's six-digit HS codes for one accepted Profile ─────────────
 
 /**
@@ -639,10 +713,11 @@ export async function runSupplyChainUpstreamTradeTraversal(
  * `match.entity_id` is not (`pairs.ts`'s own doc comment: "a brand-name row
  * and a legal-entity row colliding is correct") — the same Profile can be
  * the settled answer for more than one Supplier row, each possibly bidding
- * a different Category. The trade Job is keyed on the entity id alone
- * (`subjectType: 'entity'`, matching `traverse`'s own convention — "one
- * company's own record"), so there is no single Category to prefer over
- * another; the union of every bid Category's HS lines is the complete,
+ * a different Category. The trade Job's own subject is a Supplier row,
+ * resolved to its entity id by `resolveTradeEntityId` above, and more than
+ * one Supplier can resolve to the same entity id — so there is no single
+ * Category to prefer over another; the union of every bid Category's HS
+ * lines is the complete,
  * honest answer to "what does this Profile's own supply chain need to be
  * checked against," and dropping a second Category's lines because only the
  * first was picked would silently narrow the filter for no reason a person
@@ -688,7 +763,8 @@ export type TradeJobResult = {
   footprintEnrichmentId: string;
   buyersEnrichmentId: string;
   shipmentsEnrichmentId: string;
-  supplyChainEnrichmentId: string;
+  /** Null when call 4 came back 404 ("nothing upstream") — see `runSupplyChainUpstreamTradeTraversal`. */
+  supplyChainEnrichmentId: string | null;
   footprintWritten: boolean;
   buyerCount: number;
   shipmentCount: number;
