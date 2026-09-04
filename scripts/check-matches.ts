@@ -154,7 +154,7 @@ function print(confirmed: Graded[], unconfirmed: Graded[], total: number): void 
   if (confirmed.length === 0) {
     console.log(
       '  Nothing is confirmed yet, so there is no scoreboard. The draft below is\n' +
-        '  what a person has to read first — see docs/seed/expected-matches-draft.md.\n',
+        '  what a person has to read first — see src/db/seed-data/expected-matches.ts.\n',
     );
   } else {
     for (const outcome of ORDER) {

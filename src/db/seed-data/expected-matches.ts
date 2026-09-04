@@ -23,7 +23,7 @@
  *
  * **`confirmed` is `true` on every row, by the owner's instruction of
  * 2026-09-02 ("make the best assumptions for now").** A row stays true until a
- * person reads `docs/seed/expected-matches-draft.md` and says otherwise, and
+ * person reviews it and says otherwise, and
  * `check-matches.ts` counts only confirmed rows in its headline. A scoreboard
  * that grades itself against its own guesses is not a measurement.
  *

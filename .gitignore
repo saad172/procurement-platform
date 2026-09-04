@@ -10,5 +10,12 @@ coverage/
 .turbo/
 tsconfig.tsbuildinfo
 
-# A tool cache keyed by session id and absolute path — machine-local.
-.impeccable/hook.cache.json
+# Local AI-agent working files — not part of the delivered repo.
+.scratch/
+.impeccable/
+CLAUDE.md
+CONTEXT.md
+
+# The assignment's own source material — confidential, and not ours to publish.
+FDE_Assessment_Instructions.pdf
+Sayari NAG List.xlsx
