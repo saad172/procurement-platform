@@ -662,5 +662,15 @@ export async function findConcentrations(
         inArray(gpA.kind, [...CONCENTRATION_KINDS]),
         inArray(gpB.kind, [...CONCENTRATION_KINDS]),
       ),
-    );
+    )
+    // Unordered otherwise — Postgres gives no row-order guarantee without
+    // this, and the query planner is free to pick a different join strategy
+    // (and therefore a different output order) for logically identical data
+    // on different Postgres builds. Every caller of this join feeds the
+    // pairs straight into a model-facing payload (`concentrationWith`) with
+    // no re-sort of its own, so an unordered result here is nondeterministic
+    // prompt content — the exact thing that broke fixture replay for HAR
+    // (wire harnesses), the one Category with enough concentration pairs to
+    // expose it.
+    .orderBy(gpA.rootEntityId, gpB.rootEntityId, gpA.terminalEntityId);
 }

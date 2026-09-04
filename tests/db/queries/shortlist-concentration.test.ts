@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { loadShortlist } from '@/db/queries/shortlist';
 import { getTestDb, testDatabaseIsUp } from '../../support/test-db';
@@ -33,14 +33,15 @@ describe("loadShortlist's Concentration column", () => {
   afterAll(async () => {
     if (!up) return;
     const db = await getTestDb();
+    const programId = (await seededProgram(db)).id;
+    // All three — this used to delete only ROSTER_A, leaving B and C on the
+    // real seeded "HAR" Category for every test file that ran afterward in
+    // the same process. `recommend-replay.test.ts` builds its prompt from
+    // exactly that Category's bidders, so the leak made its recorded fixture
+    // replay-miss nondeterministically, depending on file execution order.
     await db
       .delete(t.supplier)
-      .where(
-        and(
-          eq(t.supplier.rosterName, ROSTER_A),
-          eq(t.supplier.programId, (await seededProgram(db)).id),
-        ),
-      );
+      .where(and(inArray(t.supplier.rosterName, [ROSTER_A, ROSTER_B, ROSTER_C]), eq(t.supplier.programId, programId)));
   });
 
   async function seedFixture() {

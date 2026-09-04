@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { afterAll, describe, expect, it } from 'vitest';
+import { and, eq, inArray } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { getRegistry, type ToolContext } from '@/tools';
 import { getTestDb, testDatabaseIsUp } from '../support/test-db';
@@ -27,6 +27,23 @@ describe('get_shortlist — Concentration', () => {
   const ENTITY_A = 'test-get-shortlist-concentration-entity-a';
   const ENTITY_B = 'test-get-shortlist-concentration-entity-b';
   const SHARED_PARENT = 'test-get-shortlist-concentration-shared-parent';
+
+  // Without this, both bespoke Suppliers stay on the real seeded "HAR"
+  // Category for the rest of the process — `recommend-replay.test.ts` builds
+  // its prompt from exactly that Category's bidders, so the leak made its
+  // recorded fixture replay-miss nondeterministically, depending on which
+  // file ran first (`tests/db/queries/shortlist-concentration.test.ts` had
+  // the same gap, fixed alongside this one).
+  afterAll(async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const db = await getTestDb();
+    const program = await seededProgram(db);
+    await db
+      .delete(t.supplier)
+      .where(
+        and(inArray(t.supplier.rosterName, [ROSTER_A, ROSTER_B]), eq(t.supplier.programId, program.id)),
+      );
+  });
 
   it('names the joined Supplier in the model summary and carries the shared terminal in the widget payload', async () => {
     if (!(await testDatabaseIsUp())) return;

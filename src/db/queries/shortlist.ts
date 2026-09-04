@@ -93,10 +93,16 @@ export async function loadSupplierSnapshots(
   db: Database,
   args: { programId: string; supplierIds?: string[] | undefined },
 ): Promise<SupplierSnapshot[]> {
+  // Determines the iteration order below, which `excluded` (in `loadShortlist`)
+  // inherits untouched into a model-facing payload — `roster_index` first so
+  // that order matches the roster's own natural order, `id` as a tiebreak for
+  // discovered suppliers (`roster_index IS NULL`). Without an explicit order,
+  // Postgres gives none at all.
   const suppliers = await db
     .select()
     .from(t.supplier)
-    .where(eq(t.supplier.programId, args.programId));
+    .where(eq(t.supplier.programId, args.programId))
+    .orderBy(t.supplier.rosterIndex, t.supplier.id);
   const wanted = args.supplierIds ? new Set(args.supplierIds) : undefined;
 
   const out: SupplierSnapshot[] = [];
@@ -282,10 +288,15 @@ export async function loadShortlist(
     facets?: Facets | undefined;
   },
 ): Promise<ShortlistResult> {
+  // Ordered so `excluded` (below) has a stable order — `ranked` re-sorts by
+  // content so it doesn't depend on this, but `excluded` inherits this row
+  // order untouched, and it reaches a model-facing payload (`get_shortlist`)
+  // as-is. Without this, Postgres gives no order guarantee at all.
   const bidders = await db
     .select({ supplierId: t.supplierCategory.supplierId })
     .from(t.supplierCategory)
-    .where(eq(t.supplierCategory.categoryId, args.categoryId));
+    .where(eq(t.supplierCategory.categoryId, args.categoryId))
+    .orderBy(t.supplierCategory.supplierId);
 
   const snapshots = await loadSupplierSnapshots(db, {
     programId: args.programId,
