@@ -460,6 +460,43 @@ const shortestPathSchemaInner = z
   .loose();
 
 /**
+ * One entry of `ontology.getRiskFactors`' full vocabulary — the ground truth
+ * a factor name like `sanctioned_usa_ofac_sdn` or `forced_labor_uflpa_origin_
+ * subtier` belongs to. `categories` is the field that matters most to this
+ * app: it is Sayari's own classification of the factor (`sanctions`,
+ * `export_controls`, `forced_labor`, `adverse_media`, …), which is what a
+ * name-token classifier elsewhere in the app can be checked against.
+ */
+const ontologyRiskFactorSchema = z
+  .object({
+    id: z.string().nullish(),
+    categories: z.array(z.string()).nullish(),
+    label: z.string().nullish(),
+    description: z.string().nullish(),
+    doc: z.string().nullish(),
+    code: z.number().nullish(),
+    level: z.string().nullish(),
+    risk_type: z.string().nullish(),
+    risk_viz: z.string().nullish(),
+    visible: z.boolean().nullish(),
+    enabled: z.boolean().nullish(),
+    type: z.string().nullish(),
+  })
+  .loose();
+
+/**
+ * `ontology.getRiskFactors`'s envelope: `{ filters, data, totalCount }`.
+ * `filters` echoes the request back and is never read; `data` and
+ * `total_count` are.
+ */
+const ontologyRiskFactorsSchemaInner = z
+  .object({
+    data: z.array(ontologyRiskFactorSchema).nullish(),
+    total_count: z.number().nullish(),
+  })
+  .loose();
+
+/**
  * `negativeNews` takes a **bare name**, so disambiguation is ours — the input
  * is always the resolved legal name (SPEC §7.1).
  */
@@ -805,6 +842,7 @@ export const recordSchema = eitherCasing(recordSchemaInner);
 export const traversalPathSchema = eitherCasing(traversalPathSchemaInner);
 export const traversalSchema = eitherCasing(traversalSchemaInner);
 export const shortestPathSchema = eitherCasing(shortestPathSchemaInner);
+export const ontologyRiskFactorsSchema = eitherCasing(ontologyRiskFactorsSchemaInner);
 export const negativeNewsSchema = eitherCasing(negativeNewsSchemaInner);
 export const tradeSearchSchema = eitherCasing(tradeSearchSchemaInner);
 /** One `trade.searchShipments` row on its own — for a caller that already has one. */
@@ -822,10 +860,14 @@ export const upstreamTradeTraversalSchema = z.preprocess(
 export type SayariEntity = z.infer<typeof entitySchemaInner>;
 /** The projected `entitySummary` shape — see `entitySummarySchemaInner`'s doc comment for what it lacks. */
 export type SayariEntitySummary = z.infer<typeof entitySummarySchemaInner>;
+/** `record.getRecord`'s projected shape — see `recordSchemaInner`'s own fields. */
+export type SayariRecord = z.infer<typeof recordSchemaInner>;
 export type SayariResolutionCandidate = z.infer<typeof resolutionCandidateSchemaInner>;
 export type SayariTraversalPath = z.infer<typeof traversalPathSchemaInner>;
 export type SayariTraversal = z.infer<typeof traversalSchemaInner>;
 export type SayariShortestPath = z.infer<typeof shortestPathSchemaInner>;
+/** One entry of `ontology.getRiskFactors`' full vocabulary. */
+export type SayariOntologyRiskFactor = z.infer<typeof ontologyRiskFactorSchema>;
 /** One `trade.searchShipments` row — see `shipmentSchemaInner`'s own doc comment. */
 export type SayariShipment = z.infer<typeof shipmentSchemaInner>;
 /** `supplyChain.upstreamTradeTraversal`'s projected shape (network spec §4.3). */

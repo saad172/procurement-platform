@@ -1,7 +1,12 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { classify } from './classify';
-import { UpstreamCacheMissError, UpstreamCapExceededError, UpstreamError } from './errors';
+import {
+  UpstreamCacheMissError,
+  UpstreamCapExceededError,
+  UpstreamError,
+  UpstreamPersistError,
+} from './errors';
 import { canonicalParams, hashBody, hashParams } from './hash';
 import { withRateLimit } from './rate-limit';
 import type { EndpointDef, UpstreamContext, UpstreamResult } from './types';
@@ -175,16 +180,28 @@ async function lookupCache<TParams extends Record<string, unknown>, TProjected>(
 /**
  * ── 2. Dispatch ────────────────────────────────────────────────────────────
  *
- * The per-Job ceiling, the credentials guard, the retried live call, and —
- * nested inside the same try/catch as the call itself — phases 3 (write) and
- * 4 (project). They stay inside this one function, rather than becoming
- * further top-level calls from `call()`, because the retry loop's
- * try/catch/finally is the thing that must not move: a failure while writing
- * `upstream_response` or while projecting is still a failure *of this
- * attempt*, classified and (if retryable) retried the same as a failure in
- * the live call itself. Pulling write and project out to `call()` would put
- * their exceptions outside that catch — a different handler for the same
- * failure.
+ * The per-Job ceiling, the credentials guard, the retried live call, and
+ * phases 3 (write) and 4 (project). They stay inside this one function,
+ * rather than becoming further top-level calls from `call()`, because the
+ * retry loop's try/finally is the thing that must not move.
+ *
+ * **The live call and the local write are retried on different terms, and
+ * that split is deliberate.** Only the live call — `def.dispatch` inside
+ * `withRateLimit` — sits in the try/catch that runs it through `classify()`
+ * and `RETRYABLE`: a 429, a timeout or a 5xx genuinely is a failure of that
+ * call, worth a second attempt. The write that follows a successful call
+ * (`upstream_response` then `usage_event`) has its own, narrower try/catch
+ * that never retries: a dropped connection, a deadlock or pool exhaustion
+ * there is a failure of OUR write, not of the call, which already succeeded
+ * and already spent the credit. Retrying it would repeat the live call to
+ * re-fetch a result already in hand, so it throws immediately instead, as
+ * `UpstreamPersistError` — a distinct type, outside the `UpstreamError`
+ * union `classify()` builds, so it can never be mistaken for a retryable
+ * failure of the call. `project()`, last, is reached only once the write has
+ * already succeeded and needs no try of its own here: it already throws its
+ * own classified `UpstreamError` (`kind: 'projection'`), not retryable and
+ * already excluded from the usage double-count below, so letting it
+ * propagate unmodified out of this function is the same outcome as before.
  *
  * ── The per-Job ceiling, checked before a live call ─────────────────────
  *
@@ -236,80 +253,122 @@ async function dispatch<TParams extends Record<string, unknown>, TProjected>(
     const startedAt = Date.now();
 
     try {
-      const { body, via } = await withRateLimit(def.source, () =>
-        def.dispatch(withDefaults, {
-          credentials,
-          signal: controller.signal,
-          timeoutMs: def.timeoutMs,
-        }),
-      );
-      const ms = Date.now() - startedAt;
-
-      // ── 3. Write, before projecting ──────────────────────────────────────
-      const bodyHash = hashBody(body);
-      const [stored] = await ctx.db
-        .insert(t.upstreamResponse)
-        .values({
+      // ── The live call — the only step retried, and the only step classified ──
+      let body: unknown;
+      let via: 'sdk' | 'raw';
+      try {
+        ({ body, via } = await withRateLimit(def.source, () =>
+          def.dispatch(withDefaults, {
+            credentials,
+            signal: controller.signal,
+            timeoutMs: def.timeoutMs,
+          }),
+        ));
+      } catch (error) {
+        const ms = Date.now() - startedAt;
+        const classified = classify(error, {
           source: def.source,
           endpoint: def.endpoint,
           paramsHash,
-          params,
-          body: body as never,
-          bodyHash,
-          via,
-        })
-        // `body` comes back so phase 4 can project the STORED row rather than
-        // the object that went in — see `project()` for why that matters.
-        .returning({
-          id: t.upstreamResponse.id,
-          fetchedAt: t.upstreamResponse.fetchedAt,
-          body: t.upstreamResponse.body,
         });
-      await writeUsage(ctx, def, {
-        ms,
-        outcome: 'ok',
-        cacheHit: false,
-        via,
-        upstreamResponseId: stored!.id,
-      });
-
-      // ── 4. Project ───────────────────────────────────────────────────────
-      return {
-        data: project(def, stored!.body, paramsHash),
-        cacheHit: false,
-        via,
-        fetchedAt: stored!.fetchedAt,
-        upstreamResponseId: stored!.id,
-        bodyHash,
-      };
-    } catch (error) {
-      const ms = Date.now() - startedAt;
-      const classified = classify(error, {
-        source: def.source,
-        endpoint: def.endpoint,
-        paramsHash,
-      });
-      // A projection failure happened after the body was already cached and
-      // counted; re-counting it would double the usage row for one call.
-      if (classified.kind !== 'projection') {
         await writeUsage(ctx, def, {
           ms,
           outcome: 'error',
           cacheHit: false,
           errorKind: classified.kind,
         });
-      }
-      lastError = classified;
+        lastError = classified;
 
-      const isLastAttempt = attempt === MAX_ATTEMPTS - 1;
-      if (isLastAttempt || !RETRYABLE.has(classified.kind)) throw classified;
-      await sleep(retryDelayMs(error, attempt));
+        const isLastAttempt = attempt === MAX_ATTEMPTS - 1;
+        if (isLastAttempt || !RETRYABLE.has(classified.kind)) throw classified;
+        await sleep(retryDelayMs(error, attempt));
+        continue;
+      }
+      const ms = Date.now() - startedAt;
+
+      // ── 3. Write, before projecting ──────────────────────────────────────
+      const stored = await persistDispatchResult(def, params, paramsHash, ctx, { body, via, ms });
+
+      // ── 4. Project ───────────────────────────────────────────────────────
+      return {
+        data: project(def, stored.body, paramsHash),
+        cacheHit: false,
+        via,
+        fetchedAt: stored.fetchedAt,
+        upstreamResponseId: stored.id,
+        bodyHash: stored.bodyHash,
+      };
     } finally {
       clearTimeout(timer);
     }
   }
 
   throw lastError ?? new Error('unreachable: retry loop exited without a result');
+}
+
+/**
+ * ── 3. Write, before projecting ────────────────────────────────────────────
+ *
+ * Split out of `dispatch()`'s retry loop only to keep that function under the
+ * lint's line cap — the split itself is not a decision, the try/catch it
+ * wraps is.
+ *
+ * **Its own try/catch, deliberately not the live call's.** By the time this
+ * runs the live call has already succeeded and already spent the credit, so a
+ * failure here — a dropped connection, a deadlock, pool exhaustion under this
+ * worker's own concurrency — is a local persistence problem, not an upstream
+ * one. It is not classified through `classify()`/`RETRYABLE` and it is not
+ * retried: retrying would dispatch a SECOND live call, spending a second
+ * credit, to persist a result the first call already returned. It throws
+ * `UpstreamPersistError` instead — a type outside the `UpstreamError` union
+ * `classify()` builds, so it can never be read back as a retryable failure of
+ * the call — and that failure ends this whole attempt immediately, the same
+ * as any other unretried throw out of `dispatch()`'s loop.
+ */
+async function persistDispatchResult<TParams extends Record<string, unknown>, TProjected>(
+  def: EndpointDef<TParams, TProjected>,
+  params: Record<string, unknown>,
+  paramsHash: string,
+  ctx: UpstreamContext,
+  dispatched: { body: unknown; via: 'sdk' | 'raw'; ms: number },
+): Promise<{ id: string; fetchedAt: Date; body: unknown; bodyHash: string }> {
+  const bodyHash = hashBody(dispatched.body);
+  try {
+    const [row] = await ctx.db
+      .insert(t.upstreamResponse)
+      .values({
+        source: def.source,
+        endpoint: def.endpoint,
+        paramsHash,
+        params,
+        body: dispatched.body as never,
+        bodyHash,
+        via: dispatched.via,
+      })
+      // `body` comes back so phase 4 can project the STORED row rather than
+      // the object that went in — see `project()` for why that matters.
+      .returning({
+        id: t.upstreamResponse.id,
+        fetchedAt: t.upstreamResponse.fetchedAt,
+        body: t.upstreamResponse.body,
+      });
+    const stored = row!;
+    await writeUsage(ctx, def, {
+      ms: dispatched.ms,
+      outcome: 'ok',
+      cacheHit: false,
+      via: dispatched.via,
+      upstreamResponseId: stored.id,
+    });
+    return { ...stored, bodyHash };
+  } catch (error) {
+    throw new UpstreamPersistError({
+      source: def.source,
+      endpoint: def.endpoint,
+      paramsHash,
+      cause: error,
+    });
+  }
 }
 
 /**

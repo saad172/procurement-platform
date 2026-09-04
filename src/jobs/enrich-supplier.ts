@@ -6,7 +6,11 @@ import { loadNetworkExposurePaths } from '@/db/queries/family-paths';
 import { nearestPlant } from '@/domain/geo';
 import type { CountrySource } from '@/domain/match/settle-match';
 import { scoreSupplier } from '@/domain/score';
-import { parseRiskObject } from '@/domain/scoring/risk-factors';
+import {
+  attachRiskIntelligence,
+  cachedRiskIntelligenceOf,
+  parseRiskObject,
+} from '@/domain/scoring/risk-factors';
 import type { SupplierScoringInput } from '@/domain/scoring/types';
 import {
   enrichCountry,
@@ -61,8 +65,16 @@ export async function enrichSupplier(
   const { profile } = loaded;
 
   const fanOut = await fanOutEnrichments(ctx, profile);
-  const { owners } = await loadOwnershipEvidence(ctx, profile.match);
-  const baseInput = await assembleScoringInput(ctx, args, profile, fanOut, owners);
+  const ownership = await loadOwnershipEvidence(ctx, profile.match);
+  const riskIntelligence = await loadCachedRiskIntelligence(ctx, profile.profileRow);
+  const baseInput = await assembleScoringInput(
+    ctx,
+    args,
+    profile,
+    fanOut,
+    ownership,
+    riskIntelligence,
+  );
 
   const criterionValuesWritten = await writeAllCriteria(db, {
     supplier: profile.supplier,
@@ -335,7 +347,7 @@ async function fanOutEnrichments(
 async function loadOwnershipEvidence(
   ctx: EnrichContext,
   match: AcceptedMatch,
-): Promise<{ owners: Awaited<ReturnType<typeof readOwnerEdges>> }> {
+): Promise<Awaited<ReturnType<typeof readOwnerEdges>>> {
   const own = await ctx.upstream.sayari
     .getEntity({ id: match.entityId })
     .catch((error: unknown) => {
@@ -352,29 +364,66 @@ async function loadOwnershipEvidence(
       );
       return null;
     });
-  const owners = own
-    ? await readOwnerEdges(ctx, { entityId: match.entityId, entity: own.data }).catch(
-        (error: unknown) => {
-          console.warn(
-            `  owner edges unreadable for ${match.entityId} — ownership will read unknown: ` +
-              `${error instanceof Error ? error.message : String(error)}`,
-          );
-          return [];
-        },
-      )
-    : [];
-  return { owners };
+  if (!own) return { owners: [], gapCoverage: 'unknown' };
+  return readOwnerEdges(ctx, { entityId: match.entityId, entity: own.data }).catch(
+    (error: unknown) => {
+      // Loud, and not fatal — same rule. The whole read failed rather than
+      // just its gap-fill traversal, so `gapCoverage` reads `'unknown'` here
+      // too: nothing about this owner set (empty, by construction) is
+      // confirmed complete.
+      console.warn(
+        `  owner edges unreadable for ${match.entityId} — ownership will read unknown: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { owners: [], gapCoverage: 'unknown' as const };
+    },
+  );
 }
 
-/** ── Assemble the scoring input ─────────────────────────────────────────── */
-async function assembleScoringInput(
+/**
+ * **The structured sanctions/export-control evidence behind this Profile's own
+ * risk factors** — read off the SAME cached body `entity.upstream_response_id`
+ * already points at, the one `upsertEntity` wrote down when this Profile was
+ * last fetched on its own. Never a new Sayari fetch: `db/queries/entity-page.ts`
+ * reads the identical row for the same reason, and `cachedRiskIntelligenceOf`
+ * (`@/domain/scoring/risk-factors`) is the one shared reader of it.
+ *
+ * `undefined` when there is no such row — most entities were never fetched on
+ * their own, only reached inside somebody else's traversal or search result
+ * (`entity.upstream_response_id`'s own doc comment) — and that is the common,
+ * harmless case: `attachRiskIntelligence` treats "nothing to join" as "leave
+ * every factor as it was", so compliance scoring still runs, just without a
+ * citation a sentence could quote.
+ */
+export async function loadCachedRiskIntelligence(
+  ctx: EnrichContext,
+  profileRow: typeof t.entity.$inferSelect,
+): Promise<unknown> {
+  if (!profileRow.upstreamResponseId) return undefined;
+  const cached = await ctx.db.query.upstreamResponse.findFirst({
+    where: eq(t.upstreamResponse.id, profileRow.upstreamResponseId),
+  });
+  return cachedRiskIntelligenceOf(cached);
+}
+
+/**
+ * ── Assemble the scoring input ───────────────────────────────────────────
+ *
+ * Exported for the same reason `siteCountryOf` is: a targeted test can call
+ * the exact function `enrichSupplier` calls, supplying a hand-built `fanOut`
+ * and `ownership` for the pipeline stages a given test is not about, rather
+ * than replaying every enrichment endpoint just to reach this one.
+ */
+export async function assembleScoringInput(
   ctx: EnrichContext,
   args: { programId: string },
   profile: ResolvedProfile,
   fanOut: FanOutResult,
-  owners: Awaited<ReturnType<typeof readOwnerEdges>>,
+  ownership: Awaited<ReturnType<typeof readOwnerEdges>>,
+  riskIntelligence: unknown,
 ): Promise<SupplierScoringInput> {
   const { db } = ctx;
+  const { owners, gapCoverage: ownerGapCoverage } = ownership;
   const { supplier, match, profileRow, siteCountry, countrySource } = profile;
   const { lat, lon, coordinatePrecision } = fanOut;
 
@@ -449,23 +498,18 @@ async function assembleScoringInput(
       closed: profileRow.closed,
       // `profileRow.risk` already carries every endpoint's per-factor
       // provenance — `upsertEntity` merges it on every write (SPEC §8.2 D5).
-      riskFactors: parseRiskObject(profileRow.risk),
+      // `riskIntelligence` layers the program/authority/list/date citation
+      // behind each factor on top, where the cached body carries one.
+      riskFactors: attachRiskIntelligence(parseRiskObject(profileRow.risk), riskIntelligence),
       psaCount: profileRow.psaCount ?? undefined,
       relationshipCount:
         (profileRow.relationshipCount as Record<string, number> | null) ?? undefined,
       relationshipsTruncated: profileRow.relationshipsTruncated,
     },
-    owners: owners.map((o) => ({
-      entityId: o.entityId,
-      label: o.label,
-      riskFactors: o.riskFactors,
-      isStateOwned: o.isStateOwned,
-      // Carried through so scoring can see them later (item C); nothing in
-      // this ticket's scoring reads them yet.
-      sharePercentage: o.sharePercentage,
-      startDate: o.startDate,
-      endDate: o.endDate,
-    })),
+    owners: mapOwnerEdges(owners),
+    // 'unknown' when a gap-fill traversal `readOwnerEdges` attempted went
+    // unfilled — see that field's own doc comment.
+    ownerGapCoverage,
     countryIndicators: indicators.map((i) => ({
       code: i.indicatorCode,
       value: i.value,
@@ -503,6 +547,27 @@ function mapNetworkPaths(
     riskFactors: parseRiskObject(p.risk),
     viaOwnership: p.viaOwnership,
     kind: p.kind,
+  }));
+}
+
+/**
+ * `OwnerEdge[]` → `SupplierScoringInput['owners']`. Split out of
+ * `assembleScoringInput` only to keep that function under the lint's line
+ * cap — the mapping itself is a straight field rename, not a decision.
+ */
+function mapOwnerEdges(
+  owners: Awaited<ReturnType<typeof readOwnerEdges>>['owners'],
+): SupplierScoringInput['owners'] {
+  return owners.map((o) => ({
+    entityId: o.entityId,
+    label: o.label,
+    riskFactors: o.riskFactors,
+    isStateOwned: o.isStateOwned,
+    // Carried through so scoring can see them later (item C); nothing in
+    // this ticket's scoring reads them yet.
+    sharePercentage: o.sharePercentage,
+    startDate: o.startDate,
+    endDate: o.endDate,
   }));
 }
 

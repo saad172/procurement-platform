@@ -342,6 +342,29 @@ describe('Network exposure names WHY it is unknown — reversed from the prior O
       expect(outcome.rawInputs.watchlistCoverage).toBeDefined();
     }
   });
+
+  /**
+   * A non-empty owner set is not necessarily a complete one: `readOwnerEdges`
+   * only fills a detected gap when its gap-fill traversal succeeds, and a
+   * failed traversal leaves whatever the window already had — usually not
+   * nothing. The empty-owner-set checks above cannot see this, because
+   * `owners` is non-empty here; `ownerGapCoverage` is what tells this Criterion
+   * the non-empty set is not proven complete.
+   */
+  it('is unknown when a partial owner set followed a failed gap-fill traversal', () => {
+    // `completeInput()`'s own `owners` is already non-empty — exactly the
+    // "at least one owner edge already present" case the fallback produces.
+    const r = scoreSupplier(completeInput({ ownerGapCoverage: 'unknown' }));
+    const outcome = networkOutcomeOf(r);
+    expect(outcome.status).toBe('unknown');
+    if (outcome.status === 'unknown') expect(outcome.reason).toMatch(/gap-fill traversal .*failed/);
+  });
+
+  it('scores normally when the owner set is non-empty and gap coverage is complete', () => {
+    const r = scoreSupplier(completeInput({ ownerGapCoverage: 'complete' }));
+    const outcome = networkOutcomeOf(r);
+    expect(outcome.status).toBe('value');
+  });
 });
 
 describe('Network exposure — hop-discounted deductions', () => {

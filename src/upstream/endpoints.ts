@@ -13,6 +13,7 @@ import {
   entitySchema,
   entitySummarySchema,
   negativeNewsSchema,
+  ontologyRiskFactorsSchema,
   recordSchema,
   resolutionSchema,
   searchEntitySchema,
@@ -1158,6 +1159,63 @@ export const sayariSupplyChainUpstreamTradeTraversal = defineEndpoint({
 >);
 
 /**
+ * `ontology.getRiskFactors` — the full, authoritative risk-factor vocabulary:
+ * every factor name the flat `risk` object and `attributes.risk_intelligence`
+ * entries can carry, each with the `categories` array (`sanctions`,
+ * `export_controls`, `forced_labor`, `adverse_media`, …) that is Sayari's own
+ * classification of it. This is the ground truth the app's hand-rolled,
+ * name-token classifier in `domain/scoring/risk-factors.ts` was built to
+ * approximate before this endpoint was ever called from here.
+ *
+ * **No filter params.** The SDK's own request type accepts `id`/`riskCategory`/
+ * `level`/`riskType`/`enabled`/`visible` — every one of them array- or
+ * boolean-shaped — but nothing in this app asks for a filtered slice; the one
+ * use is the full, unfiltered list. Left out rather than guessed at, the same
+ * reasoning `sayariEntitySummary`'s own doc comment gives for taking no
+ * request params at all: `id`/`riskCategory`/`level`/`riskType` are exactly
+ * the array-shaped params the SDK's traversal-family methods get wrong on the
+ * wire (`downstreamQuery`'s own doc comment above), and this method's filter
+ * params have not been tested against that defect — add them here, checked
+ * the same way, the day a caller wants a filtered read.
+ *
+ * **A confirmed SDK response-parsing bug, verified with a live raw fetch: the
+ * response carries entries missing a key (`doNotRenderMetadata`) the SDK's
+ * deserializer requires, so the SDK throws a client-side `ParseError` even
+ * though Sayari answered the request correctly** — a raw fetch of the exact
+ * same request returned `200` with the full factor list. That is the same
+ * *class* of bug as `resolution` with `profile: "suppliers"` and
+ * `negativeNews.negativeNews` above: a response the SDK cannot read, not a
+ * request it built wrong. So this dispatches through the ordinary
+ * `viaSdkWithRawFallback`, exactly like those two, rather than the
+ * unconditional-raw path `sayariSupplyChainUpstreamTradeTraversal` needs
+ * above: that endpoint's bug is a clean `422` on a malformed *request*, which
+ * `isParseError` would never catch, so it has to be routed around before the
+ * SDK is ever called. This one's failure is the opposite shape — the SDK
+ * does build and send a correct request, and only fails deserialising what
+ * comes back — which is exactly what `isParseError`'s catch exists for, even
+ * though (unlike most endpoints here) the bug fires on every call this app
+ * makes rather than on some of them: the fallback still spends twice every
+ * time, and that is an honest, accepted cost rather than a reason to special-
+ * case the dispatch.
+ */
+export const sayariOntologyGetRiskFactors = defineEndpoint({
+  source: 'sayari',
+  endpoint: 'ontology.getRiskFactors',
+  timeoutMs: SAYARI_FAST_MS,
+  defaults: {},
+  normalizeParams: () => ({}),
+  dispatch: async (_params, deps) => {
+    const client = getSayariClient(deps.credentials);
+    return viaSdkWithRawFallback(
+      () => client.ontology.getRiskFactors({}, requestOptions(deps)),
+      () => ({ path: '/v1/ontology/risk_factors' }),
+      deps,
+    );
+  },
+  projection: ontologyRiskFactorsSchema,
+} as EndpointDef<Record<string, never>, z.infer<typeof ontologyRiskFactorsSchema>>);
+
+/**
  * The boot call (SPEC §16.7).
  *
  * Runs raw on start, non-blocking, logs its classification, and **gates
@@ -1387,6 +1445,7 @@ export const ENDPOINTS = {
   sayariTradeSearchBuyers,
   sayariTradeSearchShipments,
   sayariSupplyChainUpstreamTradeTraversal,
+  sayariOntologyGetRiskFactors,
   sayariMetadataRaw,
   gleifJoinLei,
   gleifSearchByName,

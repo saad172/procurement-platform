@@ -6,6 +6,24 @@ import { shortestPathSchema } from '@/upstream/projections/sayari';
 import type { DispatchDeps } from '@/upstream/types';
 
 /**
+ * KNOWN GAP, stated plainly rather than left to a source comment: nothing in
+ * this file has ever round-tripped through a real Sayari
+ * `traversal.shortestPath` response — every body below (the minimal stub in
+ * `beforeEach`, and `shortestPathSchema`'s own `sdkBody`) is hand-authored to
+ * match this project's Zod schema for the endpoint as it reads today, not
+ * replayed from a capture. That is because Sayari's own
+ * `traversal.shortestPath` endpoint has a confirmed, ongoing outage,
+ * independently verified two ways — this project's own calls all return a
+ * real, well-formed `408 Timeout Error` body rather than any success, and a
+ * completely separate client (Sayari's own official Python SDK, sharing no
+ * code with this project) hit the same endpoint directly and failed the same
+ * way on every attempt. Do not fabricate a fixture to close this gap, and do
+ * not delete or weaken these hand-built bodies — they are the best available
+ * coverage until the endpoint recovers, at which point they should be
+ * replaced with a real captured response (this project's own
+ * fixture-recording tooling, e.g. `pnpm fixtures:record`, once a live call
+ * succeeds again), and this note removed.
+ *
  * `sayariTraversalShortestPath` (network spec §4.2, §7; ticket 04).
  *
  * Two things worth proving, mirroring how `risk-categories-dispatch.test.ts`
@@ -117,6 +135,12 @@ describe('sayariTraversalShortestPath', () => {
  * shape: a hand-built body shaped like the SDK's own documented example
  * (`node_modules/@sayari/sdk/api/resources/traversal/types/
  * ShortestPathResponse.d.ts`), camelCase, as the SDK path deserialises it.
+ *
+ * `sdkBody` below is the hand-authored stand-in this file's own top comment
+ * describes — not a replayed real fixture — because Sayari's
+ * `traversal.shortestPath` endpoint is confirmed down right now. See that
+ * comment for the full account; it should be swapped for a real captured
+ * response once the endpoint recovers.
  */
 describe('shortestPathSchema', () => {
   const sdkBody = {

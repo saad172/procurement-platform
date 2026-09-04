@@ -340,7 +340,10 @@ describe.skipIf(!up)(`the typed owner-edge read (needs: ${START_TEST_DB_HINT})`,
       jobId: undefined,
     };
 
-    const owners = await readOwnerEdges(ctx, { entityId: ROOT_ID, entity: ownPayload });
+    const { owners, gapCoverage } = await readOwnerEdges(ctx, {
+      entityId: ROOT_ID,
+      entity: ownPayload,
+    });
 
     // Asked for exactly the type the window was short on.
     expect(requested).toMatchObject({
@@ -356,6 +359,9 @@ describe.skipIf(!up)(`the typed owner-edge read (needs: ${START_TEST_DB_HINT})`,
     );
     const recovered = owners.find((o) => o.entityId === RECOVERED_PARENT_ID);
     expect(recovered?.riskFactors.map((f) => f.name)).toContain('exports_ilab_forced_labor');
+
+    // The gap-fill traversal answered, so the owner set is complete.
+    expect(gapCoverage).toBe('complete');
 
     // The recovered edge is stored, at hop depth 1, discoverable the same way
     // as any other edge.
@@ -436,7 +442,7 @@ describe.skipIf(!up)(`the typed owner-edge read (needs: ${START_TEST_DB_HINT})`,
       jobId: undefined,
     };
 
-    const owners = await readOwnerEdges(ctx, { entityId: ROOT_ID, entity: ownPayload });
+    const { owners } = await readOwnerEdges(ctx, { entityId: ROOT_ID, entity: ownPayload });
 
     // One rendered owner per company — the re-echoed KNOWN_PARENT_ID must not
     // appear twice.
@@ -486,8 +492,53 @@ describe.skipIf(!up)(`the typed owner-edge read (needs: ${START_TEST_DB_HINT})`,
       },
     } as unknown as SayariEntity;
 
-    const owners = await readOwnerEdges(ctx, { entityId: ROOT_ID, entity: completePayload });
+    const { owners, gapCoverage } = await readOwnerEdges(ctx, {
+      entityId: ROOT_ID,
+      entity: completePayload,
+    });
     expect(called).toBe(false);
     expect(owners.map((o) => o.entityId)).toEqual([KNOWN_PARENT_ID]);
+    // No gap was ever detected, so there was nothing to fill — 'complete' by
+    // construction, the same as a gap that was detected and filled.
+    expect(gapCoverage).toBe('complete');
+  });
+
+  /**
+   * **A failed gap-fill traversal must not read as a complete owner set.**
+   * A Sayari 5xx or timeout that survives `call()`'s own retries during the
+   * gap-fill read falls back to the window's own edges — correctly, since
+   * inventing owners would be worse — but the fallback must be recorded, not
+   * silent. The window almost always carries at least one owner edge
+   * already, so `owners` comes back non-empty here and indistinguishable
+   * from a genuinely complete read unless something else says otherwise.
+   * `gapCoverage` is that something else: it names the failure independently
+   * of how many owners `owners` ends up holding.
+   */
+  it("marks gapCoverage 'unknown' when the gap-fill traversal fails, keeping the window's own edges", async () => {
+    const db = await getTestDb();
+    await resetDerived(db);
+    await db.insert(t.entity).values({ id: ROOT_ID, label: 'FIXTURE SUBJECT CO' });
+
+    const ctx: EnrichContext = {
+      db,
+      upstream: {
+        sayari: {
+          traversal: async () => {
+            throw Object.assign(new Error('upstream 503'), { statusCode: 503 });
+          },
+        },
+      } as never,
+      jobId: undefined,
+    };
+
+    const { owners, gapCoverage } = await readOwnerEdges(ctx, {
+      entityId: ROOT_ID,
+      entity: ownPayload,
+    });
+
+    // The window's own edge survives the failed gap-fill — falling back is
+    // still the right call, it just must not look complete.
+    expect(owners.map((o) => o.entityId)).toEqual([KNOWN_PARENT_ID]);
+    expect(gapCoverage).toBe('unknown');
   });
 });

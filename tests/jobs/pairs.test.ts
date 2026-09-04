@@ -8,6 +8,21 @@ import { resetDerived } from '../support/reset';
 import { seededProgram } from '../support/seeded-program';
 
 /**
+ * KNOWN GAP, stated plainly rather than left to a source comment:
+ * `foundBody`/`noPathBody` below are hand-authored stand-in envelopes for
+ * `traversal.shortestPath`, NOT a replayed real fixture. Sayari's own
+ * `traversal.shortestPath` endpoint has a confirmed, ongoing outage,
+ * independently verified two ways — this project's own calls all return a
+ * real, well-formed `408 Timeout Error` body rather than any success, and a
+ * completely separate client (Sayari's own official Python SDK, sharing no
+ * code with this project) hit the same endpoint directly and failed the
+ * same way on every attempt — so there is currently no way to capture a
+ * real body for this pair-sweep to replay. Do not fabricate one, and do not
+ * delete or weaken this stub: it is the best available coverage until the
+ * endpoint recovers, at which point it should be replaced by a real
+ * recording (this project's own fixture-recording tooling, e.g. run a live
+ * `pairs` Job and `pnpm fixtures:record`), and this note removed.
+ *
  * The `pairs` Job's own runner (network spec §7; ticket 04, unit 04e).
  *
  * `findAndWriteShortestPath` itself is already covered end-to-end by

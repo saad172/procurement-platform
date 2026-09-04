@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { and, eq, inArray } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import { findAndWriteShortestPath } from '@/jobs/shortest-path';
@@ -7,6 +7,29 @@ import { getTestDb, testDatabaseIsUp, testSql } from '../support/test-db';
 import { resetDerived } from '../support/reset';
 
 /**
+ * KNOWN GAP, stated plainly rather than left to a source comment: every
+ * `traversal.shortestPath` body below (`foundPathBody`, `noPathBody`) is a
+ * hand-authored stand-in envelope, NOT a replayed real fixture. It is shaped
+ * to match this project's own Zod schema for the endpoint
+ * (`shortestPathSchemaInner`, `src/upstream/projections/sayari.ts`) as that
+ * schema reads today, but it has never round-tripped through an actual
+ * Sayari response, and right now it cannot: Sayari's own
+ * `traversal.shortestPath` endpoint has a confirmed, ongoing outage,
+ * independently verified two ways — this project's own calls all return a
+ * real, well-formed `408 Timeout Error` body rather than any success, and a
+ * completely separate client (Sayari's own official Python SDK, sharing no
+ * code with this project) hit the same endpoint directly and failed the same
+ * way on every attempt. That rules out a bug on this project's side.
+ *
+ * Do not "fix" this by fabricating a fixture or by deleting/weakening this
+ * stub — it is the best available coverage until Sayari's endpoint recovers.
+ * Once it does, replace the hand-built bodies below with a real captured
+ * response (this project's own fixture-recording tooling, e.g. `pnpm
+ * fixtures:record`, run against a live `pairs` or `recommend` Job), and this
+ * note can come out.
+ *
+ * ---
+ *
  * The shared shortest-path helper (network spec §4.2, §7; ticket 04, unit
  * 04b) — the single call site both the recommend Job's ninth submit check
  * (04c) and the *Check every pair* `pairs` Job (04e) will call as a library
@@ -81,6 +104,19 @@ async function buildCtx(
 }
 
 describe('findAndWriteShortestPath: the shared shortest-path helper', () => {
+  beforeAll(() => {
+    // Loud on purpose (see the file's own top comment): every test in this
+    // file replays a hand-authored stand-in for `traversal.shortestPath`,
+    // not a captured real response, because Sayari's own endpoint is
+    // confirmed down. A green `pnpm test` run should not let that go unsaid.
+    console.warn(
+      '[KNOWN GAP] tests/jobs/shortest-path.test.ts stubs traversal.shortestPath with a ' +
+        'hand-authored envelope, not a replayed fixture — Sayari\'s endpoint has a confirmed, ' +
+        'independently-verified ongoing outage. Re-record via this project\'s fixture tooling ' +
+        'once it recovers.',
+    );
+  });
+
   it('calls the endpoint with entities: [root, target], in that order', async () => {
     if (!(await testDatabaseIsUp())) return;
     const db = await getTestDb();

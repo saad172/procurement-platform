@@ -109,6 +109,52 @@ export class UpstreamCacheMissError extends Error {
 }
 
 /**
+ * A local write failed right after a live call had already succeeded
+ * (SPEC §16.2).
+ *
+ * Deliberately its own class, outside the `UpstreamError` union `classify()`
+ * builds. Everything `classify()` produces describes the live call itself —
+ * whether it answered, and whether a second live attempt is worth making —
+ * and `RETRYABLE` exists to answer exactly that question. A dropped
+ * connection, a deadlock or pool exhaustion while writing `upstream_response`
+ * or `usage_event` immediately after a successful dispatch is a different
+ * question entirely: the credit is already spent and the body is already in
+ * hand, so retrying would dispatch a SECOND live call to persist a result the
+ * first one already returned. Left inside the retried try/catch, a failure
+ * here had no status code and no recognisable name, so `classify()` fell
+ * through to its default and called it `transport` — the one kind every
+ * genuine network failure also produces, and retryable for exactly that
+ * reason. This type exists so a write failure surfaces immediately, under its
+ * own name, instead of reading as a retryable failure of the call that had
+ * already succeeded.
+ */
+export class UpstreamPersistError extends Error {
+  readonly source: string;
+  readonly endpoint: string;
+  readonly paramsHash: string | undefined;
+  override readonly cause: unknown;
+
+  constructor(init: {
+    source: string;
+    endpoint: string;
+    paramsHash?: string | undefined;
+    cause: unknown;
+  }) {
+    const detail = init.cause instanceof Error ? init.cause.message : String(init.cause);
+    super(
+      `Fetched ${init.source}'s ${init.endpoint} successfully, but could not persist the ` +
+        `result locally — not retried, since a retry would spend a second live call to ` +
+        `re-fetch data already in hand. ${detail}`,
+    );
+    this.name = 'UpstreamPersistError';
+    this.source = init.source;
+    this.endpoint = init.endpoint;
+    this.paramsHash = init.paramsHash;
+    this.cause = init.cause;
+  }
+}
+
+/**
  * A Job reached its own upstream-call ceiling (SPEC §18.2, §18.3).
  *
  * **`terminated`, never `failed`** — it names a number somebody set, so the

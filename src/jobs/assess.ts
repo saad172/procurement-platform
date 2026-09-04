@@ -558,7 +558,7 @@ async function runAssessPropose(
     ctx.deps.modelCtx,
   );
 
-  if (result.status !== 'done') {
+  if (result.status !== 'done' && result.status !== 'terminated') {
     /**
      * A ceiling or a budget pause leaves the loop here, and neither is a
      * failure of the draft: `raiseIfStopped` takes them out of the retry
@@ -574,6 +574,19 @@ async function runAssessPropose(
         `the loop ended as ${result.status}` + ('error' in result ? `: ${result.error}` : ''),
     };
   }
+
+  /**
+   * A ceiling firing one turn after the model already called
+   * `submit_assessment` is the common case, not the exception: the submit turn
+   * is the expensive one, because its request carries the whole draft. So a
+   * `terminated` loop is still read for a submission below, rather than being
+   * treated as if nothing came back — it is logged because a Round that only
+   * just fitted is worth knowing about even when it worked.
+   */
+  if (result.status === 'terminated') {
+    console.warn(`[assess] round ${roundN} submit_assessment: ${result.reason}`);
+  }
+
   /**
    * Read the proposal out of the message rather than out of the tool's `run()`
    * — the agents propose, and our code settles — and read the **last** one,
@@ -586,7 +599,13 @@ async function runAssessPropose(
    * structurally impossible rather than guarded against.
    */
   const submitted = readSubmission<AssessDraft>(result.toolUses, 'submit_assessment');
-  if (!submitted.ok) return { kind: 'refinement_failure', message: submitted.message };
+  if (!submitted.ok) {
+    // A terminated loop that holds no submission to salvage is genuinely
+    // unrecoverable, and only raises here — after the read above found nothing
+    // — rather than being reported as an ordinary refinement failure.
+    raiseIfStopped(result);
+    return { kind: 'refinement_failure', message: submitted.message };
+  }
   return { kind: 'draft', draft: submitted.value, text: JSON.stringify(submitted.value) };
 }
 

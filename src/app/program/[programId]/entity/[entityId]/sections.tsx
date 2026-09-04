@@ -321,6 +321,7 @@ export function RiskFactors({ data }: { data: Data }) {
                 <th>Scored at</th>
                 <th>Why</th>
                 <th>Source(s)</th>
+                <th>Evidence</th>
               </tr>
             </thead>
             <tbody>
@@ -373,8 +374,41 @@ function RiskFactorRow({ factor }: { factor: Data['factors'][number] }) {
         to, reads "—" rather than a false claim.
       */}
       <td className="note">{factor.sources?.length ? factor.sources.join(', ') : '—'}</td>
+      {/*
+        The structured evidence `attachRiskIntelligence` (`@/domain/scoring/
+        risk-factors`) joins in from `attributes.risk_intelligence` — a
+        program, an authority, a list and an effective-date range, when
+        Sayari attaches them. Most factors have none, which reads "—" rather
+        than a false claim, same as Source(s) above.
+      */}
+      <td className="note">
+        {factor.riskIntelligence?.length ? (
+          <>
+            {factor.riskIntelligence.map((entry, i) => (
+              <div key={i}>{riskIntelligenceLine(entry)}</div>
+            ))}
+          </>
+        ) : (
+          '—'
+        )}
+      </td>
     </tr>
   );
+}
+
+/** One `RiskIntelligenceEntry` as one line of readable evidence. */
+function riskIntelligenceLine(
+  entry: NonNullable<Data['factors'][number]['riskIntelligence']>[number],
+): string {
+  const parts = [
+    entry.list ?? entry.program,
+    entry.authority ? `via ${entry.authority}` : undefined,
+    entry.fromDate
+      ? `from ${entry.fromDate}${entry.toDate ? ` to ${entry.toDate}` : ''}`
+      : undefined,
+  ].filter((p): p is string => Boolean(p));
+  if (parts.length === 0 && entry.reason) return entry.reason;
+  return parts.length > 0 ? parts.join(', ') : '—';
 }
 
 /**

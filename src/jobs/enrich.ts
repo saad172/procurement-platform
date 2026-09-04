@@ -806,11 +806,22 @@ export type OwnerEdge = {
  * whether an *owner* edge was actually lost. The real test is per type: does
  * `relationship_count` claim more edges of an upward-ownership type than
  * `parseRelationships` actually found in the window that came back.
+ *
+ * **`gapCoverage` names whether the gap-fill traversal is trustworthy, not
+ * just whether it ran.** `'complete'` covers both "there was no gap to fill"
+ * and "there was, and the traversal answered it"; `'unknown'` is the one
+ * remaining case, where a gap was detected and the traversal that would have
+ * filled it failed (a Sayari 5xx or timeout that survived `call()`'s own
+ * retries, most likely). The window's own edges are almost never empty even
+ * then — a company usually has at least one owner edge in its payload
+ * already — so an empty check on the returned `owners` array cannot tell a
+ * complete read from an incomplete one here. The caller has to be told
+ * separately, which is what this field is for.
  */
 export async function readOwnerEdges(
   ctx: EnrichContext,
   args: { entityId: string; entity: SayariEntity },
-): Promise<OwnerEdge[]> {
+): Promise<{ owners: OwnerEdge[]; gapCoverage: 'complete' | 'unknown' }> {
   const { edges, unclassified } = parseRelationships(args.entity, args.entityId);
 
   if (unclassified.length > 0) {
@@ -832,6 +843,7 @@ export async function readOwnerEdges(
   await storeRelationships(ctx.db, edges, ctx.jobId, { hopDepth: 1, source: 'getEntity' });
 
   let ownerEdges = edges;
+  let gapCoverage: 'complete' | 'unknown' = 'complete';
   const missingTypes = ownerEdgeGap(args.entity, edges);
   if (missingTypes.length > 0) {
     try {
@@ -884,7 +896,13 @@ export async function readOwnerEdges(
     } catch (error) {
       // Loud, and not fatal — the same rule as an unclassified type. Ownership
       // still reads whatever the window itself carried; it is only the gap
-      // that goes unfilled.
+      // that goes unfilled. `gapCoverage` records that the gap is unfilled,
+      // not merely unfillable this run, so the scoring side can tell "this
+      // Profile genuinely has no more owner edges" from "we don't actually
+      // know" — the same distinction `console.warn` already draws for a human
+      // reader, now also carried to the one caller that decides an Ownership
+      // exposure score.
+      gapCoverage = 'unknown';
       console.warn(
         `  typed owner-edge read failed for ${args.entityId}, falling back to the window's ` +
           `edges: ${error instanceof Error ? error.message : String(error)}`,
@@ -906,7 +924,7 @@ export async function readOwnerEdges(
       endDate: edge.endDate,
     });
   }
-  return owners;
+  return { owners, gapCoverage };
 }
 
 /**

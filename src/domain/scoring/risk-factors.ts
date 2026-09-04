@@ -1,4 +1,5 @@
 import type { riskLevel } from '@/db/schema';
+import { entitySchema } from '@/upstream/projections/sayari';
 
 /**
  * Classifying a Sayari risk factor (SPEC §9.3).
@@ -71,6 +72,38 @@ export type RiskFactor = {
    * Sayari payload that has not yet been through that merge.
    */
   sources?: string[] | undefined;
+  /**
+   * The structured evidence behind this factor, from `attributes.risk_
+   * intelligence` — a program name, a listing authority, the list itself, a
+   * reason and an effective-date range, where Sayari attaches them. Absent on
+   * a factor `attachRiskIntelligence` was never given a matching entry for,
+   * which is the common case: the attribute is populated for the sanctions/
+   * export-control family and largely empty elsewhere.
+   */
+  riskIntelligence?: RiskIntelligenceEntry[] | undefined;
+};
+
+/**
+ * One entry of `attributes.risk_intelligence` matched to a `RiskFactor` by
+ * `properties.type` (see `attachRiskIntelligence`) — the specific program,
+ * authority and date range behind a factor name, rather than the bare name
+ * alone. A compliance sentence that can cite "Autonomous (Ukraine), Consolidated
+ * Australian Sanctions List, from 2022-03-18" says more than one that can only
+ * cite `sanctioned`.
+ */
+export type RiskIntelligenceEntry = {
+  /** Which sanctions/export-control/etc. program this hit is under. */
+  program: string | undefined;
+  /** The authority or list operator that issued the listing. */
+  authority: string | undefined;
+  /** The list name. */
+  list: string | undefined;
+  /** Free-text listing rationale, when Sayari attaches one. */
+  reason: string | undefined;
+  /** The date this hit came into effect, when Sayari attaches one. */
+  fromDate: string | undefined;
+  /** The date this hit stopped applying, when Sayari attaches one. */
+  toDate: string | undefined;
 };
 
 /** Levels in order, so "one band down" is an index shift rather than a table. */
@@ -91,17 +124,76 @@ export const DEDUCTION_BY_LEVEL: Record<RiskLevel, number> = {
 export const STATE_OWNERSHIP_DEDUCTION = 25;
 
 /**
- * The four families in which a `high` factor pins the Score to 0 and raises the
- * **disqualifying badge** (SPEC §9.2).
+ * The families in which a `high` factor pins the Score to 0 and raises the
+ * **disqualifying badge** (SPEC §9.2) — every token combination that names a
+ * `sanctions`, `export_controls` or `forced_labor` factor.
  *
  * Matched on token membership like the variants, for the same reason.
+ *
+ * **Checked against `ontology.getRiskFactors`' own `categories` field**, not
+ * guessed at: fetching the full ~720-factor vocabulary and comparing each
+ * factor's own `categories` array against what this list would classify it as
+ * found 143 factors Sayari itself categorises `sanctions`,
+ * `export_controls`, `forced_labor` or `sanctions_and_export_control_lists`
+ * (the same disqualifying family under a fourth, list-specific category
+ * string) that the five original token families missed entirely — program-
+ * specific names with no literal "sanctioned"/"sanctions"/"export"+
+ * "controls"/"forced"+"labor" tokens in them at all: `wro_entity` (a US
+ * Customs Withhold Release Order, forced labor), `controlled_by_ofac_sdn`
+ * (Treasury's SDN list, sanctions), `owned_by_usa_bis_entity` (Commerce's
+ * Entity List, export controls), and around 140 more of the same shape. Every
+ * family below is a token verified to appear ONLY on factors in one of the
+ * four disqualifying categories, across the full fetched vocabulary — not a
+ * guess at what a name might mean. `['exports', 'bis']` from the original
+ * five is gone: `['bis']` alone is a strict superset of it, verified the same
+ * way, so keeping both was dead weight. One factor, `military_end_use_china_
+ * keywords`, still slips past every family here (a compound name none of the
+ * verified tokens covers alone without also risking a name this vocabulary
+ * does not contain yet) — left uncorrected rather than guessed at.
  */
 const PINNING_FAMILY_TOKENS: readonly (readonly string[])[] = [
   ['sanctioned'],
   ['sanctions'],
   ['export', 'controls'],
-  ['exports', 'bis'],
   ['forced', 'labor'],
+  /** Bureau of Industry and Security — the Commerce Dept.'s export-controls arm. */
+  ['bis'],
+  /** BIS's Military End User list. */
+  ['meu'],
+  /** Treasury's OFAC sanctions programs. */
+  ['ofac'],
+  /** US Customs' Withhold Release Order list — forced labor. */
+  ['wro'],
+  /** The forced-labor-flagged region. */
+  ['xinjiang'],
+  /** Sheffield Hallam University's forced-labor-in-supply-chain reports. */
+  ['sheffield'],
+  /** The Arms Export Control Act debarred list. */
+  ['aeca'],
+  /** State Dept.'s International Security and Nonproliferation sanctions. */
+  ['isn'],
+  /** Japan METI's end-user export-controls list. */
+  ['meti'],
+  /** Japan MOFA's export-ban list. */
+  ['mofa'],
+  /** NDAA §889's covered-telecom-equipment export-controls list. */
+  ['ndaa'],
+  /** NDAA §1260H's Chinese military companies list. */
+  ['1260h'],
+  /** China's Military-Industrial Complex list. */
+  ['cmic'],
+  /** China's military-civil fusion export-controls flag. */
+  ['military', 'end', 'use'],
+  /** Entities licensed with Russia's FSB. */
+  ['fsb'],
+  /** DOL ILAB's forced/child-labor goods list. */
+  ['ilab'],
+  /** Conflict-minerals sourcing — forced labor. */
+  ['conflict', 'minerals'],
+  /** Russia-specific import/export sanctions (coal, gold, oil, "important goods"). */
+  ['russian'],
+  /** The EU/UK/US 50%-ownership-rule sanctions extensions. */
+  ['percent', 'rule'],
 ];
 
 const tokensOf = (name: string): string[] => name.toLowerCase().split('_').filter(Boolean);
@@ -273,4 +365,115 @@ export function attachRiskSources(
       : undefined;
     return sources && sources.length > 0 ? { ...factor, sources } : factor;
   });
+}
+
+/**
+ * Reads one `attributes.risk_intelligence` entry's `properties` bag into a
+ * `RiskIntelligenceEntry`, or `undefined` when the entry carries none of the
+ * named fields at all — an entry whose only content is a free-form key this
+ * app does not read (e.g. "Listing Information", "License Policy") attaches
+ * nothing rather than an object of all-`undefined` fields.
+ *
+ * Reads snake_case keys (`from_date`, `to_date`) — the same casing every
+ * other reader in this file expects off Sayari data, because normalising key
+ * casing is the upstream projection layer's job, not this one's (see
+ * `parseRiskObject`'s own `metadata.traversal_path`, never `traversalPath`,
+ * for the same rule).
+ */
+function riskIntelligenceEntryOf(properties: unknown): RiskIntelligenceEntry | undefined {
+  if (!properties || typeof properties !== 'object') return undefined;
+  const p = properties as Record<string, unknown>;
+  const entry: RiskIntelligenceEntry = {
+    program: typeof p.program === 'string' ? p.program : undefined,
+    authority: typeof p.authority === 'string' ? p.authority : undefined,
+    list: typeof p.list === 'string' ? p.list : undefined,
+    reason: typeof p.reason === 'string' && p.reason.length > 0 ? p.reason : undefined,
+    fromDate: typeof p.from_date === 'string' ? p.from_date : undefined,
+    toDate: typeof p.to_date === 'string' ? p.to_date : undefined,
+  };
+  return Object.values(entry).some((v) => v !== undefined) ? entry : undefined;
+}
+
+/**
+ * Every `attributes.risk_intelligence` entry, grouped by its
+ * `properties.type` — **the same vocabulary a flat `risk` object's keys
+ * use**, measured directly against a real payload: a `risk_intelligence`
+ * entry with `properties.type: "sanctioned_aus_dfat"` sits on an entity whose
+ * `risk` object carries a `sanctioned_aus_dfat` key of its own. That shared
+ * vocabulary is what `attachRiskIntelligence` joins on.
+ *
+ * Accepts either the attribute block's own `{ data: [...] }` shape or a bare
+ * array of entries, so a caller holding either can pass it straight through
+ * without unwrapping it first.
+ */
+function riskIntelligenceByType(riskIntelligence: unknown): Map<string, RiskIntelligenceEntry[]> {
+  const byType = new Map<string, RiskIntelligenceEntry[]>();
+  const rows = Array.isArray(riskIntelligence)
+    ? riskIntelligence
+    : riskIntelligence && typeof riskIntelligence === 'object'
+      ? (riskIntelligence as { data?: unknown }).data
+      : undefined;
+  if (!Array.isArray(rows)) return byType;
+
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const properties = (row as { properties?: unknown }).properties;
+    const type = (properties as { type?: unknown } | undefined)?.type;
+    if (typeof type !== 'string' || type.length === 0) continue;
+    const entry = riskIntelligenceEntryOf(properties);
+    if (!entry) continue;
+    const key = type.toLowerCase();
+    const existing = byType.get(key);
+    if (existing) existing.push(entry);
+    else byType.set(key, [entry]);
+  }
+  return byType;
+}
+
+/**
+ * Joins `parseRiskObject`'s factors with the structured evidence Sayari
+ * attaches on `attributes.risk_intelligence` — a program, an authority, a
+ * list name, a reason and an effective-date range, matched to a factor by
+ * name (`properties.type` and a `risk` key are the same vocabulary on the
+ * same entity, per `riskIntelligenceByType`'s own doc comment). A factor with
+ * no matching entry is returned unchanged, the same "nothing to add"
+ * behaviour `attachRiskSources` has for a factor `risk_sources` never named.
+ *
+ * Deliberately mirrors `attachRiskSources`'s shape: a second sibling join,
+ * over a second piece of provenance, onto the same `parseRiskObject` output
+ * — never a reason to widen `parseRiskObject` itself, for the reason its own
+ * doc comment gives (SPEC §8.2 D5's `risk`-reaches-a-model-turn-verbatim
+ * rule applies here exactly as it does to `risk_sources`).
+ */
+export function attachRiskIntelligence(
+  factors: readonly RiskFactor[],
+  riskIntelligence: unknown,
+): RiskFactor[] {
+  const byType = riskIntelligenceByType(riskIntelligence);
+  if (byType.size === 0) return [...factors];
+  return factors.map((factor) => {
+    const entries = byType.get(factor.name.toLowerCase());
+    return entries && entries.length > 0 ? { ...factor, riskIntelligence: entries } : factor;
+  });
+}
+
+/**
+ * `attributes.risk_intelligence`, off a cached `upstream_response` row for the
+ * SAME entity — a program, an authority, a list name and an effective-date
+ * range behind a factor, where Sayari attaches them. The one shared reader for
+ * `attachRiskIntelligence`'s second argument, used both by a page's own render
+ * (`db/queries/entity-page.ts`) and by live compliance-risk scoring
+ * (`jobs/enrich-supplier.ts`), so the two never drift onto two different ideas
+ * of "the cached body".
+ *
+ * Undefined whenever `source` itself is — most entities were never fetched on
+ * their own and carry no cached body of their own to read, and that is the
+ * common, harmless case: `attachRiskIntelligence` already treats "nothing to
+ * join" as "leave every factor as it was". A body that no longer parses
+ * against `entitySchema` reads as absent too, rather than failing the caller.
+ */
+export function cachedRiskIntelligenceOf(source: { body: unknown } | null | undefined): unknown {
+  if (!source) return undefined;
+  const parsed = entitySchema.safeParse(source.body);
+  return parsed.success ? parsed.data.attributes?.['risk_intelligence'] : undefined;
 }

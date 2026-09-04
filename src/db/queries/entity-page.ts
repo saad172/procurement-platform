@@ -1,7 +1,12 @@
 import { and, eq, inArray, or } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as t from '@/db/schema';
-import { attachRiskSources, parseRiskObject } from '@/domain/scoring/risk-factors';
+import {
+  attachRiskIntelligence,
+  attachRiskSources,
+  cachedRiskIntelligenceOf,
+  parseRiskObject,
+} from '@/domain/scoring/risk-factors';
 import { deriveEdgeGroups, deriveKnownAs, deriveOwnerEdges } from '@/domain/derive-entity-page';
 import { loadPathsThroughEntity } from './family-paths';
 
@@ -43,7 +48,13 @@ export async function loadEntityPage(db: Database, args: { programId: string; en
   // With provenance joined back in from the sibling `risk_sources` column
   // (item A) — safe here because this is a page's own render, never a value
   // that reaches a model turn the way `entity.risk` itself sometimes does.
-  const factors = attachRiskSources(parseRiskObject(entity.risk), entity.riskSources);
+  // `attachRiskIntelligence` joins a second, structured evidence source in
+  // the same way, read off the SAME cached body `source` above already loaded
+  // (`cachedRiskIntelligenceOf`'s own doc comment).
+  const factors = attachRiskIntelligence(
+    attachRiskSources(parseRiskObject(entity.risk), entity.riskSources),
+    cachedRiskIntelligenceOf(source),
+  );
   // Grouped here, not in the Relationships section — a section receives
   // already-derived props; it does not derive.
   const edgeGroups = deriveEdgeGroups(edges, entityId);
