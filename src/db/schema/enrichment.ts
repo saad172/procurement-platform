@@ -28,7 +28,7 @@ import { upstreamResponse } from './upstream';
  * Enrichment (SPEC §3.4, §7).
  *
  * `enrichment` is both the **registry** — one row per dated call — and the
- * **Citation target**. Values live in six typed tables at their own grains,
+ * **Citation target**. Values live in nine typed tables at their own grains,
  * because a country indicator, a tariff line and a news article have nothing in
  * common but the fact that something went and asked for them.
  *
@@ -85,7 +85,7 @@ export const enrichment = pgTable(
 );
 
 /**
- * ── The six typed value tables ───────────────────────────────────────────────
+ * ── The nine typed value tables ──────────────────────────────────────────────
  *
  * **Every one of them is append-only per generation**, and that is deliberate:
  * a value row's `enrichment_id` is what a Citation resolves through, so a
@@ -387,6 +387,145 @@ export const graphPath = pgTable(
   ],
 );
 
+/**
+ * `trade.searchSuppliers` filtered by `filter.supplierId`, `limit: 1`
+ * (network spec §4.3, ticket 05) — one row per Enrichment of source
+ * `sayari_trade_footprint`, the HS facet and shipment count the trade Job's
+ * first call returns.
+ *
+ * `hsFacet` mirrors `tradeMetadataSchema.hs_codes`
+ * (`src/upstream/projections/sayari.ts`) — `{key, value, docCount}` per HS
+ * line — a small, shipment-scoped structure typed with `.$type()` rather than
+ * left as bare `jsonb`, the same choice `graph_path.edge_ids` already makes
+ * for a small structured array elsewhere in this file, and not the choice
+ * `news_item.risk_flags` makes for a genuinely open, source-varying shape:
+ * the facet's own shape is closed and named by the SDK (`HsCode.d.ts`), so
+ * there is something real to type.
+ */
+export const tradeFootprint = pgTable(
+  'trade_footprint',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    enrichmentId: uuid('enrichment_id')
+      .notNull()
+      .references(() => enrichment.id, { onDelete: 'cascade' }),
+    shipmentCount: integer('shipment_count').notNull(),
+    /** Free-form on the wire (Sayari dates other fields the same way, e.g.
+     * `registration_date: "Registered 1965-07-20"`) — text, not a parsed date. */
+    latestShipmentDate: text('latest_shipment_date'),
+    hsFacet: jsonb('hs_facet')
+      .$type<{ key: string | null; value: string | null; docCount: number | null }[]>()
+      .notNull()
+      .default([]),
+  },
+  (t) => [index('trade_footprint_enrichment_idx').on(t.enrichmentId)],
+);
+
+/**
+ * `trade.searchBuyers` filtered by `filter.supplierId`, `limit: 50` (network
+ * spec §4.3, ticket 05) — one row per buyer, source `sayari_trade_footprint`.
+ *
+ * `buyerEntityId` is **not** an `entity` FK. A buyer here is a counterparty
+ * this Profile ships to, not necessarily an entity this app has separately
+ * fetched — `fetch_entity`'s own doc comment (`enums.ts`, `jobKind`) is the
+ * standing reason most entities never get a row of their own until something
+ * asks for one by name, and a `trade_buyer` row asking for fifty is not that
+ * ask. The id is stored as Sayari returns it, exactly as `graph_path` stores
+ * `edge_ids` and `attributeValue.record` store ids of things this schema does
+ * not otherwise hold rows for.
+ *
+ * `countries` is the buyer's own multi-valued `countries[]`, kept as an array
+ * rather than collapsed to one value — `entity.country`'s own comment already
+ * names why a naive first entry is wrong (SPEC §11.3: eight values seen on one
+ * company), and nothing here picks one over the others.
+ *
+ * `rank` records the buyer's position in the `searchBuyers` response (already
+ * Sayari's own relevance order) — the one field this row would otherwise have
+ * no honest way to recover, since `id` is a random `uuid` and carries no
+ * ordering.
+ */
+export const tradeBuyer = pgTable(
+  'trade_buyer',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    enrichmentId: uuid('enrichment_id')
+      .notNull()
+      .references(() => enrichment.id, { onDelete: 'cascade' }),
+    rank: integer('rank').notNull(),
+    buyerEntityId: text('buyer_entity_id').notNull(),
+    buyerName: text('buyer_name').notNull(),
+    countries: jsonb('countries').$type<string[]>().notNull().default([]),
+    /** The same leveled per-factor shape `entitySchemaInner.risk` projects —
+     * loose, like `news_item.risk_flags`, because the factor vocabulary is
+     * Sayari's own and not ours to close. */
+    risk: jsonb('risk'),
+    sanctioned: boolean('sanctioned'),
+    pep: boolean('pep'),
+  },
+  (t) => [index('trade_buyer_enrichment_idx').on(t.enrichmentId)],
+);
+
+/**
+ * `trade.searchShipments` filtered by `filter.supplierId` and
+ * `filter.arrivalDate` over the trailing 24 months, `limit: 50` (network spec
+ * §4.3, ticket 05) — one row per shipment, source `sayari_trade_footprint`.
+ * Dated, citable sample rows: `record` is the citation target (SPEC §10.2's
+ * Citation rule resolves through it, the same way `attributeValue.record`
+ * and `traversalRelationshipValueSchema.record` already do elsewhere in this
+ * schema/projection pair) — not FK'd, because nothing in this app stores a
+ * `record` row; `sayariGetRecord`/`record.getRecord` fetches one on demand.
+ *
+ * `arrivalDate`/`departureDate` are the SDK's own `string[]` — kept as arrays
+ * rather than collapsed to one value, for the same reason `trade_buyer`
+ * above keeps `countries` an array: Sayari sends more than one date on a
+ * shipment carried by more than one source record, and picking one here would
+ * be inventing an answer this table is not the place to invent.
+ *
+ * `buyer` and `hsCodes`/`monetaryValue`/`weight` are the SDK's own small,
+ * per-shipment arrays (`Shipment.buyer: SourceOrDestinationEntity[]`,
+ * `Shipment.hsCodes: HsCodeInfo[]`, `.monetaryValue: MonetaryValue[]`,
+ * `.weight: Weight[]` — `node_modules/@sayari/sdk/api/resources/trade/types/
+ * Shipment.d.ts`), each typed to its own closed, SDK-named shape rather than
+ * left as bare `jsonb`, matching `trade_footprint.hs_facet`'s own reasoning
+ * above. `buyer` is trimmed to `{id, name, countries}` per entry — the
+ * fields this table's own `trade_buyer` above stores for the same kind of
+ * counterparty — rather than the SDK's full `names[]`/`risks`/
+ * `businessPurpose`/`address` bag, which nothing here reads.
+ */
+export const tradeShipment = pgTable(
+  'trade_shipment',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    enrichmentId: uuid('enrichment_id')
+      .notNull()
+      .references(() => enrichment.id, { onDelete: 'cascade' }),
+    /** Sayari's own shipment `id` — distinct from `record`, the citation id. */
+    shipmentId: text('shipment_id').notNull(),
+    arrivalDate: jsonb('arrival_date').$type<string[]>(),
+    departureDate: jsonb('departure_date').$type<string[]>(),
+    buyer: jsonb('buyer')
+      .$type<{ id: string; name: string | null; countries: string[] }[]>()
+      .notNull()
+      .default([]),
+    productOrigin: jsonb('product_origin').$type<string[]>().notNull().default([]),
+    hsCodes: jsonb('hs_codes')
+      .$type<{ code: string; description: string | null }[]>()
+      .notNull()
+      .default([]),
+    monetaryValue: jsonb('monetary_value')
+      .$type<{ value: number; currency: string | null; context: string | null }[]>()
+      .notNull()
+      .default([]),
+    weight: jsonb('weight')
+      .$type<{ value: number; unit: string; type: string }[]>()
+      .notNull()
+      .default([]),
+    /** The citation target (SPEC §10.2). */
+    record: text('record').notNull(),
+  },
+  (t) => [index('trade_shipment_enrichment_idx').on(t.enrichmentId)],
+);
+
 export const enrichmentRelations = relations(enrichment, ({ one, many }) => ({
   upstreamResponse: one(upstreamResponse, {
     fields: [enrichment.upstreamResponseId],
@@ -398,4 +537,7 @@ export const enrichmentRelations = relations(enrichment, ({ one, many }) => ({
   newsItems: many(newsItem),
   geocodes: many(geocode),
   graphPaths: many(graphPath),
+  tradeFootprints: many(tradeFootprint),
+  tradeBuyers: many(tradeBuyer),
+  tradeShipments: many(tradeShipment),
 }));

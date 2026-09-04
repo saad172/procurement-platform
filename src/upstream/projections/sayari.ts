@@ -560,6 +560,239 @@ export type SayariTradeRow = z.infer<typeof tradeSearchSchemaInner>['data'] exte
   ? R
   : never;
 
+/**
+ * `trade.searchShipments` (network spec §4.3, ticket 05) — the trade Job's
+ * third call: dated, citable sample rows of one Profile's own shipments.
+ *
+ * A genuinely new shape, not `entitySchemaInner.extend(...)` the way
+ * `tradeSearchSchemaInner` reuses it for `searchSuppliers`/`searchBuyers`
+ * above: a `Shipment` (verified against `node_modules/@sayari/sdk/api/
+ * resources/trade/types/Shipment.d.ts`) shares nothing with the entity-shaped
+ * schemas in this file — no `label`, no leveled `risk`, no `attributes`. It
+ * is a citable EVENT between two counterparties, not a company.
+ *
+ * `id` and `record` are **required**, not nullish, for the same reason
+ * `tradeMetadataSchema.shipments` above is required rather than left
+ * lenient: a projection written for the wrong shape would otherwise "pass"
+ * silently and produce a page of shipment rows with no citation target,
+ * which is the one field this table exists to carry (SPEC §10.2 — a
+ * sentence resolves a Citation through it, the same way
+ * `attributeValue.record` and `traversalRelationshipValueSchema.record`
+ * already do elsewhere in this file, except **singular** here rather than
+ * an array: measured on the SDK's own documented example, one `record` per
+ * shipment, always).
+ */
+const shipmentCounterpartySchema = z
+  .object({
+    id: z.string().nullish(),
+    type: z.string().nullish(),
+    names: z.array(z.string()).nullish(),
+    /** Leveled per-factor shape unknown here — `risks` on `Shipment.buyer`/
+     * `.supplier` is `Record<Risk, unknown>` on the SDK's own type, not the
+     * `{value, metadata, level}` shape `entitySchemaInner.risk` carries. */
+    risks: z.record(z.string(), z.unknown()).nullish(),
+    countries: z.array(z.string()).nullish(),
+  })
+  .loose();
+
+const shipmentSchemaInner = z
+  .object({
+    id: z.string(),
+    type: z.string().nullish(),
+    buyer: z.array(shipmentCounterpartySchema).nullish(),
+    supplier: z.array(shipmentCounterpartySchema).nullish(),
+    arrival_date: z.array(z.string()).nullish(),
+    departure_date: z.array(z.string()).nullish(),
+    arrival_country: z.array(z.string()).nullish(),
+    departure_country: z.array(z.string()).nullish(),
+    transit_country: z.array(z.string()).nullish(),
+    countries: z.array(z.string()).nullish(),
+    product_origin: z.array(z.string()).nullish(),
+    monetary_value: z
+      .array(
+        z
+          .object({
+            value: z.number().nullish(),
+            currency: z.string().nullish(),
+            context: z.string().nullish(),
+          })
+          .loose(),
+      )
+      .nullish(),
+    weight: z
+      .array(
+        z
+          .object({
+            value: z.number().nullish(),
+            unit: z.string().nullish(),
+            type: z.string().nullish(),
+          })
+          .loose(),
+      )
+      .nullish(),
+    hs_codes: z
+      .array(
+        z
+          .object({
+            code: z.string().nullish(),
+            description: z.string().nullish(),
+            imputed: z.boolean().nullish(),
+          })
+          .loose(),
+      )
+      .nullish(),
+    product_descriptions: z.array(z.string()).nullish(),
+    /** The citation target (SPEC §10.2). Required — see this schema's own
+     * doc comment for why. */
+    record: z.string(),
+  })
+  .loose();
+
+const shipmentSearchSchemaInner = z
+  .object({
+    data: z.array(shipmentSchemaInner).nullish(),
+    size: z
+      .object({ count: z.number().nullish(), qualifier: z.string().nullish() })
+      .partial()
+      .loose()
+      .nullish(),
+    /** A boolean here, like `traversal`/`trade.searchSuppliers`. Measured, not assumed. */
+    next: z.union([z.boolean(), z.string()]).nullish(),
+    limit: z.number().nullish(),
+    offset: z.number().nullish(),
+  })
+  .loose();
+
+/**
+ * `supplyChain.upstreamTradeTraversal` (network spec §4.3, §5, §6; ticket
+ * 05) — the trade Job's fourth call, the upstream-tier read. Genuinely
+ * unlike the traversal shape `shortestPathSchema` reuses above: verified
+ * against `node_modules/@sayari/sdk/api/resources/supplyChain/types/
+ * UpstreamTradeTraversalResponse.d.ts`, the envelope is `{filters, data:
+ * {paths, entities}, exploredCount, partialResults}` — no
+ * `next`/`offset`/`limit` cursor at all, and coverage (`explored_count`,
+ * `partial_results`) sits at the **top** level rather than nested the way
+ * `traversalSchemaInner` nests it. `data.entities` is a **map keyed by
+ * entity id**, not an array — the one place in this file a Sayari envelope
+ * does that.
+ *
+ * `filters` is left fully open (`z.record(z.string(), z.unknown())`) rather
+ * than typed field by field: it is the one part of this exact response
+ * `docs/research/sayari-node-sdk.md` (§5) already measured a live parse
+ * failure on — `filters.max_depth`/`filters.limit` echoed back as
+ * **strings** against the SDK's own `number` typing, a second, independent
+ * Fern bug from the `component`/`risk`/`countries` request-encoding one
+ * `sayariSupplyChainUpstreamTradeTraversal`'s dispatch routes around
+ * (`endpoints.ts`). Nothing in this app reads `filters` back off a stored
+ * body — the caller already knows what it asked for — so there is nothing
+ * to gain from typing a field this exact response has already proven
+ * unstable, and something to lose: a `z.number()` here would fail the whole
+ * projection on precisely the shape the live API sends.
+ *
+ * `TradeTraversalEntity.riskFactors` (→ `risk_factors`) is a **flat
+ * `string[]`** — unlike `SayariEntity.risk`, which is a leveled per-factor
+ * object (`{value, metadata, level}`). Measured on the SDK's own documented
+ * example: `"riskFactors": ["exports_ilab_forced_labor",
+ * "psa_imports_ilab_forced_labor", …]`, no level and no value, ever. Named
+ * `risk_factors` here rather than `risk`, so that difference stays visible
+ * at the type instead of inviting a reader to assume the two shapes
+ * interchange.
+ */
+const tradeTraversalComponentSchema = z
+  .object({
+    hs_code: z.string().nullish(),
+    arrival_countries: z.array(z.string()).nullish(),
+    departure_countries: z.array(z.string()).nullish(),
+    min_date: z.string().nullish(),
+    max_date: z.string().nullish(),
+  })
+  .loose();
+
+const tradeTraversalPathSegmentSchema = z
+  .object({
+    tier: z.number().nullish(),
+    entity_id: z.string().nullish(),
+    components: z.array(tradeTraversalComponentSchema).nullish(),
+  })
+  .loose();
+
+const tradeTraversalPathSchema = z
+  .object({
+    source_entity_id: z.string().nullish(),
+    path: z.array(tradeTraversalPathSegmentSchema).nullish(),
+  })
+  .loose();
+
+const tradeTraversalEntitySchema = z
+  .object({
+    id: z.string().nullish(),
+    type: z.string().nullish(),
+    label: z.string().nullish(),
+    risk_factors: z.array(z.string()).nullish(),
+    countries: z.array(z.string()).nullish(),
+  })
+  .loose();
+
+const upstreamTradeTraversalSchemaInner = z
+  .object({
+    filters: z.record(z.string(), z.unknown()).nullish(),
+    data: z
+      .object({
+        paths: z.array(tradeTraversalPathSchema).nullish(),
+        entities: z.record(z.string(), tradeTraversalEntitySchema).nullish(),
+      })
+      .loose()
+      .nullish(),
+    explored_count: z.number().nullish(),
+    partial_results: z.boolean().nullish(),
+  })
+  .loose();
+
+/**
+ * `data.entities` needs its OWN preprocessing, not the blanket `snakeKeys`
+ * every other exported schema in this file gets through `eitherCasing`.
+ *
+ * `snakeKeys` recurses into every object key in the tree, because it cannot
+ * tell a field name from anything else shaped like one — and a Sayari
+ * entity id (`aGhVqFtVmSjbXqH6oBX6IA`) is exactly the shape it mistakes for
+ * camelCase: measured directly, `snakeKeys({entities: {aGhVqFtVmSjbXqH6oBX6IA:
+ * {...}}})` returns a key of `a_gh_vq_ft_vm_sjb_xq_h6o_bx6_ia`, which no
+ * `entityId`/`entity_id` value anywhere else in this same body will ever
+ * match again. `entitySchemaInner.source_count` and `.relationship_count`
+ * are also keyed objects, and `snakeKeys` has never visibly broken either —
+ * not because the code guards against it, but because a source hash and a
+ * relationship type are both all-lowercase on every measured body. `data.
+ * entities` is the first key here that is neither: an opaque, mixed-case id,
+ * which is exactly why it is called out as "the one place in this file a
+ * Sayari envelope keys an object by an id" on this schema's own doc comment
+ * above.
+ *
+ * So this schema's preprocessing runs `snakeKeys` once, the normal way, for
+ * every field except `data.entities` — then rebuilds `data.entities` from
+ * the ORIGINAL, unprocessed map, snake-casing each entity's own VALUE
+ * (`riskFactors` → `risk_factors` still needs to work, on the SDK path) while
+ * leaving every key (the id) exactly as Sayari sent it.
+ */
+function preprocessUpstreamTradeTraversal(raw: unknown): unknown {
+  const snaked = snakeKeys(raw);
+  if (typeof raw !== 'object' || raw === null) return snaked;
+  if (typeof snaked !== 'object' || snaked === null) return snaked;
+  const rawData = (raw as Record<string, unknown>).data;
+  if (typeof rawData !== 'object' || rawData === null) return snaked;
+  const rawEntities = (rawData as Record<string, unknown>).entities;
+  if (typeof rawEntities !== 'object' || rawEntities === null) return snaked;
+
+  const fixedEntities = Object.fromEntries(
+    Object.entries(rawEntities as Record<string, unknown>).map(([id, value]) => [
+      id,
+      snakeKeys(value),
+    ]),
+  );
+  const snakedBody = snaked as Record<string, unknown>;
+  const snakedData = (snakedBody.data as Record<string, unknown> | undefined) ?? {};
+  return { ...snakedBody, data: { ...snakedData, entities: fixedEntities } };
+}
+
 // ── Exported projections ─────────────────────────────────────────────────────
 // Each is wrapped so it accepts either key casing (see `key-case.ts`).
 
@@ -574,6 +807,16 @@ export const traversalSchema = eitherCasing(traversalSchemaInner);
 export const shortestPathSchema = eitherCasing(shortestPathSchemaInner);
 export const negativeNewsSchema = eitherCasing(negativeNewsSchemaInner);
 export const tradeSearchSchema = eitherCasing(tradeSearchSchemaInner);
+/** One `trade.searchShipments` row on its own — for a caller that already has one. */
+export const shipmentSchema = eitherCasing(shipmentSchemaInner);
+export const shipmentSearchSchema = eitherCasing(shipmentSearchSchemaInner);
+// Not `eitherCasing`: `data.entities`'s own keys need protecting from the
+// blanket `snakeKeys` walk — see `preprocessUpstreamTradeTraversal`'s doc
+// comment above.
+export const upstreamTradeTraversalSchema = z.preprocess(
+  preprocessUpstreamTradeTraversal,
+  upstreamTradeTraversalSchemaInner,
+);
 
 /** The projected entity shape, as every caller in the app sees it. */
 export type SayariEntity = z.infer<typeof entitySchemaInner>;
@@ -583,6 +826,14 @@ export type SayariResolutionCandidate = z.infer<typeof resolutionCandidateSchema
 export type SayariTraversalPath = z.infer<typeof traversalPathSchemaInner>;
 export type SayariTraversal = z.infer<typeof traversalSchemaInner>;
 export type SayariShortestPath = z.infer<typeof shortestPathSchemaInner>;
+/** One `trade.searchShipments` row — see `shipmentSchemaInner`'s own doc comment. */
+export type SayariShipment = z.infer<typeof shipmentSchemaInner>;
+/** `supplyChain.upstreamTradeTraversal`'s projected shape (network spec §4.3). */
+export type SayariUpstreamTradeTraversal = z.infer<typeof upstreamTradeTraversalSchemaInner>;
+/** One upstream tier path — `data.paths[]` on `SayariUpstreamTradeTraversal`. */
+export type SayariTradeTraversalPath = z.infer<typeof tradeTraversalPathSchema>;
+/** One entry of `data.entities` on `SayariUpstreamTradeTraversal`. */
+export type SayariTradeTraversalEntity = z.infer<typeof tradeTraversalEntitySchema>;
 
 /** One entry of one attribute block, as the projection produces it. */
 export type SayariAttributeValue = NonNullable<

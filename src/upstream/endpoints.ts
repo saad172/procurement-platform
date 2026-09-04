@@ -16,9 +16,11 @@ import {
   recordSchema,
   resolutionSchema,
   searchEntitySchema,
+  shipmentSearchSchema,
   shortestPathSchema,
   tradeSearchSchema,
   traversalSchema,
+  upstreamTradeTraversalSchema,
 } from './projections/sayari';
 import type { DispatchDeps, EndpointDef, UpstreamVia } from './types';
 
@@ -798,7 +800,25 @@ export const sayariNegativeNews = defineEndpoint({
   projection: negativeNewsSchema,
 } as EndpointDef<{ name: string } & Record<string, unknown>, z.infer<typeof negativeNewsSchema>>);
 
-/** Discover's mechanism: who ships this HS line into these territories. */
+/**
+ * Discover's mechanism: who ships this HS line into these territories
+ * (`hsCodes`/`arrivalCountries`) — **and, widened here for network spec
+ * §4.3's per-Profile footprint read (ticket 05), `filter.supplierId`**: the
+ * trade Job's first call, `filter.supplierId: [id]`, `limit: 1`, for the HS
+ * facet and shipment count stored on `trade_footprint`.
+ *
+ * One endpoint row with more of its parameters named, not a second row aimed
+ * at the same URL — this file's own established rule, stated on
+ * `sayariTraversalOwnership`'s widened-params comment above and repeated on
+ * `TraversalWalkParams`'s own doc comment: a second row for the identical
+ * call would give it two cache keyspaces and two usage-row endpoint names for
+ * what is, on the wire, the same `POST /v1/trade/search/suppliers`.
+ * `supplierId` sits in `filter` beside `hsCode`/`arrivalCountry` exactly the
+ * way the SDK's own `TradeFilterList` declares it (verified against
+ * `node_modules/@sayari/sdk/api/resources/trade/types/TradeFilterList.d.ts`:
+ * `supplierId?: string[]` — "Exact match against the entity_id of the
+ * supplier").
+ */
 export const sayariTradeSearchSuppliers = defineEndpoint({
   source: 'sayari',
   endpoint: 'trade.searchSuppliers',
@@ -809,14 +829,15 @@ export const sayariTradeSearchSuppliers = defineEndpoint({
   dispatch: async (params, deps) => {
     const client = getSayariClient(deps.credentials);
     /**
-     * `filter` carries the HS lines and arrival countries; `q` is free text.
+     * `filter` carries the HS lines, arrival countries and supplier id;
+     * `q` is free text.
      *
-     * The keys are **camelCase** — `hsCode`, `arrivalCountry`. Sent as
-     * snake_case they are silently ignored rather than rejected, and the call
-     * returns `size.count: 0` with an empty `data` array, which looks exactly
-     * like "no company ships this line here". Naming them once, here, is the
-     * endpoint table's whole purpose: a caller says what it wants, not how the
-     * API spells it.
+     * The keys are **camelCase** — `hsCode`, `arrivalCountry`, `supplierId`.
+     * Sent as snake_case they are silently ignored rather than rejected, and
+     * the call returns `size.count: 0` with an empty `data` array, which
+     * looks exactly like "no company ships this line here". Naming them
+     * once, here, is the endpoint table's whole purpose: a caller says what
+     * it wants, not how the API spells it.
      */
     // `body`, exactly what the raw fallback also sends — `limit`/`offset`
     // live in the query string on both paths, never in the JSON body.
@@ -825,6 +846,7 @@ export const sayariTradeSearchSuppliers = defineEndpoint({
       filter: {
         ...(params.hsCodes ? { hsCode: params.hsCodes } : {}),
         ...(params.arrivalCountries ? { arrivalCountry: params.arrivalCountries } : {}),
+        ...(params.supplierId ? { supplierId: params.supplierId } : {}),
       },
     };
     // The SDK call gets the whole request, `limit`/`offset` included — the
@@ -854,6 +876,8 @@ export const sayariTradeSearchSuppliers = defineEndpoint({
   {
     hsCodes?: string[];
     arrivalCountries?: string[];
+    /** network spec §4.3, ticket 05 — the trade Job's per-Profile footprint read. */
+    supplierId?: string[];
     q?: string;
     limit?: number;
     /** The SDK's own `SearchSuppliers.offset` — how many rows to skip before
@@ -861,6 +885,276 @@ export const sayariTradeSearchSuppliers = defineEndpoint({
     offset?: number;
   },
   z.infer<typeof tradeSearchSchema>
+>);
+
+/**
+ * `trade.searchBuyers` (network spec §4.3, ticket 05) — the trade Job's
+ * second call: `filter.supplierId: [id]`, `limit: 50`, the customer list
+ * with each buyer's risk and country.
+ *
+ * **Structurally identical to `sayariTradeSearchSuppliers` above** — verified
+ * against the SDK: `client.trade.searchBuyers` (`node_modules/@sayari/sdk/
+ * api/resources/trade/client/Client.js`) does the same `{limit, offset} =
+ * request; _body = rest` split, the same `POST` with `limit`/`offset` in the
+ * query string and everything else in the JSON body, against
+ * `SearchBuyers.d.ts`'s own `{limit?, offset?, q?, filter?: TradeFilterList,
+ * facets?}` — the identical shape `SearchSuppliers.d.ts` declares, both
+ * built off the same `TradeFilterList`. No `toJson()`/array-encoding branch
+ * on either method (`SearchSuppliers`/`SearchBuyers`'s bodies go through
+ * `serializers.*.jsonOrThrow`, not through a query-string encoder at all —
+ * `filter.supplierId` is JSON body, not a query param, so the
+ * `component`/`risk_categories`-class defect this file routes around
+ * elsewhere does not apply here). The response reuses the **same**
+ * `tradeSearchSchema` projection `sayariTradeSearchSuppliers` uses: `Sayari.
+ * SupplierOrBuyer` (`BuyerSearchResponse.data`) is `EntityDetails & {metadata:
+ * SupplierMetadata}`, byte-for-byte the shape `SupplierSearchResponse.data`
+ * already is (`SupplierOrBuyer.d.ts` — both response types alias the one
+ * interface), so `tradeSearchSchemaInner`'s `entitySchemaInner.extend({
+ * metadata: tradeMetadataSchema })` already projects a buyer row correctly
+ * without a second schema.
+ */
+export const sayariTradeSearchBuyers = defineEndpoint({
+  source: 'sayari',
+  endpoint: 'trade.searchBuyers',
+  bucket: 'trade',
+  timeoutMs: SAYARI_SLOW_MS,
+  defaults: { limit: 100 },
+  normalizeParams: (p) => flat(p),
+  dispatch: async (params, deps) => {
+    const client = getSayariClient(deps.credentials);
+    const body = {
+      ...(params.q ? { q: params.q } : {}),
+      filter: {
+        ...(params.hsCodes ? { hsCode: params.hsCodes } : {}),
+        ...(params.arrivalCountries ? { arrivalCountry: params.arrivalCountries } : {}),
+        ...(params.supplierId ? { supplierId: params.supplierId } : {}),
+      },
+    };
+    const request = {
+      limit: params.limit,
+      ...(params.offset !== undefined ? { offset: params.offset } : {}),
+      ...body,
+    };
+    return viaSdkWithRawFallback(
+      () => client.trade.searchBuyers(request as never, requestOptions(deps)),
+      () => ({
+        path: '/v1/trade/search/buyers',
+        method: 'POST' as const,
+        query: limitOffsetQuery(params),
+        body,
+      }),
+      deps,
+    );
+  },
+  projection: tradeSearchSchema,
+} as EndpointDef<
+  {
+    hsCodes?: string[];
+    arrivalCountries?: string[];
+    supplierId?: string[];
+    q?: string;
+    limit?: number;
+    offset?: number;
+  },
+  z.infer<typeof tradeSearchSchema>
+>);
+
+/**
+ * `trade.searchShipments` (network spec §4.3, ticket 05) — the trade Job's
+ * third call: `filter.supplierId: [id]`, `filter.arrivalDate: <24 months
+ * back>|<today>`, `limit: 50`, dated, citable sample rows with buyer,
+ * product origin, value, weight and `record`.
+ *
+ * Same request shape as `searchSuppliers`/`searchBuyers` (verified against
+ * `SearchShipments.d.ts`/`Client.js`: the identical `{limit, offset}` /
+ * body split, the identical `TradeFilterList`, no array-encoding defect on
+ * a JSON body) — but a genuinely **new** response projection,
+ * `shipmentSearchSchema` (`projections/sayari.ts`): `Sayari.Shipment`
+ * shares nothing with the entity-shaped rows `tradeSearchSchema` projects,
+ * so this cannot reuse it the way `sayariTradeSearchBuyers` reuses it above.
+ *
+ * `arrivalDate` is a single `"<from>|<to>"` range string on the wire
+ * (`TradeFilterList.arrivalDate?: string`, e.g. `"2024-01|2024-10"`), not an
+ * array — built by the caller (05b), not parsed here.
+ */
+export const sayariTradeSearchShipments = defineEndpoint({
+  source: 'sayari',
+  endpoint: 'trade.searchShipments',
+  bucket: 'trade',
+  timeoutMs: SAYARI_SLOW_MS,
+  defaults: { limit: 100 },
+  normalizeParams: (p) => flat(p),
+  dispatch: async (params, deps) => {
+    const client = getSayariClient(deps.credentials);
+    const body = {
+      ...(params.q ? { q: params.q } : {}),
+      filter: {
+        ...(params.hsCodes ? { hsCode: params.hsCodes } : {}),
+        ...(params.arrivalCountries ? { arrivalCountry: params.arrivalCountries } : {}),
+        ...(params.supplierId ? { supplierId: params.supplierId } : {}),
+        ...(params.arrivalDate ? { arrivalDate: params.arrivalDate } : {}),
+      },
+    };
+    const request = {
+      limit: params.limit,
+      ...(params.offset !== undefined ? { offset: params.offset } : {}),
+      ...body,
+    };
+    return viaSdkWithRawFallback(
+      () => client.trade.searchShipments(request as never, requestOptions(deps)),
+      () => ({
+        path: '/v1/trade/search/shipments',
+        method: 'POST' as const,
+        query: limitOffsetQuery(params),
+        body,
+      }),
+      deps,
+    );
+  },
+  projection: shipmentSearchSchema,
+} as EndpointDef<
+  {
+    hsCodes?: string[];
+    arrivalCountries?: string[];
+    supplierId?: string[];
+    /** `"<from>|<to>"` or a single `"<date>"` — `TradeFilterList.arrivalDate`. */
+    arrivalDate?: string;
+    q?: string;
+    limit?: number;
+    offset?: number;
+  },
+  z.infer<typeof shipmentSearchSchema>
+>);
+
+/**
+ * `supplyChain.upstreamTradeTraversal` (network spec §4.3, §5, §6; ticket
+ * 05) — the trade Job's fourth call, on the raw path unconditionally.
+ *
+ * **A real, confirmed SDK request-encoding bug, the identical defect class
+ * `dispatchTraversalWalk`/`downstreamQuery` already document and route
+ * around for `traversal.ownership`/`ubo`/`watchlist`/`traversal`'s
+ * `riskCategories`.** Verified against `node_modules/@sayari/sdk/api/
+ * resources/supplyChain/client/Client.js`: its request builder does
+ * `_queryParams["component"] = toJson(component)`, the same for `risk` and
+ * `countries` — JSON.stringify on every array-shaped filter param, sent as a
+ * `GET` query string. A JSON-stringified array gets a `422` the same way a
+ * JSON-stringified `risk_categories` does; the same values as repeated query
+ * keys get a `200`.
+ *
+ * `component` (the Category's six-digit HS codes) and `risk`
+ * (forced-labour-origin and sanctions stems) are **always populated** for
+ * this ticket's call — never optional, per spec §4.3 — so this row dispatches
+ * **unconditionally raw**, the same shape `dispatchTraversalWalk`'s own
+ * `hasPopulatedRiskCategories`-forces-raw branch takes when it fires, rather
+ * than the exception-based `viaSdkWithRawFallback` every other row in this
+ * file defaults to: a `422` with a clean `messages` array is not a
+ * `ParseError` (`isParseError`, `dispatchers/sayari.ts`), so the SDK path
+ * would "succeed" at building and sending a malformed request every time,
+ * never triggering the catch-based fallback at all.
+ *
+ * This is a genuinely different situation from ticket 04's `shortestPath`,
+ * which turned out to have **no** such bug (`sayariTraversalShortestPath`'s
+ * own doc comment above, live-verified) — the SDK source here confirms this
+ * endpoint is not equally safe. It is also a **second, independent** Fern
+ * defect from the one already documented for this exact endpoint in
+ * `docs/research/sayari-node-sdk.md` (§5, §7 item 2): a client-side
+ * `ParseError` on the *response*, `filters.max_depth`/`filters.limit`
+ * echoed back as strings against the SDK's own `number` typing. That one
+ * *would* have been caught by `viaSdkWithRawFallback`'s ordinary
+ * `ParseError` catch — this row bypasses the SDK far enough upstream (before
+ * the request is even built) that it never gets the chance to be caught
+ * either way, which is correct: routing raw here fixes both problems in one
+ * move rather than patching the response-parse one and leaving the
+ * request-encoding one live.
+ *
+ * GET `/v1/supply_chain/upstream/{id}`, query params named the way the SDK's
+ * own client names them (verified against the same `Client.js`):
+ * `component`, `risk`, `countries`, `min_date`, `max_date`, `max_depth`,
+ * `limit` — `component`/`risk`/`countries` sent **repeated**, one key per
+ * value (`encodeQuery` in `dispatchers/sayari.ts` already does this for an
+ * array), never JSON-stringified. This ticket's own call sends `component`,
+ * `risk`, `maxDepth: 2` and `minDate`; `countries` is carried on the param
+ * type and the query builder for completeness with the SDK's real surface
+ * (the same reasoning `TraversalWalkParams` widens ahead of every field a
+ * caller might eventually want, per that type's own doc comment) — nothing
+ * in this ticket's own call populates it, and `hasPopulatedTradeTraversalFilter`
+ * below still catches it if a future caller does.
+ */
+export type SupplyChainUpstreamTradeTraversalParams = {
+  id: string;
+  component?: string[];
+  risk?: string[];
+  countries?: string[];
+  maxDepth?: number;
+  minDate?: string;
+};
+
+/**
+ * The raw fallback's query string, named the way the SDK's own client names
+ * it (`min_date`/`max_depth`, snake_case, against the camelCase the SDK
+ * takes) — the same silent-wrong-key failure mode `downstreamQuery`'s own
+ * doc comment warns about (BUILD-NOTES finding 31) if this ever drifted from
+ * `Client.js`'s own `_queryParams[...]` assignments.
+ */
+export function upstreamTradeTraversalQuery(rest: Omit<SupplyChainUpstreamTradeTraversalParams, 'id'>) {
+  return {
+    component: rest.component,
+    risk: rest.risk,
+    countries: rest.countries,
+    min_date: rest.minDate,
+    max_depth: rest.maxDepth,
+  };
+}
+
+/**
+ * Whether `component`/`risk`/`countries` carries a populated array — the
+ * shape the SDK's request builder cannot encode correctly (this endpoint's
+ * own doc comment above has the verified detail). Mirrors
+ * `hasPopulatedRiskCategories`'s own reasoning: an **empty** array asks for
+ * nothing filtered, same as an omitted one, so only a populated array forces
+ * the raw path.
+ */
+function hasPopulatedTradeTraversalFilter(
+  rest: Omit<SupplyChainUpstreamTradeTraversalParams, 'id'>,
+): boolean {
+  return (
+    (Array.isArray(rest.component) && rest.component.length > 0) ||
+    (Array.isArray(rest.risk) && rest.risk.length > 0) ||
+    (Array.isArray(rest.countries) && rest.countries.length > 0)
+  );
+}
+
+export const sayariSupplyChainUpstreamTradeTraversal = defineEndpoint({
+  source: 'sayari',
+  // Sayari's own `info.getUsage()` bucket for this endpoint (N6 — see
+  // `sayariEntitySummary`'s own `bucket: 'entity_summary'` comment for the
+  // precedent): `docs/research/sayari-node-sdk.md` §6 records a live
+  // `tradeTraversal` counter, distinct from `traversal` and from this file's
+  // own `trade` bucket for the three `trade.search*` rows above.
+  bucket: 'tradeTraversal',
+  endpoint: 'supplyChain.upstreamTradeTraversal',
+  timeoutMs: SAYARI_SLOW_MS,
+  defaults: {},
+  normalizeParams: (p) => flatSorted(p),
+  dispatch: async (params, deps) => {
+    const { id, ...rest } = params;
+    const path = `/v1/supply_chain/upstream/${encodeURIComponent(String(id))}`;
+    const query = upstreamTradeTraversalQuery(rest);
+    if (hasPopulatedTradeTraversalFilter(rest)) {
+      return { body: await rawFetch({ path, query }, deps), via: 'raw' as const };
+    }
+    const client = getSayariClient(deps.credentials);
+    return viaSdkWithRawFallback(
+      () =>
+        client.supplyChain.upstreamTradeTraversal(String(id), rest as never, requestOptions(deps)),
+      () => ({ path, query }),
+      deps,
+    );
+  },
+  projection: upstreamTradeTraversalSchema,
+} as EndpointDef<
+  SupplyChainUpstreamTradeTraversalParams,
+  z.infer<typeof upstreamTradeTraversalSchema>
 >);
 
 /**
@@ -1090,6 +1384,9 @@ export const ENDPOINTS = {
   sayariTraversalShortestPath,
   sayariNegativeNews,
   sayariTradeSearchSuppliers,
+  sayariTradeSearchBuyers,
+  sayariTradeSearchShipments,
+  sayariSupplyChainUpstreamTradeTraversal,
   sayariMetadataRaw,
   gleifJoinLei,
   gleifSearchByName,

@@ -273,6 +273,97 @@ export const enrichmentSource = pgEnum('enrichment_source', [
    * read already recorded between the same two ids.
    */
   'sayari_shortest_path',
+  /**
+   * The trade Job's three counterparty/shipment reads for one accepted
+   * Profile (network spec §4.3, ticket 05): `trade.searchSuppliers`
+   * (`filter.supplierId`, `limit: 1` — the HS facet and shipment count,
+   * stored on `trade_footprint`), `trade.searchBuyers` (`filter.supplierId`,
+   * `limit: 50` — the customer list with risk and country, `trade_buyer`)
+   * and `trade.searchShipments` (`filter.supplierId`, `filter.arrivalDate`
+   * over the trailing 24 months, `limit: 50` — dated, citable sample rows,
+   * `trade_shipment`).
+   *
+   * **Three distinct SDK methods and three distinct dated calls, sharing one
+   * source rather than each getting its own** — not a new pattern invented
+   * for this ticket, but the same shape `sayari_deep_traversal` already has:
+   * `absorbPage` (`src/jobs/traverse.ts`) records a fresh Enrichment **per
+   * page, per direction** — `traversal.ownership` and `traversal.ubo`, two
+   * SDK methods — under that one source, because both answer one concept
+   * (*what does a person-triggered expansion of this Profile's ownership
+   * find*). These three answer one concept the same way: *what this Profile
+   * ships, to whom, from where, how recently, and who buys from it* — all
+   * three keyed by the identical `filter.supplierId`.
+   *
+   * **Why `sayari_supply_chain_upstream` (below) is not folded in too**,
+   * despite being a fourth trade Job read on the same Profile: it answers a
+   * structurally different question (upstream tiers, not this Profile's own
+   * shipments), carries a structurally different envelope (see that entry's
+   * own comment) and writes into `graph_path` rather than any of the three
+   * typed tables this source's calls populate. Sharing one source across
+   * that boundary would reproduce BUILD-NOTES finding 158 — a second,
+   * structurally different automatic read sharing one bucket with the first
+   * silently moved a citation's `enrichment_id` off the row that actually
+   * found it — for a fact this build has already paid once, live, to find
+   * and fix (`graph_path.enrichment_id` reassigned on every conflict once
+   * `enrichOwnership` shared `enrichFamily`'s rows).
+   *
+   * **A reader wanting specifically the footprint/count row**
+   * (`trade_footprint`, written only by `searchSuppliers`) should not reach
+   * for the bare *latest generation of this source* pattern
+   * `latestEnrichmentId` (`src/db/queries/enrichments.ts`) uses for every
+   * other source here: three calls share one counter, so the newest
+   * generation is whichever of the three a Job's fan-out happened to run
+   * last, not necessarily the `searchSuppliers` one. Scope by the Enrichment
+   * that owns a `trade_footprint`/`trade_buyer`/`trade_shipment` child row
+   * instead — the same way `withFamilyCoverage` (`src/jobs/publish.ts`)
+   * already scopes by `enrichment_id` rather than by source alone, once two
+   * reads could share a bucket.
+   */
+  'sayari_trade_footprint',
+  /**
+   * `supplyChain.upstreamTradeTraversal`, raw path (network spec §4.3, §5;
+   * ticket 05): the trade Job's upstream-tier read, filtered by the
+   * Category's six-digit HS `component`s and the forced-labour-origin/
+   * sanctions `risk` stems, `maxDepth: 2`, `minDate` 24 months back. Writes
+   * `graph_path` rows of `kind: 'supply_chain'`, `direction: 'upstream'` —
+   * shown and cited, never deducted (network spec §5) — never the three
+   * typed trade tables `sayari_trade_footprint` populates.
+   *
+   * Its own dedicated value for the same reason `sayari_shortest_path` got
+   * one in ticket 04 rather than folding into an existing source: **it is
+   * not the same read.** `upstreamTradeTraversal` takes `component`/`risk`/
+   * `countries`/`maxDepth`/`minDate` and no `id`-rooted expansion params at
+   * all; its envelope is `{filters, data: {paths, entities}, exploredCount,
+   * partialResults}` (`UpstreamTradeTraversalResponse`,
+   * `node_modules/@sayari/sdk/api/resources/supplyChain/types/
+   * UpstreamTradeTraversalResponse.d.ts`) — structurally unlike
+   * `traversalSchemaInner`'s `{data, next, offset, limit, min_depth,
+   * max_depth, explored_count, partial_results}` the four
+   * `TraversalWalkParams`-shaped sources share, and unlike
+   * `tradeSearchSchemaInner`'s `{data, size, next, limit, offset}` this
+   * enum's own `sayari_trade_footprint` calls share.
+   *
+   * It also carries its own SDK defect, confirmed independently of
+   * `sayari_shortest_path`'s (which has none) and of the `risk_categories`
+   * bug `sayari_ownership_exposure`/`downstreamQuery` document: verified
+   * against `node_modules/@sayari/sdk/api/resources/supplyChain/client/
+   * Client.js`, its request builder JSON-stringifies a populated
+   * `component`/`risk`/`countries` array into the query string
+   * (`toJson(...)`) — the identical defect class, on a different endpoint,
+   * from the one `downstreamQuery`'s own doc comment documents for
+   * `risk_categories`. `sayariSupplyChainUpstreamTradeTraversal`'s dispatch
+   * (`src/upstream/endpoints.ts`) routes around it; this column only records
+   * that the call is not interchangeable with any other row in this enum.
+   *
+   * The id is derived from the source too (`recordEnrichment`,
+   * `source:subjectKind:subjectKey` plus a counted generation): sharing a
+   * source with `sayari_trade_footprint` would make this Job's fourth call,
+   * for the same root entity, read as the next generation of the footprint
+   * read rather than a distinct fact — the same collision class
+   * `sayari_trade_footprint`'s own comment reasons through above, and the one
+   * BUILD-NOTES finding 158 found live.
+   */
+  'sayari_supply_chain_upstream',
   'world_bank',
   'gleif',
   'usitc',
@@ -474,6 +565,24 @@ export const jobKind = pgEnum('job_kind', [
    * on-demand sweep over the whole roster a Category is bidding.
    */
   'pairs',
+  /**
+   * The trade Job (network spec §4.3, §8; ticket 05): on demand, from the
+   * Supplier page or chat through the confirm gate, for one accepted
+   * Profile. Four calls — `trade.searchSuppliers` (the HS facet and
+   * shipment count), `trade.searchBuyers` (the customer list, with risk and
+   * country), `trade.searchShipments` (dated, citable sample rows over the
+   * trailing 24 months) and `supplyChain.upstreamTradeTraversal` (upstream
+   * tiers, filtered by the Category's HS `component`s and forced-labour/
+   * sanctions `risk` stems) — stored as Enrichment `sayari_trade_footprint`
+   * (the first three) and `sayari_supply_chain_upstream` (the fourth) plus
+   * `graph_path` rows of `kind: 'supply_chain'`.
+   *
+   * Trade edges are **shown and never deducted** (network spec §5):
+   * Compliance already scores the Profile's own `exports_to_*`/`*_origin_*`
+   * factors, and deducting again on a Path would count one fact twice — the
+   * one Job kind in this enum whose reads never move a Score.
+   */
+  'trade',
 ]);
 
 /** What a Job is about: a Supplier, a Category, an entity, or the Program. */
