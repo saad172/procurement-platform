@@ -12,6 +12,7 @@ import { upsertEntity } from '@/jobs/resolve';
 import { runResolveJob } from '@/jobs/resolve-job';
 import { readDeepTraversalParams, runDeepTraversal } from '@/jobs/traverse';
 import { runPairsCheck } from '@/jobs/pairs';
+import { runTradeJob } from '@/jobs/trade';
 import { checkRunBudget, enqueueJob } from '@/jobs/runs';
 import { assessSupplier } from '@/jobs/assess';
 import { recommendCategory } from '@/jobs/recommend';
@@ -130,6 +131,7 @@ function buildJobHandlers(env: Env): Record<RunnableJobKind, JobHandler> {
     recommend: (job, database) => recommendJobHandler(job, database, env),
     traverse: (job, database) => traverseJobHandler(job, database, env),
     pairs: (job, database) => pairsJobHandler(job, database, env),
+    trade: (job, database) => tradeJobHandler(job, database, env),
   };
 }
 
@@ -353,6 +355,43 @@ async function pairsJobHandler(job: JobRow, database: Database, env: Env): Promi
       (result.skippedSamePair > 0
         ? ` (${result.skippedSamePair} pair(s) skipped — same profile)`
         : ''),
+  );
+
+  return { state: 'done' };
+}
+
+/**
+ * The **trade** Job (network spec §4.3, §5; ticket 05, unit 05b): four
+ * upstream calls for one accepted Profile — the footprint, the buyers, a
+ * dated shipment sample, and the upstream supply-chain tiers — on demand,
+ * confirm-gated.
+ *
+ * Deterministic, like `pairs`/`traverse`: no model turn, so its Trace is its
+ * `usage_event` rows. The subject is an **entity**, like `traverse`
+ * (`enqueue_deep_traversal`'s own "one company's own record" convention) —
+ * a Profile's trade footprint is about the company in the graph, not about
+ * the Supplier row or the Category that happened to trigger the confirm
+ * gate.
+ */
+async function tradeJobHandler(job: JobRow, database: Database, env: Env): Promise<JobOutcome> {
+  const upstream = createUpstream({
+    db: database,
+    runId: job.runId,
+    jobId: job.id,
+    credentials: buildUpstreamCredentials(env),
+    toolCallCap: job.toolCallCap,
+  });
+
+  const result = await runTradeJob(
+    { db: database, upstream, jobId: job.id },
+    { entityId: job.subjectId },
+  );
+
+  console.log(
+    `  trade ${job.subjectId}: footprint ${result.footprintWritten ? 'written' : 'empty'}, ` +
+      `${result.buyerCount} buyer(s), ${result.shipmentCount} shipment(s), ` +
+      `${result.supplyChainPathCount} upstream Path(s)` +
+      (result.supplyChainTruncated ? ' (upstream truncated)' : ''),
   );
 
   return { state: 'done' };

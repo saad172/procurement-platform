@@ -269,15 +269,19 @@ describe('an enqueue_* tool whose Job kind no worker runs', () => {
     expect(registry.warnings).toEqual([]);
   });
 
-  it('names the one the real catalog still carries, and no others', async () => {
-    // The finding, kept where a reader will see it: `enqueue_dossier` is the
-    // last one, and the list is short enough to state rather than count.
-    // `enqueue_deep_traversal` is deliberately asserted absent — a Deep
-    // Traversal a person accepts now reaches a worker that runs it.
+  it('names the ones the real catalog still carries, and no others', async () => {
+    // `enqueue_trade` (network spec §4.3, §8; ticket 05, unit 05c) joined
+    // `enqueue_dossier` here only transiently, on unit 05c's own branch,
+    // before unit 05b's `RUNNABLE_JOB_KINDS` addition landed — the wave's
+    // integration branch carries both, so `trade` is now a runnable kind and
+    // `enqueue_trade` warns about nothing, the same as `enqueue_deep_traversal`
+    // once `traverse` gained a handler. `enqueue_dossier` remains the one
+    // real gap: `dossier` still has no worker handler.
     const { getRegistry, resetRegistryForTesting } = await import('@/tools');
     resetRegistryForTesting();
     const warnings = getRegistry().warnings.join(' ');
     expect(warnings).toContain('enqueue_dossier');
+    expect(warnings).not.toContain('enqueue_trade');
     expect(warnings).not.toContain('enqueue_deep_traversal');
     expect(getRegistry().warnings).toHaveLength(1);
   });
@@ -425,9 +429,11 @@ describe('the real catalog', () => {
       .forSurface('chat')
       .filter((t) => t.effect === 'write');
     expect(writes.every((t) => t.name.startsWith('enqueue_'))).toBe(true);
-    // Eight, since `enqueue_check_every_pair` joined the catalog (network
-    // spec §7; ticket 04, unit 04e) — the *Check every pair* action.
-    expect(writes).toHaveLength(8);
+    // Nine, since `enqueue_trade` joined the catalog (network spec §4.3, §8;
+    // ticket 05, unit 05c) — the on-demand trade Job, beside `enqueue_check_
+    // every_pair`'s own arrival at eight (network spec §7; ticket 04, unit
+    // 04e).
+    expect(writes).toHaveLength(9);
   });
 
   it('has no tool that writes a match — the agents propose and code settles', async () => {

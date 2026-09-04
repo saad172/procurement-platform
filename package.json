@@ -46,6 +46,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "0.122.0",
     "@sayari/sdk": "0.1.44",
+    "cytoscape": "3.34.2",
     "dotenv": "^17.4.2",
     "drizzle-orm": "0.45.2",
     "next": "16.3.3",

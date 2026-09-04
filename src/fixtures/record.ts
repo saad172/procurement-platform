@@ -91,7 +91,7 @@ async function loadRecordableJob(db: Database, jobId: string) {
  * The distinction that matters is *no turns* versus *turns we cannot replay*.
  * The second is still refused, below.
  */
-const NO_TURN_JOB_KINDS = new Set(['enrich', 'fetch_entity', 'traverse', 'resolve', 'pairs']);
+const NO_TURN_JOB_KINDS = new Set(['enrich', 'fetch_entity', 'traverse', 'resolve', 'pairs', 'trade']);
 
 async function loadTurnRows(
   db: Database,

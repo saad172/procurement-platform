@@ -5,7 +5,7 @@ import { loadRecommendationPage } from '@/db/queries/recommendation-page';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatDock } from '@/components/chat-dock';
 import { markHeader, newerVersionStrip, pinnedVersionStrip } from '@/domain/recommendation-mark';
-import { Argument, Dissent, MarkControls, Picks, Versions } from './sections';
+import { Argument, ConcentrationPaths, Dissent, MarkControls, Picks, Versions } from './sections';
 
 /**
  * The published Recommendation for one Category (SPEC §10).
@@ -112,6 +112,7 @@ export default async function RecommendationPage({
 
           <Picks data={data} programId={programId} />
           <Argument data={data} programId={programId} />
+          <ConcentrationPaths data={data} programId={programId} />
           <Dissent data={data} />
           <Versions data={data} programId={programId} categoryId={categoryId} />
           <MarkControls data={data} programId={programId} categoryId={categoryId} />
