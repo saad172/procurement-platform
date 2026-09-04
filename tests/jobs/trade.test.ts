@@ -3,11 +3,13 @@ import { eq, and, inArray } from 'drizzle-orm';
 import * as t from '@/db/schema';
 import {
   loadCategoryHsHeadings,
+  resolveTradeEntityId,
   runSupplyChainUpstreamTradeTraversal,
   runTradeFootprint,
   runTradeJob,
 } from '@/jobs/trade';
 import type { EnrichContext } from '@/jobs/enrich';
+import { UpstreamError } from '@/upstream/errors';
 import { getTestDb, testDatabaseIsUp, testSql } from '../support/test-db';
 import { resetDerived } from '../support/reset';
 import { seededProgram } from '../support/seeded-program';
@@ -538,9 +540,154 @@ describe('runSupplyChainUpstreamTradeTraversal: call 4', () => {
     // rule enrichFamily/enrichOwnership apply to their own envelopes).
     expect(rows.every((r) => r.truncated === true && r.exploredCount === null)).toBe(true);
   });
+
+  /**
+   * Regression for BUILD-NOTES finding 161. Live against Yazaki, this call
+   * came back a bare Sayari `404` (`not_found`, `src/upstream/classify.ts`)
+   * — the endpoint is a resource fetch, not a search, and answers "nothing
+   * upstream matches this filter" that way rather than `200` with an empty
+   * `data.paths`, unlike the three `trade.search*` calls above. Left
+   * uncaught, that 404 used to propagate out of this function, fail the
+   * whole trade Job, and discard the three already-written footprint calls'
+   * work — over a Profile that legitimately has no upstream chain to show.
+   */
+  it('returns an empty result, not a throw, when Sayari answers 404 (nothing upstream, not a failure)', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const db = await getTestDb();
+    await resetDerived(db);
+    await db.insert(t.entity).values({ id: SC_ROOT, label: 'SC Root Co' });
+
+    const notFound = new UpstreamError({
+      kind: 'not_found',
+      source: 'sayari',
+      endpoint: 'supplyChain.upstreamTradeTraversal',
+      message: 'sayari has no supplyChain.upstreamTradeTraversal result for these parameters (404).',
+      statusCode: 404,
+    });
+    const ctx: EnrichContext = {
+      db,
+      upstream: {
+        sayari: {
+          upstreamTradeTraversal: async () => {
+            throw notFound;
+          },
+        },
+      } as never,
+    };
+
+    const result = await runSupplyChainUpstreamTradeTraversal(ctx, {
+      entityId: SC_ROOT,
+      component: ['850440'],
+      now: NOW,
+    });
+
+    expect(result).toEqual({
+      enrichmentId: null,
+      members: [],
+      truncated: false,
+      reachable: null,
+      pathsConsidered: 0,
+    });
+    const rows = await db.select().from(t.graphPath).where(eq(t.graphPath.rootEntityId, SC_ROOT));
+    expect(rows).toHaveLength(0);
+    const enrichments = await db
+      .select()
+      .from(t.enrichment)
+      .where(eq(t.enrichment.source, 'sayari_supply_chain_upstream'));
+    expect(enrichments).toHaveLength(0);
+  });
+
+  it('still throws every other UpstreamErrorKind — only not_found is treated as empty', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const db = await getTestDb();
+    await resetDerived(db);
+    await db.insert(t.entity).values({ id: SC_ROOT, label: 'SC Root Co' });
+
+    const rateLimited = new UpstreamError({
+      kind: 'rate_limit',
+      source: 'sayari',
+      endpoint: 'supplyChain.upstreamTradeTraversal',
+      message: 'sayari rate-limited supplyChain.upstreamTradeTraversal (429).',
+      statusCode: 429,
+    });
+    const ctx: EnrichContext = {
+      db,
+      upstream: {
+        sayari: {
+          upstreamTradeTraversal: async () => {
+            throw rateLimited;
+          },
+        },
+      } as never,
+    };
+
+    await expect(
+      runSupplyChainUpstreamTradeTraversal(ctx, { entityId: SC_ROOT, component: ['850440'], now: NOW }),
+    ).rejects.toThrow(rateLimited);
+  });
 });
 
 // ── The Category's six-digit HS codes ───────────────────────────────────────
+
+describe('resolveTradeEntityId', () => {
+  /**
+   * Regression for BUILD-NOTES finding 161: `tradeJobHandler`
+   * (`src/worker/main.ts`) used to read `job.subjectId` straight into
+   * `runTradeJob`'s `entityId`, on the belief the trade Job's subject was
+   * already a Sayari entity id, like `traverse`'s. `enqueue_trade` actually
+   * enqueues `subjectType: 'supplier'`, `subjectId: supplier.id`
+   * (`tests/tools/enqueue-trade.test.ts` asserts that call shape directly) —
+   * so a real, worker-driven trade Job was the first thing to ever pass a
+   * Supplier's own uuid to a Sayari call expecting its entity id. This
+   * exercises the resolution step the worker now performs first.
+   */
+  it("resolves a Supplier row's own id to its accepted Match's entity id", async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const db = await getTestDb();
+    await resetDerived(db);
+    const program = await seededProgram(db);
+    const supplier = await db.query.supplier.findFirst({
+      where: (row, { eq: equals }) => equals(row.programId, program.id),
+    });
+    if (!supplier) throw new Error('the approved Program has no seeded suppliers');
+
+    const entityId = 'resolve-trade-entity-id-entity';
+    await db.insert(t.entity).values({ id: entityId, label: 'Entity Co' });
+    await db
+      .insert(t.match)
+      .values({ supplierId: supplier.id, status: 'accepted', entityId, settledBy: 'human' });
+
+    await expect(resolveTradeEntityId(db, supplier.id)).resolves.toBe(entityId);
+  });
+
+  it('returns null for a Supplier with no Match at all', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const db = await getTestDb();
+    await resetDerived(db);
+    const program = await seededProgram(db);
+    const supplier = await db.query.supplier.findFirst({
+      where: (row, { eq: equals }) => equals(row.programId, program.id),
+    });
+    if (!supplier) throw new Error('the approved Program has no seeded suppliers');
+
+    await expect(resolveTradeEntityId(db, supplier.id)).resolves.toBeNull();
+  });
+
+  it('returns null for a Supplier whose Match is not accepted', async () => {
+    if (!(await testDatabaseIsUp())) return;
+    const db = await getTestDb();
+    await resetDerived(db);
+    const program = await seededProgram(db);
+    const supplier = await db.query.supplier.findFirst({
+      where: (row, { eq: equals }) => equals(row.programId, program.id),
+    });
+    if (!supplier) throw new Error('the approved Program has no seeded suppliers');
+
+    await db.insert(t.match).values({ supplierId: supplier.id, status: 'needs_review', settledBy: 'human' });
+
+    await expect(resolveTradeEntityId(db, supplier.id)).resolves.toBeNull();
+  });
+});
 
 describe('loadCategoryHsHeadings', () => {
   it('returns the six-digit heading of every HS line on every Category an accepted Supplier bidding this entity carries', async () => {
