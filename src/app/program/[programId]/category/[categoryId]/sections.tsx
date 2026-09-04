@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { WeightRail } from '@/components/weight-rail';
+import { NetworkMap } from '@/components/widgets/network-map';
 import type { loadCategoryPage } from '@/db/queries/category-page';
 import {
   EXCLUDED_HEADING,
@@ -10,6 +11,7 @@ import {
 import { markTone, markWord } from '@/domain/recommendation-mark';
 import { confidenceTone } from '@/domain/score';
 import { CategoryActions } from './category-actions';
+import { buildConcentrationMap } from './concentration-map';
 
 /**
  * The Category page's sections (SPEC §13.3, §13.6) — one component per
@@ -194,6 +196,54 @@ function ConcentrationBadge({
     >
       joined with {partners.map((p) => p.displayName).join(', ')}
     </span>
+  );
+}
+
+/**
+ * ── Suppliers joined through a shared parent (Concentration map) ──
+ *
+ * The same Concentration `computeConcentration` already derived for the
+ * Shortlist table's own badge column (`ConcentrationBadge`, above), drawn as
+ * a diagram instead of read row by row (network spec §8: "a Concentration
+ * map across the Shortlist and a Concentration column in the table" — this
+ * is the map; `ConcentrationBadge` is the column). See `concentration-map.ts`
+ * for the transform and why every Path here carries a synthetic, edge-less
+ * chain rather than a real cited one.
+ *
+ * `NetworkMap` is a Client Component (`'use client'`, `dynamic(...,
+ * {ssr:false})` — `network-map.tsx`'s own header comment, and
+ * `node_modules/next/dist/docs/01-app/01-getting-started/05-server-and-client-components.md`:
+ * "By default, layouts and pages are Server Components"). This Server
+ * Component page renders it directly with plain serialisable props and no
+ * `onExpand` — the diagram is about joins BETWEEN Suppliers here, not
+ * expanding any one entity's own Network (spec §8's Expand is the Supplier
+ * and Entity pages', not this page's).
+ *
+ * No Concentration anywhere on this Shortlist is a real, reported state, not
+ * an error — worded to match `SHORTLIST_EMPTY_LINE`/`EXCLUDED_REASONS`'
+ * plain, factual register rather than treating an empty diagram as a
+ * degraded one.
+ */
+export function ConcentrationMap({ data, programId }: { data: Data; programId: string }) {
+  const { roots, paths } = buildConcentrationMap(data.shortlist.ranked);
+  return (
+    <>
+      <h2>
+        <span className="term">
+          Suppliers joined through a shared parent<i>Concentration map</i>
+        </span>
+      </h2>
+      {roots.length === 0 ? (
+        <p className="empty">
+          No Concentration yet — none of this Shortlist&rsquo;s accepted Suppliers&rsquo; Networks
+          share a Path.
+        </p>
+      ) : (
+        <div className="card">
+          <NetworkMap roots={roots} paths={paths} programId={programId} />
+        </div>
+      )}
+    </>
   );
 }
 

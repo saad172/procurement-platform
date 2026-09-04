@@ -4,7 +4,7 @@ import { loadCategoryPage } from '@/db/queries/category-page';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatDock } from '@/components/chat-dock';
 import { LeadsTable } from './leads';
-import { ArguedCase, Answers, Excluded, Shortlist, TheWorking } from './sections';
+import { ArguedCase, Answers, ConcentrationMap, Excluded, Shortlist, TheWorking } from './sections';
 
 /**
  * The Category page (SPEC §13.3, §13.6) — level two of the spine.
@@ -50,6 +50,7 @@ export default async function CategoryPage({
 
       <Answers data={data} programId={programId} categoryId={categoryId} />
       <Shortlist data={data} programId={programId} />
+      <ConcentrationMap data={data} programId={programId} />
       <Excluded data={data} programId={programId} />
 
       <LeadsTable
