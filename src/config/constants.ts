@@ -82,6 +82,73 @@ export const OWNERSHIP_EXPOSURE_RISK_CATEGORIES = [
 ] as const;
 
 /**
+ * The trade Job (network spec §4.3, §5; ticket 05, unit 05b) — four calls,
+ * on demand, for one accepted Profile.
+ *
+ * `TRADE_FOOTPRINT_LIMIT` is `1`: `trade.searchSuppliers` filtered to
+ * `filter.supplierId: [id]` returns exactly one row — the Profile's own
+ * trade-shaped sighting — and the HS facet/shipment count live on its
+ * `metadata`, not on a paged list. `TRADE_BUYERS_LIMIT`/
+ * `TRADE_SHIPMENTS_LIMIT` are the spec's own `limit: 50`, one page each, the
+ * same "truncation is recorded, not paged through" choice
+ * `FAMILY_TRAVERSAL_LIMIT`/`WATCHLIST_TRAVERSAL_LIMIT` already make.
+ *
+ * `TRADE_WINDOW_MONTHS` is the one window both the shipments search
+ * (`filter.arrivalDate`) and the upstream supply-chain traversal (`minDate`)
+ * use — "the trailing 24 months" (spec §4.3) is one number, not two that
+ * could drift.
+ */
+export const TRADE_FOOTPRINT_LIMIT = 1;
+export const TRADE_BUYERS_LIMIT = 50;
+export const TRADE_SHIPMENTS_LIMIT = 50;
+export const TRADE_WINDOW_MONTHS = 24;
+
+/**
+ * `supplyChain.upstreamTradeTraversal`'s own two leaf filters (spec §4.3):
+ * `maxDepth: 2`, and the `component`/`risk` pair that keeps the walk inside
+ * Cloudflare's timeout — the sibling probe the spec cites measured an
+ * *unfiltered* walk exploring 832,834 entities and failing at ~125 s on
+ * ownership-based risk filters, where the `_origin_*` family answered
+ * (spec §4.3's own note).
+ *
+ * `component` (the Category's six-digit HS codes) is per-Profile and lives
+ * with the caller (`src/jobs/trade.ts`, which reads the accepted Profile's
+ * own Category rows); `risk` is fixed and lives here, because it is the same
+ * list for every Profile this Job ever runs against.
+ *
+ * **The forced-labour-origin family plus the general sanctions stem** —
+ * verified against `Sayari.Risk` (`node_modules/@sayari/sdk/api/resources/
+ * generatedTypes/types/Risk.d.ts`): `risk` is a *leaf-node* filter ("only
+ * return supply chains that end with a supplier that has 1+ of the specified
+ * risk factors"), and `_origin_` appears in exactly one family in that
+ * union — `forced_labor_{aspi,sheffield_hallam_university_reports,uflpa,
+ * wro,xinjiang}_origin_{direct,subtier}` — which is the family the spec's
+ * own "the `_origin_*` filters answered" names. `sanctioned` is the general
+ * sanctions stem (not itself an `_origin_*` name, but the one the spec's
+ * "and sanctions" clause is naming) rather than the ~180-entry list of
+ * per-country sanctions-list variants also in `Sayari.Risk` — widening to
+ * every country list would re-create the timeout this filter exists to
+ * avoid. `_subtier_product_blueprint` variants are left out: they answer a
+ * narrower question (this exact product's blueprint, not the HS heading the
+ * `component` filter already narrows to) that would double-narrow the same
+ * thing two ways.
+ */
+export const SUPPLY_CHAIN_UPSTREAM_MAX_DEPTH = 2;
+export const SUPPLY_CHAIN_UPSTREAM_RISK_STEMS = [
+  'forced_labor_aspi_origin_direct',
+  'forced_labor_aspi_origin_subtier',
+  'forced_labor_sheffield_hallam_university_reports_origin_direct',
+  'forced_labor_sheffield_hallam_university_reports_origin_subtier',
+  'forced_labor_uflpa_origin_direct',
+  'forced_labor_uflpa_origin_subtier',
+  'forced_labor_wro_origin_direct',
+  'forced_labor_wro_origin_subtier',
+  'forced_labor_xinjiang_origin_direct',
+  'forced_labor_xinjiang_origin_subtier',
+  'sanctioned',
+] as const;
+
+/**
  * How many pre-pass candidates rung R1 carries into the ladder.
  *
  * The pre-pass returns a ranked list, and every candidate past the cut costs a
@@ -236,6 +303,17 @@ export const JOB_CAPS = {
    * the rest of this table was re-fit on 2026-09-02.
    */
   pairs: { toolCalls: 100, tokens: 0 },
+  /**
+   * The trade Job (network spec §4.3, ticket 05): exactly four upstream
+   * calls per invocation — `trade.searchSuppliers`, `trade.searchBuyers`,
+   * `trade.searchShipments`, `supplyChain.upstreamTradeTraversal` — never
+   * open-ended the way `pairs`'s `n(n-1)/2` is, so this is not provisional
+   * the way that cap is. 6 is 4 plus headroom for one retried call (the
+   * same "ceiling that does not fire on a healthy run" reasoning as every
+   * other row in this table), not a multiple sized off a measurement no
+   * `trade` Job has produced yet.
+   */
+  trade: { toolCalls: 6, tokens: 0 },
 } as const;
 
 export type JobKind = keyof typeof JOB_CAPS;
@@ -261,6 +339,10 @@ export type JobKind = keyof typeof JOB_CAPS;
  *
  * **`pairs` joins it too** (network spec §7, ticket 04) — the *Check every
  * pair* Job `enqueue_check_every_pair` proposes.
+ *
+ * **`trade` joins it too** (network spec §4.3, ticket 05) — the trade Job
+ * `enqueue_trade` proposes, enqueued from the Supplier page or chat through
+ * the confirm gate.
  */
 export const RUNNABLE_JOB_KINDS = [
   'enrich',
@@ -271,6 +353,7 @@ export const RUNNABLE_JOB_KINDS = [
   'recommend',
   'traverse',
   'pairs',
+  'trade',
 ] as const satisfies readonly JobKind[];
 
 export type RunnableJobKind = (typeof RUNNABLE_JOB_KINDS)[number];

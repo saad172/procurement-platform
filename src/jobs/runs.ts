@@ -54,7 +54,16 @@ export type RunTrigger =
    * `discover` are — the Runs list answers *what did this cost and why*,
    * and "checked every pair" is a different answer from "a roster ran".
    */
-  | 'pairs';
+  | 'pairs'
+  /**
+   * The trade Job (network spec §4.3, ticket 05): the footprint, buyers,
+   * shipment sample and upstream supply-chain tiers for one accepted
+   * Profile, confirm-gated, from the Supplier page or chat. Its own trigger
+   * for the same reason `traverse`/`pairs`/`discover` each get one — the
+   * Runs list answers *what did this cost and why*, and "ran the trade Job"
+   * is a different answer from "a roster ran".
+   */
+  | 'trade';
 
 /**
  * Opens a Run.

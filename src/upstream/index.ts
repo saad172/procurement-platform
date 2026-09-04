@@ -44,8 +44,17 @@ export function createUpstream(ctx: UpstreamContext) {
       shortestPath: run(endpoints.sayariTraversalShortestPath),
       /** Slow (7–15 s) and barred from chat. Input is the resolved legal name. */
       negativeNews: run(endpoints.sayariNegativeNews),
-      /** Slow (3.6–13.4 s) and barred from chat. Discover's mechanism. */
+      /** Slow (3.6–13.4 s) and barred from chat. Discover's mechanism, and
+       * — widened for `filter.supplierId` — the trade Job's first call
+       * (network spec §4.3, ticket 05). */
       tradeSearchSuppliers: run(endpoints.sayariTradeSearchSuppliers),
+      /** The trade Job's second call: the customer list, with risk and country. */
+      tradeSearchBuyers: run(endpoints.sayariTradeSearchBuyers),
+      /** The trade Job's third call: dated, citable sample shipment rows. */
+      tradeSearchShipments: run(endpoints.sayariTradeSearchShipments),
+      /** The trade Job's fourth call: upstream tiers, raw path (SDK request-
+       * encoding bug — see the endpoint's own doc comment). */
+      upstreamTradeTraversal: run(endpoints.sayariSupplyChainUpstreamTradeTraversal),
       // No `usage` wrapper: `info.getUsage` had no caller anywhere in the app
       // and was removed rather than wired (ticket 01 item D; A8; S7).
     },

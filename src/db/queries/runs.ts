@@ -410,6 +410,7 @@ const PHASE_ORDER = [
   'discover',
   'traverse',
   'pairs',
+  'trade',
   'dossier',
 ];
 
